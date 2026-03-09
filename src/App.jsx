@@ -312,7 +312,7 @@ function Acc({title,icon,children}){
 
 const TABS=["Overview","Mission","Wing & Aero","Propulsion","Battery","Performance","Stability","Convergence"];
 const TABI=["⬛","🛫","✈️","🔧","🔋","📈","⚖️","🔄"];
-const TTP={contentStyle:{background:C.panel,border:`1px solid ${C.border}`,borderRadius:5,fontSize:10,color:C.text},labelStyle:{color:C.muted},itemStyle:{color:C.text}};
+const TTP={contentStyle:{background:"#131c2e",border:"1px solid #2a3a5c",borderRadius:6,fontSize:12,color:"#e2e8f0",boxShadow:"0 4px 20px rgba(0,0,0,0.8)"},labelStyle:{color:"#94a3b8",fontSize:12,fontWeight:600},itemStyle:{color:"#e2e8f0",fontSize:12}};
 
 /* ═══════════════════════════════════
    APP
@@ -342,13 +342,16 @@ export default function App(){
         ::-webkit-scrollbar-track{background:#07090f}
         ::-webkit-scrollbar-thumb{background:#1c2333;border-radius:3px}
         input[type=range]{-webkit-appearance:none;appearance:none}
-        input[type=number]{-moz-appearance:textfield;color:#f59e0b !important}
+        input[type=number]{-moz-appearance:textfield;background:#0d1117;color:#f59e0b}
         input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
-        .recharts-default-tooltip{background:#0d1117 !important;border:1px solid #1c2333 !important;border-radius:5px !important}
-        .recharts-tooltip-label{color:#94a3b8 !important;font-size:10px}
-        .recharts-tooltip-item{color:#e2e8f0 !important;font-size:10px}
-        .recharts-tooltip-item-value{color:#f59e0b !important}
-        .recharts-legend-item-text{color:#64748b !important}
+        .recharts-tooltip-wrapper .recharts-default-tooltip{background:#131c2e !important;border:1px solid #2a3a5c !important;border-radius:6px !important;box-shadow:0 4px 20px rgba(0,0,0,0.8) !important;padding:8px 12px !important}
+        .recharts-tooltip-wrapper .recharts-tooltip-label{color:#94a3b8 !important;font-size:12px !important;font-weight:600 !important;margin-bottom:4px !important;display:block}
+        .recharts-tooltip-wrapper .recharts-tooltip-item{color:#e2e8f0 !important;font-size:12px !important}
+        .recharts-tooltip-wrapper .recharts-tooltip-item-name{color:#94a3b8 !important}
+        .recharts-tooltip-wrapper .recharts-tooltip-item-value{color:#f59e0b !important;font-weight:700 !important}
+        .recharts-tooltip-wrapper .recharts-tooltip-item-separator{color:#4b5563 !important}
+        .recharts-legend-item-text{color:#94a3b8 !important;font-size:11px !important}
+        span,div,td,th{color:inherit}
       `}</style>
 
       {/* HEADER */}
@@ -484,8 +487,8 @@ export default function App(){
                       <BarChart data={[{ph:"T/O",v:R.Phov},{ph:"Climb",v:R.Pcl},{ph:"Cruise",v:R.Pcr},{ph:"Descent",v:R.Pdc},{ph:"Land",v:R.Phov},{ph:"Reserve",v:R.Pres}]}
                         margin={{top:5,right:8,left:-15,bottom:0}}>
                         <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
-                        <XAxis dataKey="ph" tick={{fontSize:8,fill:C.muted}}/>
-                        <YAxis tick={{fontSize:8,fill:C.muted}}/>
+                        <XAxis dataKey="ph" tick={{fontSize:11,fill:"#94a3b8"}}/>
+                        <YAxis tick={{fontSize:11,fill:"#94a3b8"}}/>
                         <Tooltip {...TTP}/>
                         <Bar dataKey="v" radius={[3,3,0,0]} name="kW">{PHC.map((c,i)=><Cell key={i} fill={c}/>)}</Bar>
                       </BarChart>
@@ -496,8 +499,8 @@ export default function App(){
                       <BarChart data={[{ph:"T/O",v:R.Eto},{ph:"Climb",v:R.Ecl},{ph:"Cruise",v:R.Ecr},{ph:"Descent",v:R.Edc},{ph:"Land",v:R.Eld},{ph:"Reserve",v:R.Eres}]}
                         margin={{top:5,right:8,left:-15,bottom:0}}>
                         <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
-                        <XAxis dataKey="ph" tick={{fontSize:8,fill:C.muted}}/>
-                        <YAxis tick={{fontSize:8,fill:C.muted}}/>
+                        <XAxis dataKey="ph" tick={{fontSize:11,fill:"#94a3b8"}}/>
+                        <YAxis tick={{fontSize:11,fill:"#94a3b8"}}/>
                         <Tooltip {...TTP}/>
                         <Bar dataKey="v" radius={[3,3,0,0]} name="kWh">{PHC.map((c,i)=><Cell key={i} fill={c}/>)}</Bar>
                       </BarChart>
@@ -545,8 +548,8 @@ export default function App(){
                         <stop offset="5%" stopColor={C.amber} stopOpacity={0.4}/><stop offset="95%" stopColor={C.amber} stopOpacity={0.02}/>
                       </linearGradient></defs>
                       <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
-                      <XAxis dataKey="t" tick={{fontSize:8,fill:C.muted}} label={{value:"Time (s)",position:"insideBottom",fontSize:8,fill:C.muted}}/>
-                      <YAxis tick={{fontSize:8,fill:C.muted}} label={{value:"kW",angle:-90,position:"insideLeft",fontSize:8,fill:C.muted}}/>
+                      <XAxis dataKey="t" tick={{fontSize:11,fill:"#94a3b8"}} label={{value:"Time (s)",position:"insideBottom",fontSize:12,fill:"#94a3b8"}}/>
+                      <YAxis tick={{fontSize:11,fill:"#94a3b8"}} label={{value:"kW",angle:-90,position:"insideLeft",fontSize:12,fill:"#94a3b8"}}/>
                       <Tooltip {...TTP}/>
                       <Area type="stepAfter" dataKey="P" stroke={C.amber} strokeWidth={2} fill="url(#pg)" dot={false} name="Power (kW)"/>
                       {R.tPhases.slice(1,-1).map((tp,i)=><ReferenceLine key={i} x={Math.round(tp)} stroke={PHC[i]} strokeDasharray="4 3" strokeWidth={1}/>)}
@@ -560,11 +563,11 @@ export default function App(){
                         <stop offset="5%" stopColor={C.teal} stopOpacity={0.4}/><stop offset="95%" stopColor={C.teal} stopOpacity={0.02}/>
                       </linearGradient></defs>
                       <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
-                      <XAxis dataKey="t" tick={{fontSize:8,fill:C.muted}} label={{value:"Time (s)",position:"insideBottom",fontSize:8,fill:C.muted}}/>
-                      <YAxis tick={{fontSize:8,fill:C.muted}} label={{value:"m/s",angle:-90,position:"insideLeft",fontSize:8,fill:C.muted}}/>
+                      <XAxis dataKey="t" tick={{fontSize:11,fill:"#94a3b8"}} label={{value:"Time (s)",position:"insideBottom",fontSize:12,fill:"#94a3b8"}}/>
+                      <YAxis tick={{fontSize:11,fill:"#94a3b8"}} label={{value:"m/s",angle:-90,position:"insideLeft",fontSize:12,fill:"#94a3b8"}}/>
                       <Tooltip {...TTP}/>
                       <Area type="stepAfter" dataKey="V" stroke={C.teal} strokeWidth={2} fill="url(#vg)" dot={false} name="Speed (m/s)"/>
-                      <ReferenceLine y={p.vCruise} stroke={C.blue} strokeDasharray="4 3" label={{value:"Vcr",fill:C.blue,fontSize:8}}/>
+                      <ReferenceLine y={p.vCruise} stroke={C.blue} strokeDasharray="4 3" label={{value:"Vcr",fill:C.blue,fontSize:11}}/>
                     </AreaChart>
                   </ResponsiveContainer>
                 </Panel>
@@ -577,7 +580,7 @@ export default function App(){
                           {PHC.map((c,i)=><Cell key={i} fill={c}/>)}
                         </Pie>
                         <Tooltip {...TTP} formatter={(v)=>[`${v} s`,"Duration"]}/>
-                        <Legend iconSize={8} wrapperStyle={{fontSize:8,color:C.muted}}/>
+                        <Legend iconSize={8} wrapperStyle={{fontSize:12,color:"#94a3b8"}}/>
                       </PieChart>
                     </ResponsiveContainer>
                   </Panel>
@@ -585,7 +588,7 @@ export default function App(){
                     <ResponsiveContainer width="100%" height={195}>
                       <RadarChart data={[{ph:"T/O",E:R.Eto},{ph:"Climb",E:R.Ecl},{ph:"Cruise",E:R.Ecr},{ph:"Desc",E:R.Edc},{ph:"Land",E:R.Eld},{ph:"Res",E:R.Eres}]}>
                         <PolarGrid stroke={C.border}/>
-                        <PolarAngleAxis dataKey="ph" tick={{fontSize:8,fill:C.muted}}/>
+                        <PolarAngleAxis dataKey="ph" tick={{fontSize:11,fill:"#94a3b8"}}/>
                         <Radar dataKey="E" stroke={C.teal} fill={C.teal} fillOpacity={0.2} name="kWh"/>
                         <Tooltip {...TTP}/>
                       </RadarChart>
@@ -612,7 +615,7 @@ export default function App(){
                           {["#3b82f6","#ef4444","#22c55e","#f59e0b","#8b5cf6","#ec4899","#06b6d4"].map((c,i)=><Cell key={i} fill={c}/>)}
                         </Pie>
                         <Tooltip {...TTP} formatter={(v)=>[v.toFixed(5),"CD₀"]}/>
-                        <Legend iconSize={8} wrapperStyle={{fontSize:8,color:C.muted}}/>
+                        <Legend iconSize={8} wrapperStyle={{fontSize:12,color:"#94a3b8"}}/>
                       </PieChart>
                     </ResponsiveContainer>
                   </Panel>
@@ -643,8 +646,8 @@ export default function App(){
                     <ResponsiveContainer width="100%" height={185}>
                       <LineChart data={R.polarData} margin={{top:5,right:8,left:-20,bottom:0}}>
                         <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
-                        <XAxis dataKey="CD" tick={{fontSize:7,fill:C.muted}} label={{value:"CD",position:"insideBottom",fontSize:7,fill:C.muted}}/>
-                        <YAxis tick={{fontSize:7,fill:C.muted}} label={{value:"CL",angle:-90,position:"insideLeft",fontSize:7,fill:C.muted}}/>
+                        <XAxis dataKey="CD" tick={{fontSize:11,fill:"#94a3b8"}} label={{value:"CD",position:"insideBottom",fontSize:12,fill:"#94a3b8"}}/>
+                        <YAxis tick={{fontSize:11,fill:"#94a3b8"}} label={{value:"CL",angle:-90,position:"insideLeft",fontSize:12,fill:"#94a3b8"}}/>
                         <Tooltip {...TTP}/>
                         <Line type="monotone" dataKey="CL" stroke={C.blue} strokeWidth={2} dot={false}/>
                       </LineChart>
@@ -654,11 +657,11 @@ export default function App(){
                     <ResponsiveContainer width="100%" height={185}>
                       <LineChart data={R.polarData} margin={{top:5,right:8,left:-20,bottom:0}}>
                         <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
-                        <XAxis dataKey="alpha" tick={{fontSize:7,fill:C.muted}} label={{value:"α (°)",position:"insideBottom",fontSize:7,fill:C.muted}}/>
-                        <YAxis tick={{fontSize:7,fill:C.muted}}/>
+                        <XAxis dataKey="alpha" tick={{fontSize:11,fill:"#94a3b8"}} label={{value:"α (°)",position:"insideBottom",fontSize:12,fill:"#94a3b8"}}/>
+                        <YAxis tick={{fontSize:11,fill:"#94a3b8"}}/>
                         <Tooltip {...TTP}/>
                         <Line type="monotone" dataKey="CL" stroke={C.green} strokeWidth={2} dot={false}/>
-                        <ReferenceLine y={p.clDesign} stroke={C.amber} strokeDasharray="3 3" label={{value:"CL_des",fill:C.amber,fontSize:7}}/>
+                        <ReferenceLine y={p.clDesign} stroke={C.amber} strokeDasharray="3 3" label={{value:"CL_des",fill:C.amber,fontSize:11}}/>
                       </LineChart>
                     </ResponsiveContainer>
                   </Panel>
@@ -669,11 +672,11 @@ export default function App(){
                           <stop offset="5%" stopColor={C.amber} stopOpacity={0.3}/><stop offset="95%" stopColor={C.amber} stopOpacity={0}/>
                         </linearGradient></defs>
                         <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
-                        <XAxis dataKey="alpha" tick={{fontSize:7,fill:C.muted}} label={{value:"α (°)",position:"insideBottom",fontSize:7,fill:C.muted}}/>
-                        <YAxis tick={{fontSize:7,fill:C.muted}}/>
+                        <XAxis dataKey="alpha" tick={{fontSize:11,fill:"#94a3b8"}} label={{value:"α (°)",position:"insideBottom",fontSize:12,fill:"#94a3b8"}}/>
+                        <YAxis tick={{fontSize:11,fill:"#94a3b8"}}/>
                         <Tooltip {...TTP}/>
                         <Area type="monotone" dataKey="LD" stroke={C.amber} strokeWidth={2} fill="url(#ldg)" dot={false}/>
-                        <ReferenceLine y={R.LDact} stroke={C.green} strokeDasharray="3 3" label={{value:`${R.LDact}`,fill:C.green,fontSize:7}}/>
+                        <ReferenceLine y={R.LDact} stroke={C.green} strokeDasharray="3 3" label={{value:`${R.LDact}`,fill:C.green,fontSize:11}}/>
                       </AreaChart>
                     </ResponsiveContainer>
                   </Panel>
@@ -691,7 +694,8 @@ export default function App(){
                   <KPI label="RPM" value={R.RPM} unit="rpm"/>
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-                  <Panel title="Actuator Disk + Motor Sizing" h={320}>
+                  <Panel title="Actuator Disk + Motor Sizing" h={380}>
+                    <div style={{overflowY:"auto",maxHeight:320}}>
                     {[["No. rotors (hover)",p.nPropHover],["Design diameter",`${p.propDiam} m`],
                       ["AD-derived diameter",`${R.Drotor} m`],["Disk loading",`${R.DLrotor} N/m²`],
                       ["Power loading",`${R.PLrotor} N/kW`],["Tip speed",`${R.TipSpd} m/s`],
@@ -702,19 +706,20 @@ export default function App(){
                       ["Shaft torque",`${R.Torque} N·m`],["Motor mass/rotor",`${R.MotMass} kg`],
                       ["Total motor mass",`${(R.MotMass*p.nPropHover).toFixed(1)} kg`],
                     ].map(([k,v],i)=>(
-                      <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"3px 0",borderBottom:`1px solid #0f131a`}}>
-                        <span style={{fontSize:9,color:C.muted}}>{k}</span>
-                        <span style={{fontSize:9,color:C.amber,fontFamily:"'DM Mono',monospace"}}>{v}</span>
+                      <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 0",borderBottom:`1px solid #0f131a`}}>
+                        <span style={{fontSize:10,color:"#94a3b8"}}>{k}</span>
+                        <span style={{fontSize:10,color:C.amber,fontFamily:"'DM Mono',monospace",fontWeight:600}}>{v}</span>
                       </div>
                     ))}
+                    </div>
                   </Panel>
                   <Panel title="Phase Power Comparison" h={320}>
                     <ResponsiveContainer width="100%" height={270}>
                       <BarChart data={[{ph:"T/O",v:R.Phov},{ph:"Climb",v:R.Pcl},{ph:"Cruise",v:R.Pcr},{ph:"Descent",v:R.Pdc},{ph:"Land",v:R.Phov},{ph:"Reserve",v:R.Pres}]}
                         margin={{top:5,right:8,left:-10,bottom:0}}>
                         <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
-                        <XAxis dataKey="ph" tick={{fontSize:8,fill:C.muted}}/>
-                        <YAxis tick={{fontSize:8,fill:C.muted}} label={{value:"kW",angle:-90,position:"insideLeft",fontSize:8,fill:C.muted}}/>
+                        <XAxis dataKey="ph" tick={{fontSize:11,fill:"#94a3b8"}}/>
+                        <YAxis tick={{fontSize:11,fill:"#94a3b8"}} label={{value:"kW",angle:-90,position:"insideLeft",fontSize:12,fill:"#94a3b8"}}/>
                         <Tooltip {...TTP}/>
                         <Bar dataKey="v" radius={[3,3,0,0]} name="Power (kW)">{PHC.map((c,i)=><Cell key={i} fill={c}/>)}</Bar>
                       </BarChart>
@@ -740,11 +745,11 @@ export default function App(){
                         <stop offset="5%" stopColor={C.green} stopOpacity={0.5}/><stop offset="95%" stopColor={C.red} stopOpacity={0.05}/>
                       </linearGradient></defs>
                       <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
-                      <XAxis dataKey="t" tick={{fontSize:8,fill:C.muted}} label={{value:"Time (s)",position:"insideBottom",fontSize:8,fill:C.muted}}/>
-                      <YAxis domain={[0,105]} tick={{fontSize:8,fill:C.muted}} label={{value:"SoC (%)",angle:-90,position:"insideLeft",fontSize:8,fill:C.muted}}/>
+                      <XAxis dataKey="t" tick={{fontSize:11,fill:"#94a3b8"}} label={{value:"Time (s)",position:"insideBottom",fontSize:12,fill:"#94a3b8"}}/>
+                      <YAxis domain={[0,105]} tick={{fontSize:11,fill:"#94a3b8"}} label={{value:"SoC (%)",angle:-90,position:"insideLeft",fontSize:12,fill:"#94a3b8"}}/>
                       <Tooltip {...TTP} formatter={(v)=>[`${v}%`,"SoC"]}/>
                       <ReferenceLine y={p.socMin*100} stroke={C.red} strokeDasharray="5 3"
-                        label={{value:`SoCmin ${(p.socMin*100).toFixed(0)}%`,fill:C.red,fontSize:8,position:"right"}}/>
+                        label={{value:`SoCmin ${(p.socMin*100).toFixed(0)}%`,fill:C.red,fontSize:11,position:"right"}}/>
                       <Area type="stepAfter" dataKey="SoC" stroke={C.green} strokeWidth={2.5} fill="url(#sg)" dot={false}/>
                       {R.tPhases.slice(1,-1).map((tp,i)=><ReferenceLine key={i} x={Math.round(tp)} stroke={PHC[i]} strokeDasharray="4 3" strokeWidth={1}/>)}
                     </AreaChart>
@@ -793,36 +798,37 @@ export default function App(){
                   <KPI label="Dive Speed Vd" value={R.VD} unit="m/s"/>
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-                  <Panel title="V-n Structural Envelope" h={290}>
-                    <ResponsiveContainer width="100%" height={240}>
-                      <LineChart data={R.vnData} margin={{top:5,right:10,left:-10,bottom:0}}>
+                  <Panel title="V-n Structural Envelope" h={310}>
+                    <ResponsiveContainer width="100%" height={260}>
+                      <LineChart data={R.vnData} margin={{top:10,right:30,left:10,bottom:20}}>
                         <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
-                        <XAxis dataKey="v" tick={{fontSize:7,fill:C.muted}} label={{value:"Airspeed (m/s)",position:"insideBottom",fontSize:7,fill:C.muted}}/>
-                        <YAxis domain={[-2.5,4.5]} tick={{fontSize:7,fill:C.muted}} label={{value:"Load factor n",angle:-90,position:"insideLeft",fontSize:7,fill:C.muted}}/>
+                        <XAxis dataKey="v" tick={{fontSize:11,fill:"#94a3b8"}} label={{value:"Airspeed (m/s)",position:"insideBottom",offset:-8,fontSize:12,fill:"#94a3b8"}}/>
+                        <YAxis domain={[-2.5,4.5]} tick={{fontSize:11,fill:"#94a3b8"}} label={{value:"Load factor n",angle:-90,position:"insideLeft",offset:10,fontSize:12,fill:"#94a3b8"}}/>
                         <Tooltip {...TTP}/>
-                        <ReferenceLine y={0} stroke={C.muted}/><ReferenceLine y={3.5} stroke={C.blue} strokeDasharray="4 3" label={{value:"n=3.5",fill:C.blue,fontSize:7}}/>
-                        <ReferenceLine y={-1.5} stroke={C.red} strokeDasharray="4 3" label={{value:"n=-1.5",fill:C.red,fontSize:7}}/>
-                        <ReferenceLine x={R.Vstall} stroke={C.amber} strokeDasharray="4 3" label={{value:"Vs",fill:C.amber,fontSize:7}}/>
-                        <ReferenceLine x={R.VA} stroke={C.green} strokeDasharray="4 3" label={{value:"Va",fill:C.green,fontSize:7}}/>
-                        <ReferenceLine x={p.vCruise} stroke={C.teal} strokeDasharray="4 3" label={{value:"Vc",fill:C.teal,fontSize:7}}/>
-                        <ReferenceLine x={R.VD} stroke={C.red} strokeDasharray="4 3" label={{value:"Vd",fill:C.red,fontSize:7}}/>
-                        <Line type="monotone" dataKey="nPos" stroke={C.blue} strokeWidth={2} dot={false} name="+n limit"/>
-                        <Line type="monotone" dataKey="nNeg" stroke={C.red} strokeWidth={2} dot={false} name="-n limit"/>
-                        <Legend iconSize={8} wrapperStyle={{fontSize:8,color:C.muted}}/>
+                        <ReferenceLine y={0} stroke={C.muted}/>
+                        <ReferenceLine y={3.5} stroke={C.blue} strokeDasharray="4 3" label={{value:"n=3.5",fill:C.blue,fontSize:11,fontWeight:600}}/>
+                        <ReferenceLine y={-1.5} stroke={C.red} strokeDasharray="4 3" label={{value:"n=-1.5",fill:C.red,fontSize:11,fontWeight:600}}/>
+                        <ReferenceLine x={R.Vstall} stroke={C.amber} strokeDasharray="4 3" label={{value:"Vs",fill:C.amber,fontSize:11,fontWeight:600,position:"top"}}/>
+                        <ReferenceLine x={R.VA} stroke={C.green} strokeDasharray="4 3" label={{value:"Va",fill:C.green,fontSize:11,fontWeight:600,position:"top"}}/>
+                        <ReferenceLine x={p.vCruise} stroke={C.teal} strokeDasharray="4 3" label={{value:"Vc",fill:C.teal,fontSize:11,fontWeight:600,position:"top"}}/>
+                        <ReferenceLine x={R.VD} stroke={C.red} strokeDasharray="4 3" label={{value:"Vd",fill:C.red,fontSize:11,fontWeight:600,position:"top"}}/>
+                        <Line type="monotone" dataKey="nPos" stroke={C.blue} strokeWidth={2.5} dot={false} name="+n limit"/>
+                        <Line type="monotone" dataKey="nNeg" stroke={C.red} strokeWidth={2.5} dot={false} name="-n limit"/>
+                        <Legend iconSize={10} wrapperStyle={{fontSize:12,color:"#94a3b8",paddingTop:4}}/>
                       </LineChart>
                     </ResponsiveContainer>
                   </Panel>
-                  <Panel title="Range-Payload Diagram" h={290}>
-                    <ResponsiveContainer width="100%" height={240}>
-                      <AreaChart data={R.rpData} margin={{top:5,right:10,left:-10,bottom:0}}>
+                  <Panel title="Range-Payload Diagram" h={310}>
+                    <ResponsiveContainer width="100%" height={260}>
+                      <AreaChart data={R.rpData} margin={{top:10,right:20,left:10,bottom:20}}>
                         <defs><linearGradient id="rpg" x1="0" y1="0" x2="0" y2="1">
                           <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.4}/><stop offset="95%" stopColor="#8b5cf6" stopOpacity={0.02}/>
                         </linearGradient></defs>
                         <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
-                        <XAxis dataKey="payload" tick={{fontSize:7,fill:C.muted}} label={{value:"Payload (kg)",position:"insideBottom",fontSize:7,fill:C.muted}}/>
-                        <YAxis tick={{fontSize:7,fill:C.muted}} label={{value:"Range (km)",angle:-90,position:"insideLeft",fontSize:7,fill:C.muted}}/>
+                        <XAxis dataKey="payload" tick={{fontSize:11,fill:"#94a3b8"}} label={{value:"Payload (kg)",position:"insideBottom",fontSize:12,fill:"#94a3b8"}}/>
+                        <YAxis tick={{fontSize:11,fill:"#94a3b8"}} label={{value:"Range (km)",angle:-90,position:"insideLeft",fontSize:12,fill:"#94a3b8"}}/>
                         <Tooltip {...TTP}/>
-                        <ReferenceLine x={p.payload} stroke={C.amber} strokeDasharray="4 3" label={{value:"Design",fill:C.amber,fontSize:7}}/>
+                        <ReferenceLine x={p.payload} stroke={C.amber} strokeDasharray="4 3" label={{value:"Design",fill:C.amber,fontSize:11}}/>
                         <ReferenceLine y={p.range} stroke={C.amber} strokeDasharray="4 3"/>
                         <Area type="monotone" dataKey="range" stroke="#8b5cf6" strokeWidth={2} fill="url(#rpg)" dot={false} name="Range (km)"/>
                       </AreaChart>
@@ -842,16 +848,27 @@ export default function App(){
                   <KPI label="MAC" value={R.MAC} unit="m"/>
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-                  <Panel title="CG / NP / AC Positions (from nose)" h={290}>
-                    <div style={{position:"relative",height:50,margin:"10px 0 16px"}}>
-                      <div style={{position:"absolute",left:"8%",right:"5%",top:"50%",height:2,background:C.border,borderRadius:1}}/>
-                      <div style={{position:"absolute",left:"5%",top:"10%",fontSize:22}}>✈️</div>
-                      <div style={{position:"absolute",right:"2%",top:"30%",fontSize:9,color:C.muted,fontFamily:"'DM Mono',monospace"}}>{p.fusLen}m</div>
+                  <Panel title="CG / NP / AC Positions (from nose)" h={320}>
+                    <div style={{position:"relative",height:90,margin:"10px 0 8px",background:"#0a0d14",borderRadius:6,border:"1px solid #1c2333"}}>
+                      {/* fuselage body */}
+                      <div style={{position:"absolute",left:"10%",right:"8%",top:"44%",height:4,background:"#1e2a3a",borderRadius:2}}/>
+                      {/* nose */}
+                      <div style={{position:"absolute",left:"6%",top:"30%",fontSize:24}}>✈️</div>
+                      {/* length label */}
+                      <div style={{position:"absolute",right:"2%",bottom:4,fontSize:10,color:"#64748b",fontFamily:"'DM Mono',monospace"}}>{p.fusLen} m</div>
+                      {/* scale ticks */}
+                      {[0.25,0.5,0.75,1.0].map(frac=>(
+                        <div key={frac} style={{position:"absolute",left:`${10+frac*82}%`,top:"55%",width:1,height:12,background:"#1e2a3a"}}/>
+                      ))}
                       {[[R.xCGtotal,C.amber,"CG"],[R.xNP,C.blue,"NP"],[1.45+R.Xac,C.green,"AC"]].map(([x,col,lbl])=>{
-                        const pct=Math.min(90,Math.max(8,(x/p.fusLen)*85+8));
-                        return(<div key={lbl} style={{position:"absolute",left:`${pct}%`,top:0,transform:"translateX(-50%)"}}>
-                          <div style={{width:2,height:50,background:col,opacity:0.9}}/>
-                          <div style={{fontSize:7,color:col,fontFamily:"'DM Mono',monospace",textAlign:"center",whiteSpace:"nowrap",marginTop:2}}>{lbl} {x}m</div>
+                        const pct=Math.min(92,Math.max(10,(x/p.fusLen)*82+10));
+                        return(<div key={lbl} style={{position:"absolute",left:`${pct}%`,top:0,bottom:0,transform:"translateX(-50%)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
+                          <div style={{fontSize:10,color:col,fontFamily:"'DM Mono',monospace",fontWeight:700,
+                            writingMode:"vertical-rl",textOrientation:"mixed",transform:"rotate(180deg)",
+                            letterSpacing:"0.05em",lineHeight:1,marginBottom:4,whiteSpace:"nowrap"}}>
+                            {lbl}={x}m
+                          </div>
+                          <div style={{width:2,height:"100%",background:col,opacity:0.85,borderRadius:1,minHeight:60}}/>
                         </div>);
                       })}
                     </div>
@@ -869,8 +886,8 @@ export default function App(){
                     <ResponsiveContainer width="100%" height={240}>
                       <BarChart layout="vertical" data={R.weightBreak} margin={{top:0,right:30,left:60,bottom:0}}>
                         <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
-                        <XAxis type="number" tick={{fontSize:7,fill:C.muted}}/>
-                        <YAxis dataKey="name" type="category" tick={{fontSize:7,fill:C.muted}}/>
+                        <XAxis type="number" tick={{fontSize:11,fill:"#94a3b8"}}/>
+                        <YAxis dataKey="name" type="category" tick={{fontSize:11,fill:"#94a3b8"}}/>
                         <Tooltip {...TTP}/>
                         <Bar dataKey="val" radius={[0,3,3,0]} name="kg">
                           {R.weightBreak.map((_,i)=><Cell key={i} fill={["#3b82f6","#ef4444","#22c55e","#f59e0b","#8b5cf6","#ec4899","#06b6d4","#84cc16","#f97316","#a78bfa"][i]}/>)}
@@ -888,7 +905,7 @@ export default function App(){
                           {[C.blue,C.amber,C.green].map((c,i)=><Cell key={i} fill={c}/>)}
                         </Pie>
                         <Tooltip {...TTP} formatter={(v,n)=>[`${v.toFixed(1)} kg (${(v/R.MTOW*100).toFixed(1)}%)`,n]}/>
-                        <Legend iconSize={8} wrapperStyle={{fontSize:9,color:C.muted}}/>
+                        <Legend iconSize={8} wrapperStyle={{fontSize:12,color:"#94a3b8"}}/>
                       </PieChart>
                     </ResponsiveContainer>
                   </Panel>
@@ -922,11 +939,11 @@ export default function App(){
                   <ResponsiveContainer width="100%" height={230}>
                     <LineChart data={R.convData} margin={{top:5,right:20,left:-10,bottom:0}}>
                       <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
-                      <XAxis dataKey="iter" tick={{fontSize:8,fill:C.muted}} label={{value:"Iteration",position:"insideBottom",fontSize:8,fill:C.muted}}/>
-                      <YAxis tick={{fontSize:8,fill:C.muted}} label={{value:"MTOW (kg)",angle:-90,position:"insideLeft",fontSize:8,fill:C.muted}}/>
+                      <XAxis dataKey="iter" tick={{fontSize:11,fill:"#94a3b8"}} label={{value:"Iteration",position:"insideBottom",fontSize:12,fill:"#94a3b8"}}/>
+                      <YAxis tick={{fontSize:11,fill:"#94a3b8"}} label={{value:"MTOW (kg)",angle:-90,position:"insideLeft",fontSize:12,fill:"#94a3b8"}}/>
                       <Tooltip {...TTP}/>
                       <Line type="monotone" dataKey="MTOW" stroke={C.amber} strokeWidth={2} dot={{r:3,fill:C.amber}} name="MTOW (kg)"/>
-                      <ReferenceLine y={R.MTOW} stroke={C.green} strokeDasharray="4 3" label={{value:"Converged",fill:C.green,fontSize:8}}/>
+                      <ReferenceLine y={R.MTOW} stroke={C.green} strokeDasharray="4 3" label={{value:"Converged",fill:C.green,fontSize:11}}/>
                     </LineChart>
                   </ResponsiveContainer>
                 </Panel>
@@ -934,11 +951,11 @@ export default function App(){
                   <ResponsiveContainer width="100%" height={205}>
                     <LineChart data={R.convData.filter(d=>d.Energy!=null)} margin={{top:5,right:20,left:-10,bottom:0}}>
                       <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
-                      <XAxis dataKey="iter" tick={{fontSize:8,fill:C.muted}} label={{value:"Iteration",position:"insideBottom",fontSize:8,fill:C.muted}}/>
-                      <YAxis tick={{fontSize:8,fill:C.muted}} label={{value:"Total Energy (kWh)",angle:-90,position:"insideLeft",fontSize:8,fill:C.muted}}/>
+                      <XAxis dataKey="iter" tick={{fontSize:11,fill:"#94a3b8"}} label={{value:"Iteration",position:"insideBottom",fontSize:12,fill:"#94a3b8"}}/>
+                      <YAxis tick={{fontSize:11,fill:"#94a3b8"}} label={{value:"Total Energy (kWh)",angle:-90,position:"insideLeft",fontSize:12,fill:"#94a3b8"}}/>
                       <Tooltip {...TTP}/>
                       <Line type="monotone" dataKey="Energy" stroke={C.teal} strokeWidth={2} dot={{r:3,fill:C.teal}} name="Energy (kWh)"/>
-                      <ReferenceLine y={R.Etot} stroke={C.green} strokeDasharray="4 3" label={{value:"Converged",fill:C.green,fontSize:8}}/>
+                      <ReferenceLine y={R.Etot} stroke={C.green} strokeDasharray="4 3" label={{value:"Converged",fill:C.green,fontSize:11}}/>
                     </LineChart>
                   </ResponsiveContainer>
                 </Panel>
