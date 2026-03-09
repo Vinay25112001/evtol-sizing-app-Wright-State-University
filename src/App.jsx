@@ -57,9 +57,8 @@ function runSizing(p) {
     Edc=Math.abs(Pdc)*tdc/3600; Eld=Phov*tld/3600; Eres=Pres*tres/3600;
     Etot=Eto+Ecl+Ecr+Edc+Eld+Eres;
     Wempty=p.ewf*MTOW;
-    // FIXED: correct formula so final SoC lands exactly at socMin
-    // Pack = Etot/(1-socMin)  =>  Wbat = Etot*1000/((1-socMin)*sedCell*etaBat)
-    Wbat=Etot*1000/((1-p.socMin)*p.sedCell*p.etaBat);
+    // Original MATLAB formula: W_battery = E_total*1000*(1+SoCmin)/(SED_cell*eta_bat)
+    Wbat=Etot*1000*(1+p.socMin)/(p.sedCell*p.etaBat);
     const mn=p.payload+Wempty+Wbat;
     energyH.push(+Etot.toFixed(3)); mtowH.push(+mn.toFixed(2));
     if(Math.abs(mn-MTOW)<1e-6){MTOW=mn;break;}
@@ -323,7 +322,7 @@ export default function App(){
     payload:455,range:250,vCruise:67,cruiseAlt:1000,reserveRange:60,hoverHeight:15.24,
     LD:15,AR:9,eOsw:0.85,clDesign:0.60,taper:0.45,tc:0.15,
     nPropHover:6,propDiam:3.0,etaHov:0.63,etaSys:0.765,rateOfClimb:5.08,climbAngle:5,
-    sedCell:275,etaBat:0.90,socMin:0.20,ewf:0.52,
+    sedCell:275,etaBat:0.90,socMin:0.167,ewf:0.52,
     fusLen:5.6,fusDiam:1.65,
   });
   const set=useCallback(k=>v=>setP(prev=>({...prev,[k]:v})),[]);
@@ -388,7 +387,7 @@ export default function App(){
         )}
         <button onClick={()=>setP({payload:455,range:250,vCruise:67,cruiseAlt:1000,reserveRange:60,hoverHeight:15.24,
           LD:15,AR:9,eOsw:0.85,clDesign:0.60,taper:0.45,tc:0.15,nPropHover:6,propDiam:3.0,
-          etaHov:0.63,etaSys:0.765,rateOfClimb:5.08,climbAngle:5,sedCell:275,etaBat:0.90,socMin:0.20,ewf:0.52,
+          etaHov:0.63,etaSys:0.765,rateOfClimb:5.08,climbAngle:5,sedCell:275,etaBat:0.90,socMin:0.167,ewf:0.52,
           fusLen:5.6,fusDiam:1.65})}
           style={{marginLeft:"auto",padding:"5px 12px",background:"transparent",border:`1px solid ${C.border}`,
             borderRadius:4,color:C.muted,fontSize:9,cursor:"pointer",fontFamily:"'DM Mono',monospace"}}>↺ RESET</button>
