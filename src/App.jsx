@@ -158,7 +158,7 @@ function runSizing(p) {
   const rpData=Array.from({length:60},(_,i)=>{
     const pay=(MTOW-Wempty-50)*i/59,Wavail=MTOW-Wempty-pay;
     if(Wavail<=0)return{payload:+pay.toFixed(0),range:0};
-    const Eavail=Wavail*p.sedCell*p.etaBat*(1-p.socMin)/1000;
+    const Eavail=Wavail*p.sedCell*p.etaBat/(1000*(1+p.socMin));  // usable fraction = 1/(1+SoCmin)
     return{payload:+pay.toFixed(0),range:+Math.max(0,((Eavail-Eto-Eld)/Efl_design)*p.range).toFixed(1)};
   });
 
@@ -179,7 +179,8 @@ function runSizing(p) {
     const t=Tend*i/N;
     let ph=5; for(let j=0;j<6;j++)if(t>=tPhases[j]&&t<tPhases[j+1]){ph=j;break;}
     const Ec=Ecum_ph[ph]+phPow[ph]*((t-tPhases[ph])/3600);
-    const soc=Math.max(p.socMin,(1-Ec/PackkWh))*100;
+    const socFloor=p.socMin/(1+p.socMin);  // true floor = SoCmin/(1+SoCmin)
+    const soc=Math.max(socFloor,(1-Ec/PackkWh))*100;
     powerSteps.push({t:+t.toFixed(0),P:+phPow[ph].toFixed(1),ph:["TO","Climb","Cruise","Desc","Land","Res"][ph]});
     socSteps.push({t:+t.toFixed(0),SoC:+soc.toFixed(2)});
     velSteps.push({t:+t.toFixed(0),V:+phV[ph].toFixed(1)});
@@ -207,7 +208,7 @@ function runSizing(p) {
     {label:"SM 5–25% MAC",ok:SM>=0.05&&SM<=0.25,val:`${(SM*100).toFixed(1)}%`},
     {label:"Tip Mach < 0.70",ok:TipMach<0.70,val:`M${TipMach.toFixed(3)}`},
     {label:"Battery Frac < 55%",ok:Wbat/MTOW<0.55,val:`${(Wbat/MTOW*100).toFixed(1)}%`},
-    {label:"Final SoC ≥ SoCmin",ok:(1-Etot/PackkWh)>=p.socMin-0.01,val:`${((1-Etot/PackkWh)*100).toFixed(1)}%`},
+    {label:"Final SoC ≥ SoCmin",ok:(1-Etot/PackkWh)>=(p.socMin/(1+p.socMin))-0.01,val:`${((1-Etot/PackkWh)*100).toFixed(1)}% (floor ${(p.socMin/(1+p.socMin)*100).toFixed(1)}%)`},
     {label:"Actual L/D > 10",ok:LDact>10,val:LDact.toFixed(2)},
     {label:"Mach < 0.45",ok:Mach<0.45,val:`M${Mach.toFixed(3)}`},
   ];
@@ -322,7 +323,7 @@ export default function App(){
     payload:455,range:250,vCruise:67,cruiseAlt:1000,reserveRange:60,hoverHeight:15.24,
     LD:15,AR:9,eOsw:0.85,clDesign:0.60,taper:0.45,tc:0.15,
     nPropHover:6,propDiam:3.0,etaHov:0.63,etaSys:0.765,rateOfClimb:5.08,climbAngle:5,
-    sedCell:275,etaBat:0.90,socMin:0.167,ewf:0.52,
+    sedCell:275,etaBat:0.90,socMin:0.2,ewf:0.52,
     fusLen:5.6,fusDiam:1.65,
   });
   const set=useCallback(k=>v=>setP(prev=>({...prev,[k]:v})),[]);
@@ -387,7 +388,7 @@ export default function App(){
         )}
         <button onClick={()=>setP({payload:455,range:250,vCruise:67,cruiseAlt:1000,reserveRange:60,hoverHeight:15.24,
           LD:15,AR:9,eOsw:0.85,clDesign:0.60,taper:0.45,tc:0.15,nPropHover:6,propDiam:3.0,
-          etaHov:0.63,etaSys:0.765,rateOfClimb:5.08,climbAngle:5,sedCell:275,etaBat:0.90,socMin:0.167,ewf:0.52,
+          etaHov:0.63,etaSys:0.765,rateOfClimb:5.08,climbAngle:5,sedCell:275,etaBat:0.90,socMin:0.2,ewf:0.52,
           fusLen:5.6,fusDiam:1.65})}
           style={{marginLeft:"auto",padding:"5px 12px",background:"transparent",border:`1px solid ${C.border}`,
             borderRadius:4,color:C.muted,fontSize:9,cursor:"pointer",fontFamily:"'DM Mono',monospace"}}>↺ RESET</button>
@@ -735,7 +736,7 @@ export default function App(){
                   <KPI label="Pack Energy" value={R.PackkWh} unit="kWh" color={C.green} sub={`Mission: ${R.Etot} kWh`}/>
                   <KPI label="Battery Mass" value={R.Wbat} unit="kg" color={R.Wbat/R.MTOW<0.4?C.green:C.amber} sub={`SED ${R.SEDpack} Wh/kg`}/>
                   <KPI label="Cell Config" value={`${R.Nseries}s×${R.Npar}p`} unit="" sub={`${R.Ncells} cells total`}/>
-                  <KPI label="Final SoC" value={((1-R.Etot/R.PackkWh)*100).toFixed(1)} unit="%" color={(1-R.Etot/R.PackkWh)>=p.socMin-0.01?C.green:C.red}/>
+                  <KPI label="Final SoC" value={((1-R.Etot/R.PackkWh)*100).toFixed(1)} unit="%" color={(1-R.Etot/R.PackkWh)>=(p.socMin/(1+p.socMin))-0.01?C.green:C.red}/>
                 </div>
                 <Panel title="Battery State of Charge — Full Mission" h={285}>
                   <ResponsiveContainer width="100%" height={235}>
@@ -747,8 +748,8 @@ export default function App(){
                       <XAxis dataKey="t" tick={{fontSize:11,fill:"#94a3b8"}} label={{value:"Time (s)",position:"insideBottom",fontSize:12,fill:"#94a3b8"}}/>
                       <YAxis domain={[0,105]} tick={{fontSize:11,fill:"#94a3b8"}} label={{value:"SoC (%)",angle:-90,position:"insideLeft",fontSize:12,fill:"#94a3b8"}}/>
                       <Tooltip {...TTP} formatter={(v)=>[`${v}%`,"SoC"]}/>
-                      <ReferenceLine y={p.socMin*100} stroke={C.red} strokeDasharray="5 3"
-                        label={{value:`SoCmin ${(p.socMin*100).toFixed(0)}%`,fill:C.red,fontSize:11,position:"right"}}/>
+                      <ReferenceLine y={p.socMin/(1+p.socMin)*100} stroke={C.red} strokeDasharray="5 3"
+                        label={{value:`SoCmin ${(p.socMin/(1+p.socMin)*100).toFixed(1)}%`,fill:C.red,fontSize:11,position:"right"}}/>
                       <Area type="stepAfter" dataKey="SoC" stroke={C.green} strokeWidth={2.5} fill="url(#sg)" dot={false}/>
                       {R.tPhases.slice(1,-1).map((tp,i)=><ReferenceLine key={i} x={Math.round(tp)} stroke={PHC[i]} strokeDasharray="4 3" strokeWidth={1}/>)}
                     </AreaChart>
