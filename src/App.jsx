@@ -100,13 +100,14 @@ function runSizing(p) {
 
   /* Drag (Raymer) */
   const Sww=2*Swing*(1+0.25*p.tc*(1+p.taper*0.25));
-  const Swf=Math.PI*1.65*5.6*Math.pow(1-2/5.6,2/3)*(1+1/(5.6/1.65)**2);
+  const fL=p.fusLen,fD=p.fusDiam;
+  const Swf=Math.PI*fD*fL*Math.pow(1-2/fL,2/3)*(1+1/(fL/fD)**2);
   const Swhs=2*Swing*0.18,Swvs=2*Swing*0.12,Swn=p.nPropHover*Math.PI*0.2*0.35;
-  const Refus=rhoCr*p.vCruise*5.6/muCr;
+  const Refus=rhoCr*p.vCruise*fL/muCr;
   const Cfw=0.455/Math.log10(Re_)**2.58/(1+0.144*Mach**2)**0.65;
   const Cff=0.455/Math.log10(Refus)**2.58/(1+0.144*Mach**2)**0.65;
   const FFw=(1+0.6/0.3*p.tc+100*p.tc**4)*1.05;
-  const FFf=1+60/(5.6/1.65)**3+(5.6/1.65)/400;
+  const FFf=1+60/(fL/fD)**3+(fL/fD)/400;
   const CD0w=Cfw*FFw*Sww/Swing,CD0f=Cff*FFf*Swf/Swing;
   const CD0h=Cfw*1.05*Swhs/Swing,CD0v=Cfw*1.05*Swvs/Swing;
   const CD0n=Cfw*1.30*Swn/Swing,CD0g=0.015,CD0m=0.002;
@@ -115,11 +116,11 @@ function runSizing(p) {
   const CDtot=CD0tot+CDi,LDact=p.clDesign/CDtot;
 
   /* Stability */
-  const xCGfus=5.6*0.42,xCGwing=1.45+Xac,xCGbat=5.6*0.38,xCGpay=5.6*0.40;
+  const xCGfus=fL*0.42,xCGwing=1.45+Xac,xCGbat=fL*0.38,xCGpay=fL*0.40;
   const Wfusc=Wempty*0.35,Wwingc=Wempty*0.18,Wmotc=Wempty*0.22,Wavc=Wempty*0.04,Wothc=Wempty*0.21;
   const xCGempty=(Wfusc*xCGfus+Wwingc*xCGwing+Wmotc*xCGfus+Wavc*0.8+Wothc*xCGfus)/Wempty;
   const xCGtotal=(Wempty*xCGempty+Wbat*xCGbat+p.payload*xCGpay)/MTOW;
-  const xACwing=1.45+Xac,lh=5.6-xACwing,Sh=Swing*0.18;
+  const xACwing=1.45+Xac,lh=fL-xACwing,Sh=Swing*0.18;
   const CLaW=2*Math.PI*(1+0.77*p.tc),dw=2*CLaW/(Math.PI*p.AR);
   const xNP=xACwing+(Sh/Swing)*0.9*(1-dw)*lh;
   const SM=(xNP-xCGtotal)/MAC;
@@ -311,7 +312,7 @@ function Acc({title,icon,children}){
 
 const TABS=["Overview","Mission","Wing & Aero","Propulsion","Battery","Performance","Stability","Convergence"];
 const TABI=["⬛","🛫","✈️","🔧","🔋","📈","⚖️","🔄"];
-const TTP={contentStyle:{background:C.panel,border:`1px solid ${C.border}`,borderRadius:5,fontSize:10,color:C.text}};
+const TTP={contentStyle:{background:C.panel,border:`1px solid ${C.border}`,borderRadius:5,fontSize:10,color:C.text},labelStyle:{color:C.muted},itemStyle:{color:C.text}};
 
 /* ═══════════════════════════════════
    APP
@@ -323,6 +324,7 @@ export default function App(){
     LD:15,AR:9,eOsw:0.85,clDesign:0.60,taper:0.45,tc:0.15,
     nPropHover:6,propDiam:3.0,etaHov:0.63,etaSys:0.765,rateOfClimb:5.08,climbAngle:5,
     sedCell:275,etaBat:0.90,socMin:0.20,ewf:0.52,
+    fusLen:5.6,fusDiam:1.65,
   });
   const set=useCallback(k=>v=>setP(prev=>({...prev,[k]:v})),[]);
   const R=useMemo(()=>{try{return runSizing(p);}catch{return null;}},[p]);
@@ -334,13 +336,19 @@ export default function App(){
       fontFamily:"'Barlow',system-ui,sans-serif",overflow:"hidden"}}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Barlow:wght@400;600;700;800&display=swap');
+        html,body{background:#07090f;color:#e2e8f0;margin:0;padding:0}
+        *{box-sizing:border-box}
         ::-webkit-scrollbar{width:5px;height:5px}
         ::-webkit-scrollbar-track{background:#07090f}
         ::-webkit-scrollbar-thumb{background:#1c2333;border-radius:3px}
         input[type=range]{-webkit-appearance:none;appearance:none}
-        input[type=number]{-moz-appearance:textfield}
+        input[type=number]{-moz-appearance:textfield;color:#f59e0b !important}
         input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
-        *{box-sizing:border-box}
+        .recharts-default-tooltip{background:#0d1117 !important;border:1px solid #1c2333 !important;border-radius:5px !important}
+        .recharts-tooltip-label{color:#94a3b8 !important;font-size:10px}
+        .recharts-tooltip-item{color:#e2e8f0 !important;font-size:10px}
+        .recharts-tooltip-item-value{color:#f59e0b !important}
+        .recharts-legend-item-text{color:#64748b !important}
       `}</style>
 
       {/* HEADER */}
@@ -377,7 +385,8 @@ export default function App(){
         )}
         <button onClick={()=>setP({payload:455,range:250,vCruise:67,cruiseAlt:1000,reserveRange:60,hoverHeight:15.24,
           LD:15,AR:9,eOsw:0.85,clDesign:0.60,taper:0.45,tc:0.15,nPropHover:6,propDiam:3.0,
-          etaHov:0.63,etaSys:0.765,rateOfClimb:5.08,climbAngle:5,sedCell:275,etaBat:0.90,socMin:0.20,ewf:0.52})}
+          etaHov:0.63,etaSys:0.765,rateOfClimb:5.08,climbAngle:5,sedCell:275,etaBat:0.90,socMin:0.20,ewf:0.52,
+          fusLen:5.6,fusDiam:1.65})}
           style={{marginLeft:"auto",padding:"5px 12px",background:"transparent",border:`1px solid ${C.border}`,
             borderRadius:4,color:C.muted,fontSize:9,cursor:"pointer",fontFamily:"'DM Mono',monospace"}}>↺ RESET</button>
       </div>
@@ -417,6 +426,8 @@ export default function App(){
           </Acc>
           <Acc title="Structure" icon="🏗️">
             <Slider label="Empty Weight Fraction" unit="" value={p.ewf} min={0.30} max={0.70} step={0.01} onChange={set("ewf")} note="Wempty/MTOW"/>
+            <Slider label="Fuselage Length" unit="m" value={p.fusLen} min={3.0} max={10.0} step={0.1} onChange={set("fusLen")} note="Affects drag, stability, tail arm"/>
+            <Slider label="Fuselage Diameter" unit="m" value={p.fusDiam} min={0.8} max={2.5} step={0.05} onChange={set("fusDiam")} note={`Fineness ratio: ${(p.fusLen/p.fusDiam).toFixed(1)}`}/>
           </Acc>
           {/* Design checks */}
           {R&&(
@@ -835,9 +846,9 @@ export default function App(){
                     <div style={{position:"relative",height:50,margin:"10px 0 16px"}}>
                       <div style={{position:"absolute",left:"8%",right:"5%",top:"50%",height:2,background:C.border,borderRadius:1}}/>
                       <div style={{position:"absolute",left:"5%",top:"10%",fontSize:22}}>✈️</div>
-                      <div style={{position:"absolute",right:"2%",top:"30%",fontSize:9,color:C.muted,fontFamily:"'DM Mono',monospace"}}>5.6m</div>
+                      <div style={{position:"absolute",right:"2%",top:"30%",fontSize:9,color:C.muted,fontFamily:"'DM Mono',monospace"}}>{p.fusLen}m</div>
                       {[[R.xCGtotal,C.amber,"CG"],[R.xNP,C.blue,"NP"],[1.45+R.Xac,C.green,"AC"]].map(([x,col,lbl])=>{
-                        const pct=Math.min(90,Math.max(8,(x/5.6)*85+8));
+                        const pct=Math.min(90,Math.max(8,(x/p.fusLen)*85+8));
                         return(<div key={lbl} style={{position:"absolute",left:`${pct}%`,top:0,transform:"translateX(-50%)"}}>
                           <div style={{width:2,height:50,background:col,opacity:0.9}}/>
                           <div style={{fontSize:7,color:col,fontFamily:"'DM Mono',monospace",textAlign:"center",whiteSpace:"nowrap",marginTop:2}}>{lbl} {x}m</div>
