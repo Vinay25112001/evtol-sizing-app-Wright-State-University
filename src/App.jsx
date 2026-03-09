@@ -1096,45 +1096,123 @@ export default function App(){
                         </div>
                       ))}
                     </div>
+                    {/* SVG schematic — below Weight & Drag, beside Control Authority */}
+                    <div style={{background:C.panel,border:`1px solid ${C.border}`,borderRadius:8,padding:"12px 14px"}}>
+                      <div style={{fontSize:9,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.12em",
+                        fontFamily:"'DM Mono',monospace",marginBottom:8,borderBottom:`1px solid ${C.border}`,paddingBottom:5}}>
+                        Rear View Schematic
+                      </div>
+                      <svg viewBox="-110 -95 220 130" width="100%" height={160} style={{overflow:"visible"}}>
+                        <circle cx={0} cy={0} r={12} fill="#1e2a3a" stroke="#2a3a5c" strokeWidth={1.5}/>
+                        <text x={0} y={4} textAnchor="middle" fill="#64748b" fontSize={7} fontFamily="DM Mono,monospace">fus</text>
+                        {(()=>{
+                          const gr=p.vtGamma*Math.PI/180;
+                          const panelLen=65;
+                          const x2l=-(panelLen*Math.cos(gr)), y2l=-(panelLen*Math.sin(gr));
+                          const x2r= (panelLen*Math.cos(gr)), y2r=-(panelLen*Math.sin(gr));
+                          const chordScale=R.Cr_vt*12;
+                          return(<>
+                            <line x1={0} y1={0} x2={x2l} y2={y2l} stroke={C.amber} strokeWidth={2.5} strokeLinecap="round"/>
+                            <polygon points={`${x2l},${y2l} ${x2l-chordScale*0.2},${y2l-4} ${x2l+chordScale*0.6},${y2l-4} ${x2l+chordScale*0.4},${y2l}`}
+                              fill={C.amber} opacity={0.25} stroke={C.amber} strokeWidth={0.5}/>
+                            <line x1={0} y1={0} x2={x2r} y2={y2r} stroke={C.amber} strokeWidth={2.5} strokeLinecap="round"/>
+                            <polygon points={`${x2r},${y2r} ${x2r-chordScale*0.6},${y2r-4} ${x2r+chordScale*0.2},${y2r-4} ${x2r-chordScale*0.4},${y2r}`}
+                              fill={C.amber} opacity={0.25} stroke={C.amber} strokeWidth={0.5}/>
+                            <path d={`M ${28*Math.cos(Math.PI-gr)},${-28*Math.sin(Math.PI-gr)} A 28 28 0 0 1 ${28*Math.cos(gr)},${-28*Math.sin(gr)}`}
+                              fill="none" stroke={C.teal} strokeWidth={1} strokeDasharray="3 2"/>
+                            <text x={0} y={-31} textAnchor="middle" fill={C.teal} fontSize={10} fontFamily="DM Mono,monospace">Γ={p.vtGamma}°</text>
+                            <text x={0} y={-43} textAnchor="middle" fill={C.green} fontSize={9} fontFamily="DM Mono,monospace">opt={R.vtGamma_opt}°</text>
+                            <text x={x2l-3} y={y2l-7} textAnchor="middle" fill={C.amber} fontSize={8} fontFamily="DM Mono,monospace">{R.bvt_panel}m</text>
+                            <text x={x2r+3} y={y2r-7} textAnchor="middle" fill={C.amber} fontSize={8} fontFamily="DM Mono,monospace">{R.bvt_panel}m</text>
+                            <line x1={-85} y1={0} x2={85} y2={0} stroke="#1e2a3a" strokeWidth={1} strokeDasharray="4 3"/>
+                            <line x1={0} y1={-85} x2={0} y2={18} stroke="#1e2a3a" strokeWidth={1} strokeDasharray="4 3"/>
+                            <text x={87} y={4} fill="#334155" fontSize={7} fontFamily="DM Mono,monospace">H</text>
+                            <text x={2} y={-87} fill="#334155" fontSize={7} fontFamily="DM Mono,monospace">V</text>
+                          </>);
+                        })()}
+                      </svg>
+                    </div>
                   </div>
                   {/* Dihedral trade chart + effectiveness */}
                   <div style={{display:"flex",flexDirection:"column",gap:10}}>
                     <div style={{background:C.panel,border:`1px solid ${C.border}`,borderRadius:8,padding:"12px 14px"}}>
                       <div style={{fontSize:9,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.12em",
                         fontFamily:"'DM Mono',monospace",marginBottom:8,borderBottom:`1px solid ${C.border}`,paddingBottom:5}}>
-                        Dihedral Angle Trade — Pitch vs Yaw Effectiveness
+                        Dihedral Angle Trade — Intrinsic Effectiveness &amp; Required Area
                       </div>
-                      <ResponsiveContainer width="100%" height={200}>
-                        <LineChart
-                          data={Array.from({length:71},(_,i)=>{
-                            const gd=i+10,gr=gd*Math.PI/180;
-                            // Panel sized correctly at each Γ: S_panel = max(Sh_req/cos²Γ, Sv_req/sin²Γ)
-                            const c2=Math.cos(gr)**2, s2=Math.sin(gr)**2;
-                            const Sp=Math.max(R.Sh_req/c2, R.Sv_req/s2);
-                            return{
-                              gamma:gd,
-                              pitch_eff:+(Sp*c2/R.Sh_req*100).toFixed(1),
-                              yaw_eff:+(Sp*s2/R.Sv_req*100).toFixed(1),
-                              total_area:+(2*Sp).toFixed(2),
-                            };
-                          })}
-                          margin={{top:5,right:20,left:10,bottom:20}}>
-                          <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
-                          <XAxis dataKey="gamma" tick={{fontSize:11,fill:"#94a3b8"}}
-                            label={{value:"Dihedral Γ (°)",position:"insideBottom",offset:-8,fontSize:12,fill:"#94a3b8"}}/>
-                          <YAxis tick={{fontSize:11,fill:"#94a3b8"}}
-                            label={{value:"Effectiveness (%)",angle:-90,position:"insideLeft",offset:10,fontSize:12,fill:"#94a3b8"}}/>
-                          <Tooltip {...TTP} formatter={(v,n)=>[`${v}%`,n]}/>
-                          <ReferenceLine x={p.vtGamma} stroke={C.amber} strokeDasharray="4 3"
-                            label={{value:"Set Γ",fill:C.amber,fontSize:11,position:"top"}}/>
-                          <ReferenceLine x={R.vtGamma_opt} stroke={C.green} strokeDasharray="4 3"
-                            label={{value:"Opt Γ",fill:C.green,fontSize:11,position:"top"}}/>
-                          <ReferenceLine y={100} stroke={C.dim} strokeDasharray="3 3"/>
-                          <Line type="monotone" dataKey="pitch_eff" stroke={C.blue} strokeWidth={2.5} dot={false} name="Pitch eff. (%)"/>
-                          <Line type="monotone" dataKey="yaw_eff" stroke={C.red} strokeWidth={2.5} dot={false} name="Yaw eff. (%)"/>
-                          <Legend iconSize={10} wrapperStyle={{fontSize:12,color:"#94a3b8",paddingTop:4}}/>
-                        </LineChart>
-                      </ResponsiveContainer>
+                      {/* Two-panel layout: left = effectiveness curves, right = area cost */}
+                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                        {/* Panel A: cos²/sin² effectiveness — smooth, bounded 0–100% */}
+                        <div>
+                          <div style={{fontSize:8,color:"#64748b",fontFamily:"'DM Mono',monospace",marginBottom:4}}>
+                            Authority split (fixed panel)
+                          </div>
+                          <ResponsiveContainer width="100%" height={160}>
+                            <LineChart
+                              data={Array.from({length:81},(_,i)=>{
+                                const gd=i+10, gr=gd*Math.PI/180;
+                                return{
+                                  gamma:gd,
+                                  pitch:+(Math.cos(gr)**2*100).toFixed(1),  // pure cos²Γ
+                                  yaw:+(Math.sin(gr)**2*100).toFixed(1),    // pure sin²Γ
+                                };
+                              })}
+                              margin={{top:4,right:8,left:0,bottom:18}}>
+                              <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
+                              <XAxis dataKey="gamma" tick={{fontSize:10,fill:"#94a3b8"}}
+                                label={{value:"Γ (°)",position:"insideBottom",offset:-6,fontSize:11,fill:"#94a3b8"}}/>
+                              <YAxis domain={[0,100]} tick={{fontSize:10,fill:"#94a3b8"}}
+                                label={{value:"%",angle:-90,position:"insideLeft",offset:8,fontSize:11,fill:"#94a3b8"}}/>
+                              <Tooltip {...TTP} formatter={(v,n)=>[`${v}%`,n]}/>
+                              <ReferenceLine x={p.vtGamma} stroke={C.amber} strokeDasharray="3 2"
+                                label={{value:"Γ",fill:C.amber,fontSize:10,position:"top"}}/>
+                              <ReferenceLine x={R.vtGamma_opt} stroke={C.green} strokeDasharray="3 2"
+                                label={{value:"opt",fill:C.green,fontSize:10,position:"top"}}/>
+                              <ReferenceLine y={50} stroke={C.dim} strokeDasharray="2 2"/>
+                              <Line type="monotone" dataKey="pitch" stroke={C.blue} strokeWidth={2} dot={false} name="Pitch cos²Γ"/>
+                              <Line type="monotone" dataKey="yaw" stroke={C.red} strokeWidth={2} dot={false} name="Yaw sin²Γ"/>
+                              <Legend iconSize={8} wrapperStyle={{fontSize:10,color:"#94a3b8"}}/>
+                            </LineChart>
+                          </ResponsiveContainer>
+                        </div>
+                        {/* Panel B: total panel area required vs Γ — shows area cost of wrong angle */}
+                        <div>
+                          <div style={{fontSize:8,color:"#64748b",fontFamily:"'DM Mono',monospace",marginBottom:4}}>
+                            Total panel area required (m²)
+                          </div>
+                          <ResponsiveContainer width="100%" height={160}>
+                            <LineChart
+                              data={Array.from({length:81},(_,i)=>{
+                                const gd=i+10, gr=gd*Math.PI/180;
+                                const c2=Math.cos(gr)**2, s2=Math.sin(gr)**2;
+                                // Avoid divide-by-zero at 0° and 90°
+                                if(gd<=11||gd>=89) return{gamma:gd,area:null};
+                                const Sp=Math.max(R.Sh_req/c2, R.Sv_req/s2);
+                                return{gamma:gd, area:+(2*Sp).toFixed(2)};
+                              })}
+                              margin={{top:4,right:8,left:0,bottom:18}}>
+                              <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
+                              <XAxis dataKey="gamma" tick={{fontSize:10,fill:"#94a3b8"}}
+                                label={{value:"Γ (°)",position:"insideBottom",offset:-6,fontSize:11,fill:"#94a3b8"}}/>
+                              <YAxis tick={{fontSize:10,fill:"#94a3b8"}}
+                                label={{value:"m²",angle:-90,position:"insideLeft",offset:8,fontSize:11,fill:"#94a3b8"}}/>
+                              <Tooltip {...TTP} formatter={(v,n)=>[`${v} m²`,n]}/>
+                              <ReferenceLine x={p.vtGamma} stroke={C.amber} strokeDasharray="3 2"
+                                label={{value:"Γ",fill:C.amber,fontSize:10,position:"top"}}/>
+                              <ReferenceLine x={R.vtGamma_opt} stroke={C.green} strokeDasharray="3 2"
+                                label={{value:"opt",fill:C.green,fontSize:10,position:"top"}}/>
+                              <ReferenceLine y={R.Svt_total} stroke={C.teal} strokeDasharray="3 2"
+                                label={{value:"cur",fill:C.teal,fontSize:10,position:"right"}}/>
+                              <Line type="monotone" dataKey="area" stroke={C.amber} strokeWidth={2}
+                                dot={false} name="Total area" connectNulls={false}/>
+                            </LineChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </div>
+                      <div style={{fontSize:8,color:"#4b5563",fontFamily:"'DM Mono',monospace",marginTop:4,padding:"3px 6px",background:"#0a0d14",borderRadius:3}}>
+                        Left: intrinsic authority split for fixed panel area (cos²Γ + sin²Γ = 1, always bounded).
+                        Right: total panel area required to meet both Sh_req and Sv_req — minimum at Γ_opt.
+                      </div>
                     </div>
                     {/* Control Authority checks */}
                     <div style={{background:C.panel,border:`1px solid ${C.border}`,borderRadius:8,padding:"12px 14px"}}>
@@ -1168,53 +1246,6 @@ export default function App(){
                       ))}
                     </div>
                   </div>
-                </div>
-                {/* SVG schematic */}
-                <div style={{background:C.panel,border:`1px solid ${C.border}`,borderRadius:8,padding:"14px"}}>
-                  <div style={{fontSize:9,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.12em",
-                    fontFamily:"'DM Mono',monospace",marginBottom:10,borderBottom:`1px solid ${C.border}`,paddingBottom:5}}>
-                    V-Tail Configuration — Rear View Schematic
-                  </div>
-                  <svg viewBox="-120 -100 240 140" width="100%" height={180} style={{overflow:"visible"}}>
-                    {/* fuselage circle */}
-                    <circle cx={0} cy={0} r={14} fill="#1e2a3a" stroke="#2a3a5c" strokeWidth={1.5}/>
-                    <text x={0} y={4} textAnchor="middle" fill="#64748b" fontSize={8} fontFamily="DM Mono,monospace">fuselage</text>
-                    {/* left panel */}
-                    {(()=>{
-                      const gr=p.vtGamma*Math.PI/180;
-                      const panelLen=70;
-                      const x2l=-(panelLen*Math.cos(gr)), y2l=-(panelLen*Math.sin(gr));
-                      const x2r= (panelLen*Math.cos(gr)), y2r=-(panelLen*Math.sin(gr));
-                      const chordScale=R.Cr_vt*14;
-                      return(<>
-                        {/* left panel */}
-                        <line x1={0} y1={0} x2={x2l} y2={y2l} stroke={C.amber} strokeWidth={3} strokeLinecap="round"/>
-                        <polygon
-                          points={`${x2l},${y2l} ${x2l-chordScale*0.2},${y2l-4} ${x2l+chordScale*0.6},${y2l-4} ${x2l+chordScale*0.4},${y2l}`}
-                          fill={C.amber} opacity={0.25} stroke={C.amber} strokeWidth={0.5}/>
-                        {/* right panel */}
-                        <line x1={0} y1={0} x2={x2r} y2={y2r} stroke={C.amber} strokeWidth={3} strokeLinecap="round"/>
-                        <polygon
-                          points={`${x2r},${y2r} ${x2r-chordScale*0.6},${y2r-4} ${x2r+chordScale*0.2},${y2r-4} ${x2r-chordScale*0.4},${y2r}`}
-                          fill={C.amber} opacity={0.25} stroke={C.amber} strokeWidth={0.5}/>
-                        {/* dihedral angle arc */}
-                        <path d={`M ${30*Math.cos(Math.PI-gr)},${-30*Math.sin(Math.PI-gr)} A 30 30 0 0 1 ${30*Math.cos(gr)},${-30*Math.sin(gr)}`}
-                          fill="none" stroke={C.teal} strokeWidth={1} strokeDasharray="3 2"/>
-                        {/* gamma label */}
-                        <text x={0} y={-35} textAnchor="middle" fill={C.teal} fontSize={11} fontFamily="DM Mono,monospace">Γ={p.vtGamma}°</text>
-                        {/* optimal gamma indicator */}
-                        <text x={0} y={-48} textAnchor="middle" fill={C.green} fontSize={10} fontFamily="DM Mono,monospace">opt={R.vtGamma_opt}°</text>
-                        {/* span labels */}
-                        <text x={x2l-4} y={y2l-8} textAnchor="middle" fill={C.amber} fontSize={9} fontFamily="DM Mono,monospace">{R.bvt_panel}m</text>
-                        <text x={x2r+4} y={y2r-8} textAnchor="middle" fill={C.amber} fontSize={9} fontFamily="DM Mono,monospace">{R.bvt_panel}m</text>
-                        {/* horizontal & vertical dashed ref lines */}
-                        <line x1={-90} y1={0} x2={90} y2={0} stroke="#1e2a3a" strokeWidth={1} strokeDasharray="4 3"/>
-                        <line x1={0} y1={-90} x2={0} y2={20} stroke="#1e2a3a" strokeWidth={1} strokeDasharray="4 3"/>
-                        <text x={92} y={4} fill="#1e2a3a" fontSize={8} fontFamily="DM Mono,monospace">H</text>
-                        <text x={2} y={-92} fill="#1e2a3a" fontSize={8} fontFamily="DM Mono,monospace">V</text>
-                      </>);
-                    })()}
-                  </svg>
                 </div>
               </div>
             )}
