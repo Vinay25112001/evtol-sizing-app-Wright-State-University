@@ -124,6 +124,80 @@ function runSizing(p) {
   const xNP=xACwing+(Sh/Swing)*0.9*(1-dw)*lh;
   const SM=(xNP-xCGtotal)/MAC;
 
+  /* ══════════════════════════════════════════════════
+     V-TAIL SIZING  (Ruscheweyh / Raymer method)
+     Each panel set at dihedral angle Γ from horizontal.
+     Two panels replace H-stab + V-stab.
+     Longitudinal (pitch) control  →  ruddervators act as elevator
+     Lateral     (yaw)   control  →  ruddervators act as rudder
+     ══════════════════════════════════════════════════ */
+  const vtGamma_deg=p.vtGamma;                         // dihedral angle (°)
+  const vtGamma=vtGamma_deg*Math.PI/180;               // radians
+
+  // Equivalent H-tail and V-tail areas needed (from conventional sizing via Cv, Ch)
+  const Ch=p.vtCh;      // horizontal tail volume coefficient (typical 0.35–0.50)
+  const Cv=p.vtCv;      // vertical   tail volume coefficient (typical 0.04–0.06)
+  const lv=fL-xACwing;  // tail moment arm ≈ fuselage length - wing AC
+  const bv_est=bWing;   // reference span for Cv
+  const Sh_req=Ch*Swing*MAC/lv;                    // required H-tail area (m²)
+  const Sv_req=Cv*Swing*bv_est/lv;                 // required V-tail area (m²)
+
+  // V-tail panel area: each panel contributes both pitch and yaw authority
+  // Sv_panel = sqrt(Sh_req² + Sv_req²) / (2*n_panels/2)
+  // For 2-panel V-tail:  Svt_panel = sqrt((Sh_req/2)² + (Sv_req/2)²) * ... see below
+  // Standard approach (Raymer §6.3):
+  //   S_vt_total = sqrt(Sh_req² + Sv_req²)  (each half-panel = S_vt_total/2)
+  const Svt_total=Math.sqrt(Sh_req**2+Sv_req**2);          // total V-tail area (both panels)
+  const Svt_panel=Svt_total/2;                             // each panel area
+
+  // Optimal dihedral angle: tan(Γ_opt) = Sv_req / Sh_req
+  const vtGamma_opt_deg=Math.atan2(Sv_req,Sh_req)*180/Math.PI;
+
+  // Effective areas actually provided by the chosen dihedral
+  const Sh_eff=Svt_total*Math.cos(vtGamma);     // pitch effectiveness
+  const Sv_eff=Svt_total*Math.sin(vtGamma);     // yaw effectiveness
+
+  // Check ratios vs required
+  const pitch_ratio=Sh_eff/Sh_req;             // >1 = OK
+  const yaw_ratio  =Sv_eff/Sv_req;             // >1 = OK
+
+  // Panel geometry (Raymer): assume AR_vt = 2.5, taper 0.4, NACA 0009
+  const AR_vt=p.vtAR;
+  const taper_vt=0.4;
+  const bvt_panel=Math.sqrt(AR_vt*Svt_panel);               // panel span
+  const Cr_vt=2*Svt_panel/(bvt_panel*(1+taper_vt));
+  const Ct_vt=Cr_vt*taper_vt;
+  const MAC_vt=(2/3)*Cr_vt*(1+taper_vt+taper_vt**2)/(1+taper_vt);
+  const sweep_vt=Math.atan((Cr_vt-Ct_vt)/bvt_panel)*180/Math.PI;
+
+  // Ruddervator sizing: control surface = 25–35% of panel chord
+  const ruddervator_chord_frac=0.30;
+  const Srv=ruddervator_chord_frac*Svt_panel;   // ruddervator area per panel
+
+  // Tail weight estimate (Roskam UAV method, % of empty weight)
+  const Wvt_panel=0.036*Svt_panel*Math.pow(AR_vt,0.25)*0.82*1000/9.81; // simplified Raymer eq 15.26
+  const Wvt_total=2*Wvt_panel;
+
+  // Drag contribution of V-tail (Raymer component buildup)
+  const Swvt=2*Svt_panel*(1+0.25*0.09*(1+taper_vt*0.25)); // wetted area (NACA 0009 → tc=0.09)
+  const Revt=rhoCr*p.vCruise*MAC_vt/muCr;
+  const Cfvt=0.455/Math.log10(Revt)**2.58/(1+0.144*Mach**2)**0.65;
+  const FFvt=(1+0.6/0.3*0.09+100*0.09**4)*1.05;
+  const CD0vt=Cfvt*FFvt*Swvt/Swing;
+
+  // Updated NP including V-tail contribution
+  const eta_vt=0.90;
+  const CLa_vt=2*Math.PI*AR_vt/(2+Math.sqrt(4+AR_vt**2));
+  const xNP_vt=xACwing
+    +(Sh_eff/Swing)*eta_vt*(1-dw)*lv        // pitch moment from H-component
+    +(Sv_eff/Swing)*eta_vt*lv*0.5/bWing;   // small yaw-to-pitch coupling term
+  const SM_vt=(xNP_vt-xCGtotal)/MAC;
+
+  // Ruddervator deflection required for trim at cruise (simplified)
+  const CM_ac=selAF.CM;   // wing pitching moment coefficient
+  const delta_ruddervator=-(CM_ac*Swing*MAC)/(eta_vt*Sh_eff*lv*0.5); // in radians, approx
+  const delta_rv_deg=delta_ruddervator*180/Math.PI;
+
   /* Propulsion */
   const Ttot=MTOW*g0,Trotor=Ttot/p.nPropHover,Protor_W=Phov*1000/p.nPropHover;
   const Adisk=Trotor**3/(2*rhoMSL*(Protor_W*p.etaHov)**2);
@@ -210,6 +284,8 @@ function runSizing(p) {
     {label:"Battery Frac < 55%",ok:Wbat/MTOW<0.55,val:`${(Wbat/MTOW*100).toFixed(1)}%`},
     {label:"Final SoC ≥ SoCmin",ok:(1-Etot/PackkWh)>=(p.socMin/(1+p.socMin))-0.01,val:`${((1-Etot/PackkWh)*100).toFixed(1)}% (floor ${(p.socMin/(1+p.socMin)*100).toFixed(1)}%)`},
     {label:"Actual L/D > 10",ok:LDact>10,val:LDact.toFixed(2)},
+    {label:"V-tail pitch auth.",ok:pitch_ratio>=1.0,val:`${(pitch_ratio*100).toFixed(0)}%`},
+    {label:"V-tail yaw auth.",ok:yaw_ratio>=1.0,val:`${(yaw_ratio*100).toFixed(0)}%`},
     {label:"Mach < 0.45",ok:Mach<0.45,val:`M${Mach.toFixed(3)}`},
   ];
 
@@ -232,6 +308,13 @@ function runSizing(p) {
     Vstall:+Vstall.toFixed(2),VA:+VA.toFixed(2),VD:+VD.toFixed(2),
     vnData,rpData,polarData,powerSteps,socSteps,velSteps,convData,weightBreak,dragComp,tPhases,
     checks,feasible:checks.every(c=>c.ok),
+    vtGamma_opt:+vtGamma_opt_deg.toFixed(1),Svt_total:+Svt_total.toFixed(3),Svt_panel:+Svt_panel.toFixed(3),
+    Sh_req:+Sh_req.toFixed(3),Sv_req:+Sv_req.toFixed(3),Sh_eff:+Sh_eff.toFixed(3),Sv_eff:+Sv_eff.toFixed(3),
+    pitch_ratio:+pitch_ratio.toFixed(3),yaw_ratio:+yaw_ratio.toFixed(3),
+    bvt_panel:+bvt_panel.toFixed(3),Cr_vt:+Cr_vt.toFixed(3),Ct_vt:+Ct_vt.toFixed(3),MAC_vt:+MAC_vt.toFixed(3),
+    sweep_vt:+sweep_vt.toFixed(2),Srv:+Srv.toFixed(3),Wvt_total:+Wvt_total.toFixed(1),
+    CD0vt:+CD0vt.toFixed(6),SM_vt:+SM_vt.toFixed(4),delta_rv_deg:+delta_rv_deg.toFixed(2),
+    lv:+lv.toFixed(3),
   };
 }
 
@@ -310,8 +393,8 @@ function Acc({title,icon,children}){
   );
 }
 
-const TABS=["Overview","Mission","Wing & Aero","Propulsion","Battery","Performance","Stability","Convergence"];
-const TABI=["⬛","🛫","✈️","🔧","🔋","📈","⚖️","🔄"];
+const TABS=["Overview","Mission","Wing & Aero","Propulsion","Battery","Performance","Stability","V-Tail","Convergence"];
+const TABI=["⬛","🛫","✈️","🔧","🔋","📈","⚖️","🦋","🔄"];
 const TTP={contentStyle:{background:"#131c2e",border:"1px solid #2a3a5c",borderRadius:6,fontSize:12,color:"#e2e8f0",boxShadow:"0 4px 20px rgba(0,0,0,0.8)"},labelStyle:{color:"#94a3b8",fontSize:12,fontWeight:600},itemStyle:{color:"#e2e8f0",fontSize:12}};
 
 /* ═══════════════════════════════════
@@ -325,6 +408,7 @@ export default function App(){
     nPropHover:6,propDiam:3.0,etaHov:0.63,etaSys:0.765,rateOfClimb:5.08,climbAngle:5,
     sedCell:275,etaBat:0.90,socMin:0.2,ewf:0.52,
     fusLen:5.6,fusDiam:1.65,
+    vtGamma:45,vtCh:0.40,vtCv:0.05,vtAR:2.5,
   });
   const set=useCallback(k=>v=>setP(prev=>({...prev,[k]:v})),[]);
   const R=useMemo(()=>{try{return runSizing(p);}catch{return null;}},[p]);
@@ -389,7 +473,8 @@ export default function App(){
         <button onClick={()=>setP({payload:455,range:250,vCruise:67,cruiseAlt:1000,reserveRange:60,hoverHeight:15.24,
           LD:15,AR:9,eOsw:0.85,clDesign:0.60,taper:0.45,tc:0.15,nPropHover:6,propDiam:3.0,
           etaHov:0.63,etaSys:0.765,rateOfClimb:5.08,climbAngle:5,sedCell:275,etaBat:0.90,socMin:0.2,ewf:0.52,
-          fusLen:5.6,fusDiam:1.65})}
+          fusLen:5.6,fusDiam:1.65,
+          vtGamma:45,vtCh:0.40,vtCv:0.05,vtAR:2.5})}
           style={{marginLeft:"auto",padding:"5px 12px",background:"transparent",border:`1px solid ${C.border}`,
             borderRadius:4,color:C.muted,fontSize:9,cursor:"pointer",fontFamily:"'DM Mono',monospace"}}>↺ RESET</button>
       </div>
@@ -426,6 +511,13 @@ export default function App(){
             <Slider label="Cell SED" unit="Wh/kg" value={p.sedCell} min={150} max={500} step={5} onChange={set("sedCell")} note="Cell-level"/>
             <Slider label="Battery η" unit="" value={p.etaBat} min={0.70} max={0.99} step={0.01} onChange={set("etaBat")}/>
             <Slider label="Min SoC" unit="" value={p.socMin} min={0.05} max={0.40} step={0.01} onChange={set("socMin")}/>
+          </Acc>
+          <Acc title="V-Tail Design" icon="🦋">
+            <Slider label="Dihedral Angle Γ" unit="°" value={p.vtGamma} min={20} max={70} step={1} onChange={set("vtGamma")}
+              note={R?`Optimal: ${R.vtGamma_opt}°`:""}/>
+            <Slider label="H-Tail Vol. Coeff Ch" unit="" value={p.vtCh} min={0.25} max={0.60} step={0.01} onChange={set("vtCh")} note="Pitch authority"/>
+            <Slider label="V-Tail Vol. Coeff Cv" unit="" value={p.vtCv} min={0.02} max={0.10} step={0.005} onChange={set("vtCv")} note="Yaw authority"/>
+            <Slider label="Panel Aspect Ratio" unit="" value={p.vtAR} min={1.5} max={4.0} step={0.1} onChange={set("vtAR")} note="Typical 2.0–3.0"/>
           </Acc>
           <Acc title="Structure" icon="🏗️">
             <Slider label="Empty Weight Fraction" unit="" value={p.ewf} min={0.30} max={0.70} step={0.01} onChange={set("ewf")} note="Wempty/MTOW"/>
@@ -927,8 +1019,170 @@ export default function App(){
               </div>
             )}
 
-            {/* ──── TAB 7: CONVERGENCE ──── */}
+            {/* ──── TAB 7: V-TAIL SIZING ──── */}
             {tab===7&&(
+              <div style={{display:"flex",flexDirection:"column",gap:12}}>
+                {/* KPI row */}
+                <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
+                  <KPI label="Total V-Tail Area" value={R.Svt_total} unit="m²" color={C.amber}
+                    sub={`Each panel: ${R.Svt_panel} m²`}/>
+                  <KPI label="Optimal Dihedral Γ" value={R.vtGamma_opt} unit="°" color={C.teal}
+                    sub={`Set: ${p.vtGamma}°`}/>
+                  <KPI label="Static Margin (w/ Vtail)" value={(R.SM_vt*100).toFixed(1)} unit="% MAC"
+                    color={R.SM_vt>=0.05&&R.SM_vt<=0.25?C.green:C.red}
+                    sub={`Baseline: ${(R.SM*100).toFixed(1)}%`}/>
+                  <KPI label="Ruddervator Area" value={R.Srv} unit="m²/panel" color={C.blue}
+                    sub="30% chord"/>
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+                  {/* Panel Geometry */}
+                  <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                    <div style={{background:C.panel,border:`1px solid ${C.border}`,borderRadius:8,padding:"12px 14px"}}>
+                      <div style={{fontSize:9,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.12em",
+                        fontFamily:"'DM Mono',monospace",marginBottom:8,borderBottom:`1px solid ${C.border}`,paddingBottom:5}}>
+                        Panel Geometry
+                      </div>
+                      {[["Panel span",`${R.bvt_panel} m`],["Root chord",`${R.Cr_vt} m`],
+                        ["Tip chord",`${R.Ct_vt} m`],["MAC",`${R.MAC_vt} m`],
+                        ["LE sweep",`${R.sweep_vt}°`],["Taper ratio","0.40"],
+                        ["Airfoil","NACA 0009"],["t/c","9%"],
+                        ["Tail moment arm",`${R.lv} m`],["Ruddervator / panel",`${R.Srv} m²`],
+                      ].map(([k,v],i)=>(
+                        <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:`1px solid #0f131a`}}>
+                          <span style={{fontSize:10,color:"#64748b"}}>{k}</span>
+                          <span style={{fontSize:10,color:C.amber,fontFamily:"'DM Mono',monospace",fontWeight:600}}>{v}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div style={{background:C.panel,border:`1px solid ${C.border}`,borderRadius:8,padding:"12px 14px"}}>
+                      <div style={{fontSize:9,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.12em",
+                        fontFamily:"'DM Mono',monospace",marginBottom:8,borderBottom:`1px solid ${C.border}`,paddingBottom:5}}>
+                        Weight & Drag
+                      </div>
+                      {[["V-tail total mass",`${R.Wvt_total} kg`],
+                        ["V-tail CD₀ contrib.",`${R.CD0vt.toFixed(5)}`],
+                        ["Ruddervator trim δ",`${R.delta_rv_deg}°`],
+                      ].map(([k,v],i)=>(
+                        <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:`1px solid #0f131a`}}>
+                          <span style={{fontSize:10,color:"#64748b"}}>{k}</span>
+                          <span style={{fontSize:10,color:C.teal,fontFamily:"'DM Mono',monospace",fontWeight:600}}>{v}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  {/* Dihedral trade chart + effectiveness */}
+                  <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                    <div style={{background:C.panel,border:`1px solid ${C.border}`,borderRadius:8,padding:"12px 14px"}}>
+                      <div style={{fontSize:9,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.12em",
+                        fontFamily:"'DM Mono',monospace",marginBottom:8,borderBottom:`1px solid ${C.border}`,paddingBottom:5}}>
+                        Dihedral Angle Trade — Pitch vs Yaw Effectiveness
+                      </div>
+                      <ResponsiveContainer width="100%" height={200}>
+                        <LineChart
+                          data={Array.from({length:71},(_,i)=>{
+                            const gd=i+10,gr=gd*Math.PI/180;
+                            const S=R.Svt_total;
+                            return{
+                              gamma:gd,
+                              pitch_eff:+(S*Math.cos(gr)/R.Sh_req*100).toFixed(1),
+                              yaw_eff:+(S*Math.sin(gr)/R.Sv_req*100).toFixed(1),
+                            };
+                          })}
+                          margin={{top:5,right:20,left:10,bottom:20}}>
+                          <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
+                          <XAxis dataKey="gamma" tick={{fontSize:11,fill:"#94a3b8"}}
+                            label={{value:"Dihedral Γ (°)",position:"insideBottom",offset:-8,fontSize:12,fill:"#94a3b8"}}/>
+                          <YAxis tick={{fontSize:11,fill:"#94a3b8"}}
+                            label={{value:"Effectiveness (%)",angle:-90,position:"insideLeft",offset:10,fontSize:12,fill:"#94a3b8"}}/>
+                          <Tooltip {...TTP} formatter={(v,n)=>[`${v}%`,n]}/>
+                          <ReferenceLine x={p.vtGamma} stroke={C.amber} strokeDasharray="4 3"
+                            label={{value:"Set Γ",fill:C.amber,fontSize:11,position:"top"}}/>
+                          <ReferenceLine x={R.vtGamma_opt} stroke={C.green} strokeDasharray="4 3"
+                            label={{value:"Opt Γ",fill:C.green,fontSize:11,position:"top"}}/>
+                          <ReferenceLine y={100} stroke={C.dim} strokeDasharray="3 3"/>
+                          <Line type="monotone" dataKey="pitch_eff" stroke={C.blue} strokeWidth={2.5} dot={false} name="Pitch eff. (%)"/>
+                          <Line type="monotone" dataKey="yaw_eff" stroke={C.red} strokeWidth={2.5} dot={false} name="Yaw eff. (%)"/>
+                          <Legend iconSize={10} wrapperStyle={{fontSize:12,color:"#94a3b8",paddingTop:4}}/>
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                    {/* Control Authority checks */}
+                    <div style={{background:C.panel,border:`1px solid ${C.border}`,borderRadius:8,padding:"12px 14px"}}>
+                      <div style={{fontSize:9,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.12em",
+                        fontFamily:"'DM Mono',monospace",marginBottom:8,borderBottom:`1px solid ${C.border}`,paddingBottom:5}}>
+                        Control Authority vs Requirement
+                      </div>
+                      {[
+                        ["Required H-tail area",`${R.Sh_req} m²`,"—",C.muted],
+                        ["Effective H area (Sh_eff)",`${R.Sh_eff} m²`,`${(R.pitch_ratio*100).toFixed(0)}% of req.`,R.pitch_ratio>=1?C.green:C.red],
+                        ["Required V-tail area",`${R.Sv_req} m²`,"—",C.muted],
+                        ["Effective V area (Sv_eff)",`${R.Sv_eff} m²`,`${(R.yaw_ratio*100).toFixed(0)}% of req.`,R.yaw_ratio>=1?C.green:C.red],
+                        ["Pitch authority",R.pitch_ratio>=1?"✅ Sufficient":"❌ Insufficient","",R.pitch_ratio>=1?C.green:C.red],
+                        ["Yaw authority",R.yaw_ratio>=1?"✅ Sufficient":"❌ Insufficient","",R.yaw_ratio>=1?C.green:C.red],
+                        ["Updated SM (V-tail NP)",`${(R.SM_vt*100).toFixed(1)}% MAC`,"",R.SM_vt>=0.05&&R.SM_vt<=0.25?C.green:C.red],
+                      ].map(([k,v,s,col],i)=>(
+                        <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 0",borderBottom:`1px solid #0f131a`}}>
+                          <span style={{fontSize:10,color:"#64748b"}}>{k}</span>
+                          <div style={{textAlign:"right"}}>
+                            <span style={{fontSize:10,color:col,fontFamily:"'DM Mono',monospace",fontWeight:600}}>{v}</span>
+                            {s&&<div style={{fontSize:9,color:"#4b5563",fontFamily:"'DM Mono',monospace"}}>{s}</div>}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+                {/* SVG schematic */}
+                <div style={{background:C.panel,border:`1px solid ${C.border}`,borderRadius:8,padding:"14px"}}>
+                  <div style={{fontSize:9,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.12em",
+                    fontFamily:"'DM Mono',monospace",marginBottom:10,borderBottom:`1px solid ${C.border}`,paddingBottom:5}}>
+                    V-Tail Configuration — Rear View Schematic
+                  </div>
+                  <svg viewBox="-120 -100 240 140" width="100%" height={180} style={{overflow:"visible"}}>
+                    {/* fuselage circle */}
+                    <circle cx={0} cy={0} r={14} fill="#1e2a3a" stroke="#2a3a5c" strokeWidth={1.5}/>
+                    <text x={0} y={4} textAnchor="middle" fill="#64748b" fontSize={8} fontFamily="DM Mono,monospace">fuselage</text>
+                    {/* left panel */}
+                    {(()=>{
+                      const gr=p.vtGamma*Math.PI/180;
+                      const panelLen=70;
+                      const x2l=-(panelLen*Math.cos(gr)), y2l=-(panelLen*Math.sin(gr));
+                      const x2r= (panelLen*Math.cos(gr)), y2r=-(panelLen*Math.sin(gr));
+                      const chordScale=R.Cr_vt*14;
+                      return(<>
+                        {/* left panel */}
+                        <line x1={0} y1={0} x2={x2l} y2={y2l} stroke={C.amber} strokeWidth={3} strokeLinecap="round"/>
+                        <polygon
+                          points={`${x2l},${y2l} ${x2l-chordScale*0.2},${y2l-4} ${x2l+chordScale*0.6},${y2l-4} ${x2l+chordScale*0.4},${y2l}`}
+                          fill={C.amber} opacity={0.25} stroke={C.amber} strokeWidth={0.5}/>
+                        {/* right panel */}
+                        <line x1={0} y1={0} x2={x2r} y2={y2r} stroke={C.amber} strokeWidth={3} strokeLinecap="round"/>
+                        <polygon
+                          points={`${x2r},${y2r} ${x2r-chordScale*0.6},${y2r-4} ${x2r+chordScale*0.2},${y2r-4} ${x2r-chordScale*0.4},${y2r}`}
+                          fill={C.amber} opacity={0.25} stroke={C.amber} strokeWidth={0.5}/>
+                        {/* dihedral angle arc */}
+                        <path d={`M ${30*Math.cos(Math.PI-gr)},${-30*Math.sin(Math.PI-gr)} A 30 30 0 0 1 ${30*Math.cos(gr)},${-30*Math.sin(gr)}`}
+                          fill="none" stroke={C.teal} strokeWidth={1} strokeDasharray="3 2"/>
+                        {/* gamma label */}
+                        <text x={0} y={-35} textAnchor="middle" fill={C.teal} fontSize={11} fontFamily="DM Mono,monospace">Γ={p.vtGamma}°</text>
+                        {/* optimal gamma indicator */}
+                        <text x={0} y={-48} textAnchor="middle" fill={C.green} fontSize={10} fontFamily="DM Mono,monospace">opt={R.vtGamma_opt}°</text>
+                        {/* span labels */}
+                        <text x={x2l-4} y={y2l-8} textAnchor="middle" fill={C.amber} fontSize={9} fontFamily="DM Mono,monospace">{R.bvt_panel}m</text>
+                        <text x={x2r+4} y={y2r-8} textAnchor="middle" fill={C.amber} fontSize={9} fontFamily="DM Mono,monospace">{R.bvt_panel}m</text>
+                        {/* horizontal & vertical dashed ref lines */}
+                        <line x1={-90} y1={0} x2={90} y2={0} stroke="#1e2a3a" strokeWidth={1} strokeDasharray="4 3"/>
+                        <line x1={0} y1={-90} x2={0} y2={20} stroke="#1e2a3a" strokeWidth={1} strokeDasharray="4 3"/>
+                        <text x={92} y={4} fill="#1e2a3a" fontSize={8} fontFamily="DM Mono,monospace">H</text>
+                        <text x={2} y={-92} fill="#1e2a3a" fontSize={8} fontFamily="DM Mono,monospace">V</text>
+                      </>);
+                    })()}
+                  </svg>
+                </div>
+              </div>
+            )}
+            {/* ──── TAB 8: CONVERGENCE ──── */}
+            {tab===8&&(
               <div style={{display:"flex",flexDirection:"column",gap:12}}>
                 <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>
                   <KPI label="Round 1 MTOW" value={R.MTOW1} unit="kg" color={C.muted}/>
