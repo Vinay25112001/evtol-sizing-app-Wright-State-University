@@ -142,24 +142,46 @@ function runSizing(p) {
   const Sh_req=Ch*Swing*MAC/lv;                    // required H-tail area (m²)
   const Sv_req=Cv*Swing*bv_est/lv;                 // required V-tail area (m²)
 
-  // V-tail panel area: each panel contributes both pitch and yaw authority
-  // Sv_panel = sqrt(Sh_req² + Sv_req²) / (2*n_panels/2)
-  // For 2-panel V-tail:  Svt_panel = sqrt((Sh_req/2)² + (Sv_req/2)²) * ... see below
-  // Standard approach (Raymer §6.3):
-  //   S_vt_total = sqrt(Sh_req² + Sv_req²)  (each half-panel = S_vt_total/2)
-  const Svt_total=Math.sqrt(Sh_req**2+Sv_req**2);          // total V-tail area (both panels)
-  const Svt_panel=Svt_total/2;                             // each panel area
+  // ── Correct V-tail aerodynamics (Ruscheweyh / Raymer §6.3) ──────────────
+  // A V-tail panel inclined at dihedral Γ generates a force NORMAL to its surface.
+  // When resolved into pitch (vertical) and yaw (lateral) moments:
+  //   Pitch contribution: F_pitch = L·cosΓ, moment arm projects as lh·cosΓ → ∝ cos²(Γ)
+  //   Yaw  contribution: F_yaw  = L·sinΓ, moment arm projects as lv·sinΓ → ∝ sin²(Γ)
+  //
+  // So the correct effectiveness equations are:
+  //   Sh_eff = S_panel × cos²(Γ)   (NOT cosΓ)
+  //   Sv_eff = S_panel × sin²(Γ)   (NOT sinΓ)
+  //
+  // Panel sizing: must satisfy BOTH constraints simultaneously:
+  //   S_panel ≥ Sh_req / cos²(Γ)   [pitch governs]
+  //   S_panel ≥ Sv_req / sin²(Γ)   [yaw governs]
+  //   → S_panel = max of the two (size to the harder constraint at chosen Γ)
+  //
+  // Minimum-area optimal angle: set Sh_req/cos²Γ = Sv_req/sin²Γ
+  //   → tan²(Γ) = Sv_req/Sh_req  → Γ_opt = arctan(√(Sv_req/Sh_req))  (NOT arctan(Sv/Sh))
+  // ─────────────────────────────────────────────────────────────────────
+  const cos2=Math.cos(vtGamma)**2, sin2=Math.sin(vtGamma)**2;
 
-  // Optimal dihedral angle: tan(Γ_opt) = Sv_req / Sh_req
-  const vtGamma_opt_deg=Math.atan2(Sv_req,Sh_req)*180/Math.PI;
+  // Optimal dihedral — minimises total panel area
+  const vtGamma_opt_deg=Math.atan(Math.sqrt(Sv_req/Sh_req))*180/Math.PI;
 
-  // Effective areas actually provided by the chosen dihedral
-  const Sh_eff=Svt_total*Math.cos(vtGamma);     // pitch effectiveness
-  const Sv_eff=Svt_total*Math.sin(vtGamma);     // yaw effectiveness
+  // Required panel area at the chosen Γ (size to harder constraint)
+  const Svt_panel_pitch=Sh_req/cos2;   // area needed to satisfy pitch at this Γ
+  const Svt_panel_yaw  =Sv_req/sin2;   // area needed to satisfy yaw   at this Γ
+  const Svt_panel=Math.max(Svt_panel_pitch, Svt_panel_yaw); // governing constraint
+  const Svt_total=2*Svt_panel;          // both panels combined
 
-  // Check ratios vs required
-  const pitch_ratio=Sh_eff/Sh_req;             // >1 = OK
-  const yaw_ratio  =Sv_eff/Sv_req;             // >1 = OK
+  // Actual effectiveness delivered (always 100% for governing constraint by construction)
+  const Sh_eff=Svt_panel*cos2;   // pitch moment arm equivalent area
+  const Sv_eff=Svt_panel*sin2;   // yaw  moment arm equivalent area
+
+  // Ratios vs required (governing = 100%, other may be >100%)
+  const pitch_ratio=Sh_eff/Sh_req;
+  const yaw_ratio  =Sv_eff/Sv_req;
+
+  // Ruddervator mixing: symmetric deflection → elevator; differential → rudder
+  // Max simultaneous authority (combined load factor):
+  const ruddervator_combined_auth=Math.sqrt(pitch_ratio**2+yaw_ratio**2);
 
   // Panel geometry (Raymer): assume AR_vt = 2.5, taper 0.4, NACA 0009
   const AR_vt=p.vtAR;
@@ -185,18 +207,23 @@ function runSizing(p) {
   const FFvt=(1+0.6/0.3*0.09+100*0.09**4)*1.05;
   const CD0vt=Cfvt*FFvt*Swvt/Swing;
 
-  // Updated NP including V-tail contribution
+  // Updated NP with correct V-tail pitch contribution (cos²Γ component)
   const eta_vt=0.90;
-  const CLa_vt=2*Math.PI*AR_vt/(2+Math.sqrt(4+AR_vt**2));
-  const xNP_vt=xACwing
-    +(Sh_eff/Swing)*eta_vt*(1-dw)*lv        // pitch moment from H-component
-    +(Sv_eff/Swing)*eta_vt*lv*0.5/bWing;   // small yaw-to-pitch coupling term
+  // NP shift: only the pitch-effective component (Sh_eff = S_panel·cos²Γ) moves NP aft
+  const xNP_vt=xACwing+(Sh_eff/Swing)*eta_vt*(1-dw)*lv;
   const SM_vt=(xNP_vt-xCGtotal)/MAC;
 
-  // Ruddervator deflection required for trim at cruise (simplified)
-  const CM_ac=selAF.CM;   // wing pitching moment coefficient
-  const delta_ruddervator=-(CM_ac*Swing*MAC)/(eta_vt*Sh_eff*lv*0.5); // in radians, approx
-  const delta_rv_deg=delta_ruddervator*180/Math.PI;
+  // Ruddervator symmetric (elevator) deflection for pitch trim at cruise
+  // δ_e_equiv = δ_rv × cos(Γ)  → δ_rv = δ_e_equiv / cos(Γ)
+  const CM_ac=selAF.CM;
+  const delta_e_equiv=-(CM_ac*Swing*MAC)/(eta_vt*Sh_eff*lv);   // equivalent elevator rad
+  const delta_rv_rad=delta_e_equiv/Math.cos(vtGamma);           // ruddervator deflection rad
+  const delta_rv_deg=delta_rv_rad*180/Math.PI;
+
+  // Ruddervator differential (rudder) deflection for yaw trim (β=2° sideslip estimate)
+  const CY_beta=-0.30;  // typical side-force derivative
+  const beta_trim=2*Math.PI/180;
+  const delta_yaw_rv_deg=(CY_beta*beta_trim*Swing)/(2*Sv_eff/lv)*180/Math.PI*(-1);
 
   /* Propulsion */
   const Ttot=MTOW*g0,Trotor=Ttot/p.nPropHover,Protor_W=Phov*1000/p.nPropHover;
@@ -308,7 +335,7 @@ function runSizing(p) {
     Vstall:+Vstall.toFixed(2),VA:+VA.toFixed(2),VD:+VD.toFixed(2),
     vnData,rpData,polarData,powerSteps,socSteps,velSteps,convData,weightBreak,dragComp,tPhases,
     checks,feasible:checks.every(c=>c.ok),
-    vtGamma_opt:+vtGamma_opt_deg.toFixed(1),Svt_total:+Svt_total.toFixed(3),Svt_panel:+Svt_panel.toFixed(3),
+    vtGamma_opt:+vtGamma_opt_deg.toFixed(1),Svt_total:+Svt_total.toFixed(3),Svt_panel:+Svt_panel.toFixed(3),governs_pitch:Svt_panel_pitch>=Svt_panel_yaw,ruddervator_combined_auth:+ruddervator_combined_auth.toFixed(3),delta_yaw_rv_deg:+delta_yaw_rv_deg.toFixed(2),
     Sh_req:+Sh_req.toFixed(3),Sv_req:+Sv_req.toFixed(3),Sh_eff:+Sh_eff.toFixed(3),Sv_eff:+Sv_eff.toFixed(3),
     pitch_ratio:+pitch_ratio.toFixed(3),yaw_ratio:+yaw_ratio.toFixed(3),
     bvt_panel:+bvt_panel.toFixed(3),Cr_vt:+Cr_vt.toFixed(3),Ct_vt:+Ct_vt.toFixed(3),MAC_vt:+MAC_vt.toFixed(3),
@@ -1081,11 +1108,14 @@ export default function App(){
                         <LineChart
                           data={Array.from({length:71},(_,i)=>{
                             const gd=i+10,gr=gd*Math.PI/180;
-                            const S=R.Svt_total;
+                            // Panel sized correctly at each Γ: S_panel = max(Sh_req/cos²Γ, Sv_req/sin²Γ)
+                            const c2=Math.cos(gr)**2, s2=Math.sin(gr)**2;
+                            const Sp=Math.max(R.Sh_req/c2, R.Sv_req/s2);
                             return{
                               gamma:gd,
-                              pitch_eff:+(S*Math.cos(gr)/R.Sh_req*100).toFixed(1),
-                              yaw_eff:+(S*Math.sin(gr)/R.Sv_req*100).toFixed(1),
+                              pitch_eff:+(Sp*c2/R.Sh_req*100).toFixed(1),
+                              yaw_eff:+(Sp*s2/R.Sv_req*100).toFixed(1),
+                              total_area:+(2*Sp).toFixed(2),
                             };
                           })}
                           margin={{top:5,right:20,left:10,bottom:20}}>
@@ -1112,14 +1142,21 @@ export default function App(){
                         fontFamily:"'DM Mono',monospace",marginBottom:8,borderBottom:`1px solid ${C.border}`,paddingBottom:5}}>
                         Control Authority vs Requirement
                       </div>
+                      <div style={{fontSize:9,color:"#64748b",fontFamily:"'DM Mono',monospace",marginBottom:6,padding:"4px 6px",background:"#0a0d14",borderRadius:4}}>
+                        Sh_eff = S_panel·cos²Γ &nbsp;|&nbsp; Sv_eff = S_panel·sin²Γ &nbsp;|&nbsp; Panel sized to governing constraint
+                      </div>
                       {[
-                        ["Required H-tail area",`${R.Sh_req} m²`,"—",C.muted],
-                        ["Effective H area (Sh_eff)",`${R.Sh_eff} m²`,`${(R.pitch_ratio*100).toFixed(0)}% of req.`,R.pitch_ratio>=1?C.green:C.red],
-                        ["Required V-tail area",`${R.Sv_req} m²`,"—",C.muted],
-                        ["Effective V area (Sv_eff)",`${R.Sv_eff} m²`,`${(R.yaw_ratio*100).toFixed(0)}% of req.`,R.yaw_ratio>=1?C.green:C.red],
+                        ["Sh_req (pitch needed)",`${R.Sh_req} m²`,"—",C.muted],
+                        ["Sv_req (yaw needed)",`${R.Sv_req} m²`,"—",C.muted],
+                        ["Panel area (per side)",`${R.Svt_panel} m²`,R.governs_pitch?"↑ pitch governs":"↑ yaw governs",C.amber],
+                        ["Sh_eff = S·cos²(Γ)",`${R.Sh_eff} m²`,`${(R.pitch_ratio*100).toFixed(0)}% of req.`,R.pitch_ratio>=1?C.green:C.red],
+                        ["Sv_eff = S·sin²(Γ)",`${R.Sv_eff} m²`,`${(R.yaw_ratio*100).toFixed(0)}% of req.`,R.yaw_ratio>=1?C.green:C.red],
                         ["Pitch authority",R.pitch_ratio>=1?"✅ Sufficient":"❌ Insufficient","",R.pitch_ratio>=1?C.green:C.red],
                         ["Yaw authority",R.yaw_ratio>=1?"✅ Sufficient":"❌ Insufficient","",R.yaw_ratio>=1?C.green:C.red],
+                        ["Combined authority",`${(R.ruddervator_combined_auth*100).toFixed(0)}%`,"√(p²+y²)",C.teal],
                         ["Updated SM (V-tail NP)",`${(R.SM_vt*100).toFixed(1)}% MAC`,"",R.SM_vt>=0.05&&R.SM_vt<=0.25?C.green:C.red],
+                        ["Trim δ ruddervator (pitch)",`${R.delta_rv_deg}°`,"symmetric",C.muted],
+                        ["Trim δ ruddervator (yaw)",`${R.delta_yaw_rv_deg}°`,"differential",C.muted],
                       ].map(([k,v,s,col],i)=>(
                         <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 0",borderBottom:`1px solid #0f131a`}}>
                           <span style={{fontSize:10,color:"#64748b"}}>{k}</span>
