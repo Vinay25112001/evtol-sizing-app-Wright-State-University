@@ -356,7 +356,7 @@ function generateVSPScript(p, R) {
   const f = (v, d=4) => { const n=Number(v); return (isFinite(n)?n:0).toFixed(d); };
 
   // Pull every sizing output with explicit fallbacks
-  const fL       = f(p.fusLen   || 5.6,   4);
+  const fL       = f(p.fusLen   || 6.5,   4);
   const fD       = f(p.fusDiam  || 1.65,  4);
   const bWing    = f(R.bWing    || 12.67, 4);
   const Swing    = f(R.Swing    || 17.83, 4);
@@ -445,18 +445,18 @@ void main()
 
     // XSec 1 — forward entry
     string xsec1 = GetXSec( surf, 1 );
-    SetParmVal( xsec1, "Width",  "XSecCurve", ${w1} );
-    SetParmVal( xsec1, "Height", "XSecCurve", ${h1} );
+    SetParmVal( xsec1, "Super_Width",  "XSecCurve", ${w1} );
+    SetParmVal( xsec1, "Super_Height", "XSecCurve", ${h1} );
 
     // XSec 2 — max cabin section
     string xsec2 = GetXSec( surf, 2 );
-    SetParmVal( xsec2, "Width",  "XSecCurve", ${w2} );
-    SetParmVal( xsec2, "Height", "XSecCurve", ${h2} );
+    SetParmVal( xsec2, "Super_Width",  "XSecCurve", ${w2} );
+    SetParmVal( xsec2, "Super_Height", "XSecCurve", ${h2} );
 
     // XSec 3 — aft taper
     string xsec3 = GetXSec( surf, 3 );
-    SetParmVal( xsec3, "Width",  "XSecCurve", ${w3} );
-    SetParmVal( xsec3, "Height", "XSecCurve", ${h3} );
+    SetParmVal( xsec3, "Super_Width",  "XSecCurve", ${w3} );
+    SetParmVal( xsec3, "Super_Height", "XSecCurve", ${h3} );
 
     Update();
 
@@ -514,7 +514,7 @@ ${rotYArr.split(',\n').map((y,i)=>`    rotorY[${i}] = ${y.trim()};`).join('\n')}
         SetParmVal( rp, "Z_Rel_Location", "XForm",  ${rotZ} );
         SetParmVal( rp, "Y_Rel_Rotation", "XForm", -90.0 );
         SetParmVal( rp, "Diameter",       "Design",  ${Drotor} );
-        SetParmVal( rp, "Nblade",         "Design",  ${nBl}.0 );
+        SetParmVal( rp, "Num_Blade",      "Design",  ${nBl}.0 );
 
         string rs = AddGeom( "PROP", fus );
         SetGeomName( rs, "Rotor_S" );
@@ -523,7 +523,7 @@ ${rotYArr.split(',\n').map((y,i)=>`    rotorY[${i}] = ${y.trim()};`).join('\n')}
         SetParmVal( rs, "Z_Rel_Location", "XForm",  ${rotZ} );
         SetParmVal( rs, "Y_Rel_Rotation", "XForm", -90.0 );
         SetParmVal( rs, "Diameter",       "Design",  ${Drotor} );
-        SetParmVal( rs, "Nblade",         "Design",  ${nBl}.0 );
+        SetParmVal( rs, "Num_Blade",      "Design",  ${nBl}.0 );
     }
     Update();
 
@@ -632,7 +632,7 @@ export default function App(){
     LD:15,AR:9,eOsw:0.85,clDesign:0.60,taper:0.45,tc:0.15,
     nPropHover:6,propDiam:3.0,etaHov:0.63,etaSys:0.765,rateOfClimb:5.08,climbAngle:5,
     sedCell:275,etaBat:0.90,socMin:0.2,ewf:0.52,
-    fusLen:5.6,fusDiam:1.65,
+    fusLen:6.5,fusDiam:1.65,
     vtGamma:45,vtCh:0.40,vtCv:0.05,vtAR:2.5,
   });
   const set=useCallback(k=>v=>setP(prev=>({...prev,[k]:v})),[]);
@@ -698,7 +698,7 @@ export default function App(){
         <button onClick={()=>setP({payload:455,range:250,vCruise:67,cruiseAlt:1000,reserveRange:60,hoverHeight:15.24,
           LD:15,AR:9,eOsw:0.85,clDesign:0.60,taper:0.45,tc:0.15,nPropHover:6,propDiam:3.0,
           etaHov:0.63,etaSys:0.765,rateOfClimb:5.08,climbAngle:5,sedCell:275,etaBat:0.90,socMin:0.2,ewf:0.52,
-          fusLen:5.6,fusDiam:1.65,
+          fusLen:6.5,fusDiam:1.65,
           vtGamma:45,vtCh:0.40,vtCv:0.05,vtAR:2.5})}
           style={{marginLeft:"auto",padding:"5px 12px",background:"transparent",border:`1px solid ${C.border}`,
             borderRadius:4,color:C.muted,fontSize:9,cursor:"pointer",fontFamily:"'DM Mono',monospace"}}>↺ RESET</button>
