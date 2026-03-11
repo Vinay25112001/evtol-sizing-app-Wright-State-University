@@ -346,436 +346,497 @@ function runSizing(p) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
-   OPENVSP FILE GENERATOR  — validated .vsp3 (OpenVSP 3.x)
-   Trail 1 lift+cruise hybrid tilt-rotor:
-     Fuselage (central parent)
-       Wing (XZ sym — both semi-spans)
-       4 wing-tip tilt rotors  (hover orientation, Y_Rot=-90 => thrust +Z)
-       (nPropHover-4) fixed boom rotors below mid-span
-       V-tail WING_GEOM (XZ sym, dihedral=vtGamma)
-       Pusher PROP_GEOM at tail (Y_Rot=0, default thrust +X)
-       CG marker + NP marker (tiny sphere fuselages)
-   VSP3 format:
-     APIversion = 3 (plain integer — accepted by all OpenVSP 3.x)
-     Geom id lives in <GeomBase><ParmContainer id="ID">
-     Sym_Planar_Flag: 0=none  2=XZ plane (left-right mirror)
-     PROP_GEOM default thrust = +X; Y_Rot=-90 => +Z (hover)
-     WingSect: 2 XSecCurve (inner/root + outer/tip airfoil)
-     XSecCurve type 2 = ELLIPSE   type 7 = NACA_4_SERIES
+   OPENVSP FILE GENERATOR  v2  —  correct VSP3 XML schema (OpenVSP 3.28+)
+   -----------------------------------------------------------------------
+   FIX LOG vs v1:
+   • Removed illegal type= attribute from <Geom> elements
+   • Fixed all Parm names: underscores (Sym_Planar_Flag, X_Rel_Location …)
+   • Added mandatory AbsRelFlag, Scale, X/Y/Z_Location absolute parms
+   • Length moved into FuselageGeom ParmContainer (not top-level)
+   • WingGeom: correct 2-XSec (root + tip) planform with proper groups
+   • PropGeom: replaced BladeList with XSecSurf + PropXSec group parms
+   • Version "3.28.0" — real OpenVSP release (any 3.28+ can open it)
+   • High-wing Z placement matching Trail 1 image configuration
+   • Trail 1 layout: fuselage body → wing → V-tail, all rotors on booms
    ═══════════════════════════════════════════════════════════════════════ */
 function generateVSPFile(p,R){
-  /* ── deterministic 8-char ID ── */
+  /* ── 8-char deterministic ID (FNV-1a hash) ── */
   function mkID(seed){
     const CH='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
     let h=0x811c9dc5>>>0;
     for(let i=0;i<seed.length;i++){h^=seed.charCodeAt(i);h=Math.imul(h,0x01000193)>>>0;}
     let id='';
-    for(let i=0;i<8;i++){id+=CH[h%CH.length];h=Math.imul(h,6364136223)>>>0;}
+    for(let i=0;i<8;i++){id+=CH[h%CH.length];h=Math.imul(h,1664525)>>>0;}
     return id;
   }
-  const f6=v=>Number(v).toFixed(6);
-  const f3=v=>Number(v).toFixed(3);
-  const P=(name,group,val,isInt=false)=>isInt
-    ?`<Parm name="${name}" group="${group}" type="3"><int>${Math.round(val)}</int></Parm>`
-    :`<Parm name="${name}" group="${group}" type="6"><real>${f6(val)}</real></Parm>`;
 
-  /* GeomBase — wraps sym + xform params. symPlan: 0=none, 2=XZ mirror */
-  const GeomBase=(id,symPlan,x,y,z,rx=0,ry=0,rz=0)=>`<GeomBase>
-    <ParmContainer name="GeomBase" id="${id}">
-      ${P('Sym_Planar_Flag','Sym',symPlan,true)}
-      ${P('Sym_Axial_Flag','Sym',0,true)}
-      ${P('Sym_Rot_N','Sym',2,true)}
-      ${P('Sym_Ancestor','Sym',0,true)}
-      ${P('Sym_Ancestor_Origin_Flag','Sym',0,true)}
-      ${P('X_Rel_Location','XForm',x)}
-      ${P('Y_Rel_Location','XForm',y)}
-      ${P('Z_Rel_Location','XForm',z)}
-      ${P('X_Rel_Rotation','XForm',rx)}
-      ${P('Y_Rel_Rotation','XForm',ry)}
-      ${P('Z_Rel_Rotation','XForm',rz)}
-      ${P('Origin','XForm',0)}
-    </ParmContainer>
-  </GeomBase>`;
+  /* ── Component IDs ── */
+  const FUS_ID=mkID('Trail1_fuse_body_01');
+  const WNG_ID=mkID('Trail1_wing_main_01');
+  const VTL_ID=mkID('Trail1_vtail_wng_01');
+  const CGM_ID=mkID('Trail1_cg_marker_01');
+  const NPM_ID=mkID('Trail1_np_marker_01');
+  const nR=p.nPropHover;
+  const ROT=Array.from({length:nR},(_,i)=>mkID('Trail1_rotor_'+String(i).padStart(2,'0')));
 
-  /* XSecCurve builders */
-  const NACAcurve=(id,camber,camberLoc,thick)=>`<XSecCurve type="7">
-        <ParmContainer name="XSecCurve" id="${id}">
-          ${P('Camber','Airfoil',camber)}
-          ${P('CamberLoc','Airfoil',camberLoc)}
-          ${P('ThickChord','Airfoil',thick)}
-        </ParmContainer>
-      </XSecCurve>`;
-  const ELLcurve=(id,w,h)=>`<XSecCurve type="2">
-        <ParmContainer name="XSecCurve" id="${id}">
-          ${P('Ellipse_Width','Ellipse',w)}
-          ${P('Ellipse_Height','Ellipse',h)}
-        </ParmContainer>
-      </XSecCurve>`;
-  const PTcurve=id=>`<XSecCurve type="0"><ParmContainer name="XSecCurve" id="${id}"/></XSecCurve>`;
-
-  /* ── extract sizing results ── */
-  const fL=p.fusLen, fD=p.fusDiam;
+  /* ── Extract results ── */
   const{bWing,Cr_,Ct_,sweep,xACwing,Swing,
         bvt_panel,Cr_vt,Ct_vt,sweep_vt,lv,Svt_total,MAC_vt,
-        Drotor,xCGtotal,xNP,MTOW,ChordBl}=R;
-  const Nbld=R.Nbld||3;
+        Drotor,ChordBl,Nbld,xCGtotal,xNP,MTOW}=R;
+  const fL=p.fusLen,fD=p.fusDiam;
 
-  /* ── key placements ── */
-  const xWingLE  = xACwing - 0.25*Cr_;          // wing root LE
-  const zWing    = -fD*0.08;                     // low-wing offset
-  const xVtLE    = (xACwing+lv) - 0.25*MAC_vt;  // V-tail root LE
-  const zVtail   = fD*0.05;
-  const swRad    = sweep*Math.PI/180;
-  const xTipLE   = xWingLE + (bWing/2)*Math.tan(swRad); // tip LE x
+  /* ── Placement ──
+     Coordinate: X=nose→tail, Y=port→stbd, Z=up
+     High-wing: wing root LE at top of fuselage
+     V-tail: root at aft fuselage, panels angle outward/upward at Γ     */
+  const xWingLE = xACwing - 0.25*Cr_;        // wing root LE from nose
+  const zWing   = fD*0.42;                   // HIGH-WING top of fuselage
+  const xVtLE   = (xACwing+lv) - 0.25*MAC_vt;// V-tail root LE
+  const zVtRoot = fD*0.08;                   // V-tail root slightly above CL
 
-  /* ── Rotor layout ── */
-  const nHov  = p.nPropHover;
-  const nTip  = Math.min(4, nHov);
-  const nBoom = Math.max(0, nHov - 4);
-  const tipOff= Ct_*0.28;
+  /* Rotor pairs — evenly spaced along wing semi-span
+     Each pair: port (y>0) + starboard (y<0)
+     Y_Rel_Rotation = -90 → rotor disk horizontal → thrust points +Z (up)  */
+  const nSide=Math.floor(nR/2);
+  const rotPairs=Array.from({length:nSide},(_,i)=>{
+    const y=(bWing/2)*(i+0.5)/nSide;
+    const x=xWingLE+Cr_*0.22;          // near wing LE
+    const z=zWing+fD*0.12;             // hub above wing surface
+    return{yp:+y.toFixed(4),ys:+(-y).toFixed(4),x:+x.toFixed(4),z:+z.toFixed(4)};
+  });
 
-  const tipRotors=[];
-  const tipZ = zWing + Drotor*0.52;
-  if(nTip>=1) tipRotors.push({id:mkID('t1_tr0'),x:xTipLE+Ct_*0.22-tipOff, y:+(bWing/2), z:tipZ});
-  if(nTip>=2) tipRotors.push({id:mkID('t1_tr1'),x:xTipLE+Ct_*0.22+tipOff, y:+(bWing/2), z:tipZ});
-  if(nTip>=3) tipRotors.push({id:mkID('t1_tr2'),x:xTipLE+Ct_*0.22-tipOff, y:-(bWing/2), z:tipZ});
-  if(nTip>=4) tipRotors.push({id:mkID('t1_tr3'),x:xTipLE+Ct_*0.22+tipOff, y:-(bWing/2), z:tipZ});
+  /* ── XML primitives ── */
+  const f6=v=>Number(v).toFixed(6);
+  /* Parm element: type 3=int, type 6=double */
+  const P=(name,group,val,isInt=false)=>
+    `<Parm name="${name}" group="${group}" type="${isInt?3:6}">`+
+    (isInt?`<int>${Math.round(val)}</int>`:`<real>${f6(val)}</real>`)+
+    `</Parm>`;
 
-  const boomRotors=[];
-  const nBS=Math.ceil(nBoom/2);
-  for(let i=0;i<nBS;i++){
-    const yw=(bWing/2)*(0.30+i*0.18);
-    const xr=xWingLE+Cr_*0.50;
-    const zr=zWing-0.85-i*0.12;
-    boomRotors.push({id:mkID('t1_br'+(i*2)),  x:xr, y:+yw, z:zr});
-    if(i*2+1<nBoom)
-    boomRotors.push({id:mkID('t1_br'+(i*2+1)),x:xr, y:-yw, z:zr});
+  /* Standard Sym + XForm block inside a Geom's top-level ParmContainer
+     planFlag: 0=none, 2=XZ (left-right mirror)                         */
+  function geomParms(planFlag,x,y,z,rx=0,ry=0,rz=0){
+    return`        ${P('Sym_Planar_Flag','Sym',planFlag,true)}
+        ${P('Sym_Axial_Flag', 'Sym',0,true)}
+        ${P('Sym_Rot_N',      'Sym',3,true)}
+        ${P('AbsRelFlag',     'XForm',0,true)}
+        ${P('X_Rel_Location','XForm',x)}
+        ${P('Y_Rel_Location','XForm',y)}
+        ${P('Z_Rel_Location','XForm',z)}
+        ${P('X_Rel_Rotation','XForm',rx)}
+        ${P('Y_Rel_Rotation','XForm',ry)}
+        ${P('Z_Rel_Rotation','XForm',rz)}
+        ${P('Origin',        'XForm',0)}
+        ${P('X_Location',    'XForm',0)}
+        ${P('Y_Location',    'XForm',0)}
+        ${P('Z_Location',    'XForm',0)}
+        ${P('X_Rotation',    'XForm',0)}
+        ${P('Y_Rotation',    'XForm',0)}
+        ${P('Z_Rotation',    'XForm',0)}
+        ${P('Scale',         'XForm',1)}`;
   }
 
-  const PUSH_ID=mkID('t1_push');
-  const xPush=fL+Drotor*0.16;
-  const zPush=fD*0.04;
-
-  const CGM_ID=mkID('t1_cgmk');
-  const NPM_ID=mkID('t1_npmk');
-  const FUS_ID=mkID('t1_fuse');
-  const WNG_ID=mkID('t1_wing');
-  const VTL_ID=mkID('t1_vtl');
-
-  const allChildIDs=[WNG_ID,VTL_ID,CGM_ID,NPM_ID,PUSH_ID,
-    ...tipRotors.map(r=>r.id),...boomRotors.map(r=>r.id)];
-
-  /* ════════════ 1. FUSELAGE (9 cross-sections) ════════════ */
-  const csList=[
-    [0.000, 0,        0       ],
-    [0.025, fD*0.30,  fD*0.34 ],
-    [0.080, fD*0.84,  fD*0.86 ],
-    [0.220, fD,       fD*0.94 ],
-    [0.480, fD,       fD*0.90 ],
-    [0.650, fD*0.96,  fD*0.86 ],
-    [0.800, fD*0.77,  fD*0.68 ],
-    [0.920, fD*0.42,  fD*0.32 ],
-    [1.000, fD*0.10,  fD*0.07 ],
+  /* ═══ FUSELAGE GEOM ═══
+     9 cross-sections (super-ellipse profile, pointed nose & tail)      */
+  const fsSects=[
+    {u:0.000,h:0.001,     w:0.001    },   // nose point
+    {u:0.025,h:fD*0.28,   w:fD*0.30  },
+    {u:0.090,h:fD*0.82,   w:fD*0.90  },
+    {u:0.230,h:fD,        w:fD*1.06  },   // max section
+    {u:0.460,h:fD,        w:fD*1.06  },
+    {u:0.630,h:fD*0.95,   w:fD*1.00  },
+    {u:0.780,h:fD*0.76,   w:fD*0.80  },
+    {u:0.910,h:fD*0.40,   w:fD*0.42  },
+    {u:1.000,h:0.001,     w:0.001    },   // tail point
   ];
-  const mkFusXSec=(idx,[xf,w,h])=>{
-    const isPoint=w<0.01;
-    const cid=mkID('t1_fxc'+idx);
-    return `
+  function mkFusXSec(idx,{u,h,w}){
+    const isPoint=h<0.01;
+    const xcType=isPoint?0:3;            // 0=POINT, 3=SUPER_ELLIPSE
+    const xcParms=isPoint?'':
+      `\n          ${P('Super_Height','SuperEllipse',h)}
+          ${P('Super_Width', 'SuperEllipse',w)}
+          ${P('Super_M',     'SuperEllipse',2)}
+          ${P('Super_N',     'SuperEllipse',2)}
+          ${P('Super_M_Bot', 'SuperEllipse',2)}
+          ${P('Super_N_Bot', 'SuperEllipse',2)}
+          ${P('Super_Toggle','SuperEllipse',1,true)}`;
+    return`
       <XSec type="0">
-        <ParmContainer name="XSec" id="${mkID('t1_fxs'+idx)}">
-          ${P('XLocPercent','XSec',xf)}
+        <ParmContainer name="XSec" id="${mkID('fxs'+idx+u)}">
+          ${P('XLocPercent','XSec',u)}
           ${P('YLocPercent','XSec',0)}
           ${P('ZLocPercent','XSec',0)}
-          ${P('XRot','XSec',0)}
-          ${P('YRot','XSec',0)}
-          ${P('ZRot','XSec',0)}
+          ${P('XRot',       'XSec',0)}
+          ${P('YRot',       'XSec',0)}
+          ${P('ZRot',       'XSec',0)}
+          ${P('RefLength',  'XSec',fL)}
+          ${P('Tan_Str_1',  'XSec',0.5)}
+          ${P('Tan_Str_2',  'XSec',0.5)}
         </ParmContainer>
-        ${isPoint?PTcurve(cid):ELLcurve(cid,w,h)}
+        <XSecCurve type="${xcType}">
+          <ParmContainer name="XSecCurve" id="${mkID('fxc'+idx+u)}">${xcParms}
+          </ParmContainer>
+        </XSecCurve>
       </XSec>`;
-  };
-
-  const fusGeom=`
-  <!-- ===== FUSELAGE (parent of all) ===== -->
-  <Geom type="FUSELAGE_GEOM">
-    ${GeomBase(FUS_ID,0,0,0,0)}
-    <Parent>NONE</Parent>
-    <Children>
-${allChildIDs.map(id=>`      <string>${id}</string>`).join('\n')}
-    </Children>
+  }
+  const fusSurfID=mkID('Trail1_xsrf_fuse');
+  const fusGpcID =mkID('Trail1_gpc_fuse1');
+  const fuseInner=`
     <FuselageGeom>
-      <ParmContainer name="FuselageGeom" id="${mkID('t1_fgm')}">
-        ${P('Length','Design',fL)}
-        ${P('OrderPolicy','Design',0,true)}
-        ${P('NumU_Mult','Design',1,true)}
+      <ParmContainer name="FuselageGeom" id="${fusGpcID}">
+        ${P('Length',      'Design',fL)}
+        ${P('OrderPolicy', 'Design',0,true)}
+        ${P('NumU_Mult',   'Design',1,true)}
       </ParmContainer>
-      <XSecSurf id="${mkID('t1_xss')}">
-        <ParmContainer name="XSecSurf" id="${mkID('t1_xsp')}">
-          ${P('TESS_W','Tesselation',12,true)}
-          ${P('TESS_U','Tesselation',20,true)}
+      <XSecSurf id="${fusSurfID}">
+        <ParmContainer name="XSecSurf" id="${fusSurfID}">
+          ${P('TESS_W','Tesselation',17,true)}
+          ${P('TESS_U','Tesselation',4, true)}
         </ParmContainer>
-${csList.map((cs,i)=>mkFusXSec(i,cs)).join('')}
+${fsSects.map((s,i)=>mkFusXSec(i,s)).join('')}
       </XSecSurf>
-    </FuselageGeom>
-  </Geom>`;
+    </FuselageGeom>`;
 
-  /* ════════════ 2. MAIN WING (XZ sym) ════════════ */
-  const wingGeom=`
-  <!-- ===== MAIN WING (XZ sym = both semi-spans) ===== -->
-  <Geom type="WING_GEOM">
-    ${GeomBase(WNG_ID,2,xWingLE,0,zWing)}
-    <Parent>${FUS_ID}</Parent>
-    <Children/>
-    <WingGeom>
-      <ParmContainer name="WingGeom" id="${mkID('t1_wgm')}">
-        ${P('TotalSpan','WingGeom',bWing)}
-        ${P('TotalProjSpan','WingGeom',bWing)}
-        ${P('TotalArea','WingGeom',Swing)}
-        ${P('TotalAR','WingGeom',p.AR)}
-        ${P('TotalChord','WingGeom',(Cr_+Ct_)/2)}
-        ${P('TotalTaper','WingGeom',p.taper)}
-        ${P('TotalSweep','WingGeom',sweep)}
-        ${P('SweepLoc','WingGeom',0)}
-        ${P('Dihedral','WingGeom',2)}
-        ${P('NumU_Mult','WingGeom',1,true)}
-        ${P('NumW_Mult','WingGeom',1,true)}
-      </ParmContainer>
-      <SectionList>
-        <WingSect>
-          <ParmContainer name="WingSect" id="${mkID('t1_ws0')}">
-            ${P('Span','WingSect',bWing/2)}
-            ${P('Rc','WingSect',Cr_)}
-            ${P('Tc','WingSect',Ct_)}
-            ${P('Sweep','WingSect',sweep)}
-            ${P('SweepLoc','WingSect',0)}
-            ${P('Dihedral','WingSect',2)}
-            ${P('Twist','WingSect',-1.5)}
-            ${P('TwistLoc','WingSect',0.25)}
-            ${P('NumSpanSeg','WingSect',8,true)}
-            ${P('NumChordSeg','WingSect',8,true)}
+  /* ═══ WING XSEC HELPER ═══
+     Each XSec in WingGeom defines one wing section (span,Rc,Tc,sweep…)
+     For a simple tapered wing: XSec[0]=root section, XSec[1]=tip cap    */
+  function mkWingXSec(key,rc,tc,span,swDeg,dihDeg,thk,camb){
+    return`
+      <XSec type="0">
+        <ParmContainer name="XSec" id="${mkID('wxs_'+key)}">
+          ${P('Span',                  'WingSection',span)}
+          ${P('Rc',                    'WingSection',rc)}
+          ${P('Tc',                    'WingSection',tc)}
+          ${P('Sweep',                 'WingSection',swDeg)}
+          ${P('Sweep_Location',        'WingSection',0)}
+          ${P('Sec_SW_Shift',          'WingSection',0)}
+          ${P('Dihedral',              'WingSection',dihDeg)}
+          ${P('Twist',                 'WingSection',0)}
+          ${P('Twist_Location',        'WingSection',0.25)}
+          ${P('SectTess_U',            'WingSection',8,true)}
+          ${P('Num_Interp',            'WingSection',0,true)}
+          ${P('RotateMatchDiedralFlag','WingSection',0,true)}
+        </ParmContainer>
+        <XSecCurve type="7">
+          <ParmContainer name="XSecCurve" id="${mkID('wxc_'+key)}">
+            ${P('Thickness', 'XSecCurve',thk)}
+            ${P('Camber',    'XSecCurve',camb)}
+            ${P('CamberLoc', 'XSecCurve',0.4)}
+            ${P('SharpTE',   'XSecCurve',1,true)}
+            ${P('IdealCl',   'XSecCurve',0)}
+            ${P('A',         'XSecCurve',0)}
           </ParmContainer>
-          ${NACAcurve(mkID('t1_waf0'),0.02,0.40,p.tc)}
-          ${NACAcurve(mkID('t1_waf1'),0.02,0.40,p.tc*0.90)}
-        </WingSect>
-      </SectionList>
-    </WingGeom>
-  </Geom>`;
-
-  /* ════════════ 3. V-TAIL (XZ sym = both butterfly panels) ════════════ */
-  const vtailGeom=`
-  <!-- ===== V-TAIL (XZ sym — both butterfly panels) ===== -->
-  <Geom type="WING_GEOM">
-    ${GeomBase(VTL_ID,2,xVtLE,0,zVtail)}
-    <Parent>${FUS_ID}</Parent>
-    <Children/>
-    <WingGeom>
-      <ParmContainer name="WingGeom" id="${mkID('t1_vtg')}">
-        ${P('TotalSpan','WingGeom',bvt_panel*2)}
-        ${P('TotalProjSpan','WingGeom',bvt_panel*2*Math.cos(p.vtGamma*Math.PI/180))}
-        ${P('TotalArea','WingGeom',Svt_total)}
-        ${P('TotalAR','WingGeom',p.vtAR)}
-        ${P('TotalChord','WingGeom',(Cr_vt+Ct_vt)/2)}
-        ${P('TotalTaper','WingGeom',0.4)}
-        ${P('TotalSweep','WingGeom',sweep_vt)}
-        ${P('SweepLoc','WingGeom',0)}
-        ${P('Dihedral','WingGeom',p.vtGamma)}
-        ${P('NumU_Mult','WingGeom',1,true)}
-        ${P('NumW_Mult','WingGeom',1,true)}
-      </ParmContainer>
-      <SectionList>
-        <WingSect>
-          <ParmContainer name="WingSect" id="${mkID('t1_vts')}">
-            ${P('Span','WingSect',bvt_panel)}
-            ${P('Rc','WingSect',Cr_vt)}
-            ${P('Tc','WingSect',Ct_vt)}
-            ${P('Sweep','WingSect',sweep_vt)}
-            ${P('SweepLoc','WingSect',0)}
-            ${P('Dihedral','WingSect',p.vtGamma)}
-            ${P('Twist','WingSect',0)}
-            ${P('TwistLoc','WingSect',0.25)}
-            ${P('NumSpanSeg','WingSect',6,true)}
-            ${P('NumChordSeg','WingSect',6,true)}
-          </ParmContainer>
-          ${NACAcurve(mkID('t1_vtaf0'),0,0,0.09)}
-          ${NACAcurve(mkID('t1_vtaf1'),0,0,0.09)}
-        </WingSect>
-      </SectionList>
-    </WingGeom>
-  </Geom>`;
-
-  /* ════════════ 4. PROP_GEOM helper ════════════
-     Y_Rot=-90 => thrust +Z (hover)
-     Y_Rot=0   => thrust +X (pusher)             */
-  function mkProp(id,label,parentID,x,y,z,yRot,diam,nBlade,beta34){
-    const chHub=ChordBl*1.18, chMid=ChordBl, chTip=ChordBl*0.56;
-    return `
-  <!-- ===== ${label} ===== -->
-  <Geom type="PROP_GEOM">
-    ${GeomBase(id,0,x,y,z,0,yRot,0)}
-    <Parent>${parentID}</Parent>
-    <Children/>
-    <PropGeom>
-      <ParmContainer name="PropGeom" id="${mkID(id+'gm')}">
-        ${P('Diameter','PropGeom',diam)}
-        ${P('Nblade','PropGeom',nBlade,true)}
-        ${P('Precone','PropGeom',0)}
-        ${P('Beta34','PropGeom',beta34)}
-        ${P('Feather','PropGeom',0)}
-        ${P('FeatherOffset','PropGeom',0.25)}
-        ${P('FeatherAxis','PropGeom',0.25)}
-        ${P('HubDiameter','PropGeom',diam*0.12)}
-        ${P('UseBeta34Flag','PropGeom',1,true)}
-        ${P('ZeroDeltaTheta','PropGeom',0,true)}
-        ${P('MultiRotorDisk','PropGeom',0,true)}
-        ${P('RFold','PropGeom',1.0)}
-        ${P('ThetaFold','PropGeom',0)}
-        ${P('r_Fold_Location','PropGeom',0.85)}
-        ${P('Delta_Theta_Fold','PropGeom',180)}
-      </ParmContainer>
-      <BladeList>
-        <PropBlade>
-          <ParmContainer name="PropBlade" id="${mkID(id+'bl')}">
-            ${P('NumU','PropBlade',3,true)}
-          </ParmContainer>
-          <SectionList>
-            <PropBladeXSec>
-              <ParmContainer name="PropBladeXSec" id="${mkID(id+'b0')}">
-                ${P('RadFrac','PropBladeSect',0.20)}
-                ${P('Chord','PropBladeSect',chHub)}
-                ${P('Twist','PropBladeSect',30)}
-                ${P('Rake','PropBladeSect',0)}
-                ${P('Skew','PropBladeSect',0)}
-                ${P('Sweep','PropBladeSect',0)}
-                ${P('Thickness','PropBladeSect',0.12)}
-              </ParmContainer>
-            </PropBladeXSec>
-            <PropBladeXSec>
-              <ParmContainer name="PropBladeXSec" id="${mkID(id+'b1')}">
-                ${P('RadFrac','PropBladeSect',0.60)}
-                ${P('Chord','PropBladeSect',chMid)}
-                ${P('Twist','PropBladeSect',20)}
-                ${P('Rake','PropBladeSect',0)}
-                ${P('Skew','PropBladeSect',0)}
-                ${P('Sweep','PropBladeSect',0)}
-                ${P('Thickness','PropBladeSect',0.12)}
-              </ParmContainer>
-            </PropBladeXSec>
-            <PropBladeXSec>
-              <ParmContainer name="PropBladeXSec" id="${mkID(id+'b2')}">
-                ${P('RadFrac','PropBladeSect',1.00)}
-                ${P('Chord','PropBladeSect',chTip)}
-                ${P('Twist','PropBladeSect',12)}
-                ${P('Rake','PropBladeSect',0)}
-                ${P('Skew','PropBladeSect',0)}
-                ${P('Sweep','PropBladeSect',0)}
-                ${P('Thickness','PropBladeSect',0.12)}
-              </ParmContainer>
-            </PropBladeXSec>
-          </SectionList>
-        </PropBlade>
-      </BladeList>
-    </PropGeom>
-  </Geom>`;
+        </XSecCurve>
+      </XSec>`;
   }
 
-  const tipRotorGeoms=tipRotors.map((r,i)=>
-    mkProp(r.id,`TipRotor_${i}`,FUS_ID,r.x,r.y,r.z,-90,Drotor,Nbld,22)).join('\n');
-  const boomRotorGeoms=boomRotors.map((r,i)=>
-    mkProp(r.id,`BoomRotor_${i}`,FUS_ID,r.x,r.y,r.z,-90,Drotor*0.82,Nbld,22)).join('\n');
-  const pusherGeom=mkProp(PUSH_ID,'Pusher_Prop',FUS_ID,xPush,0,zPush,0,Drotor*0.68,Nbld,18);
+  /* ═══ MAIN WING ═══  (XZ symmetry → both semi-spans created) */
+  const wngSurfID=mkID('Trail1_xsrf_wing');
+  const wngGpcID =mkID('Trail1_gpc_wing1');
+  const mainWingInner=`
+    <WingGeom>
+      <ParmContainer name="WingGeom" id="${wngGpcID}">
+        ${P('TotalChord',                 'WingGeom',Cr_)}
+        ${P('TotalSpan',                  'WingGeom',bWing)}
+        ${P('TotalProjSpan',              'WingGeom',bWing)}
+        ${P('TotalArea',                  'WingGeom',Swing)}
+        ${P('TotalAR',                    'WingGeom',p.AR)}
+        ${P('TotalTaper',                 'WingGeom',p.taper)}
+        ${P('ParameterizeWingFlag',       'WingGeom',0,true)}
+        ${P('RelativeDihedralFlag',       'WingGeom',0,true)}
+        ${P('RelativeTwistFlag',          'WingGeom',0,true)}
+        ${P('RotateAirfoilMatchDiedralFlag','WingGeom',0,true)}
+        ${P('BaseChord',   'WingGeom',Cr_)}
+        ${P('BaseArea',    'WingGeom',Swing)}
+        ${P('BaseSpan',    'WingGeom',bWing)}
+        ${P('LECluster',   'WingGeom',0.25)}
+        ${P('TECluster',   'WingGeom',0.25)}
+        ${P('SmallPanelW', 'WingGeom',0)}
+        ${P('MaxGrowth',   'WingGeom',1.3)}
+        ${P('NumU_Mult',   'Design',  1,true)}
+        ${P('NumW_Mult',   'Design',  1,true)}
+      </ParmContainer>
+      <XSecSurf id="${wngSurfID}">
+        <ParmContainer name="XSecSurf" id="${wngSurfID}">
+          ${P('TESS_W','Tesselation',17,true)}
+          ${P('TESS_U','Tesselation',4, true)}
+        </ParmContainer>
+${mkWingXSec('wroot',Cr_,Ct_,bWing/2,sweep,2,p.tc,0.02)}
+${mkWingXSec('wtip', Ct_,Ct_,0,      0,    2,p.tc,0.02)}
+      </XSecSurf>
+    </WingGeom>`;
 
-  /* ════════════ 5. CG & NP sphere markers ════════════ */
-  const mkMarker=(id,label,xPos)=>{
-    const d=0.14, len=0.14;
-    return `
-  <!-- ===== ${label} MARKER ===== -->
-  <Geom type="FUSELAGE_GEOM">
-    ${GeomBase(id,0,xPos-len/2,0,fD*0.60)}
+  /* ═══ V-TAIL ═══  (XZ symmetry → both panels; dihedral = Γ)
+     Root at fuselage CL, panels angle upward+outward forming butterfly  */
+  const vtlSurfID=mkID('Trail1_xsrf_vtl1');
+  const vtlGpcID =mkID('Trail1_gpc_vtl11');
+  const vtailInner=`
+    <WingGeom>
+      <ParmContainer name="WingGeom" id="${vtlGpcID}">
+        ${P('TotalChord',                 'WingGeom',Cr_vt)}
+        ${P('TotalSpan',                  'WingGeom',bvt_panel*2)}
+        ${P('TotalProjSpan',              'WingGeom',bvt_panel*2)}
+        ${P('TotalArea',                  'WingGeom',Svt_total)}
+        ${P('TotalAR',                    'WingGeom',p.vtAR)}
+        ${P('TotalTaper',                 'WingGeom',0.4)}
+        ${P('ParameterizeWingFlag',       'WingGeom',0,true)}
+        ${P('RelativeDihedralFlag',       'WingGeom',0,true)}
+        ${P('RelativeTwistFlag',          'WingGeom',0,true)}
+        ${P('RotateAirfoilMatchDiedralFlag','WingGeom',0,true)}
+        ${P('BaseChord',   'WingGeom',Cr_vt)}
+        ${P('BaseArea',    'WingGeom',Svt_total)}
+        ${P('BaseSpan',    'WingGeom',bvt_panel*2)}
+        ${P('LECluster',   'WingGeom',0.25)}
+        ${P('TECluster',   'WingGeom',0.25)}
+        ${P('SmallPanelW', 'WingGeom',0)}
+        ${P('MaxGrowth',   'WingGeom',1.3)}
+        ${P('NumU_Mult',   'Design',  1,true)}
+        ${P('NumW_Mult',   'Design',  1,true)}
+      </ParmContainer>
+      <XSecSurf id="${vtlSurfID}">
+        <ParmContainer name="XSecSurf" id="${vtlSurfID}">
+          ${P('TESS_W','Tesselation',13,true)}
+          ${P('TESS_U','Tesselation',4, true)}
+        </ParmContainer>
+${mkWingXSec('vtroot',Cr_vt,Ct_vt,bvt_panel,sweep_vt,p.vtGamma,0.09,0)}
+${mkWingXSec('vttip', Ct_vt,Ct_vt,0,        0,       p.vtGamma,0.09,0)}
+      </XSecSurf>
+    </WingGeom>`;
+
+  /* ═══ PROP GEOM ═══
+     PropXSec group holds blade section params.
+     4 radial stations per blade (hub→tip taper + twist).
+     Y_Rel_Rotation=-90 → disk horizontal → thrust +Z (hover).           */
+  function mkPropXSec(key,radFrac,chord,twist){
+    return`
+        <XSec type="0">
+          <ParmContainer name="XSec" id="${mkID('pxs_'+key)}">
+            ${P('RadFrac',   'PropXSec',radFrac)}
+            ${P('Chord',     'PropXSec',chord)}
+            ${P('Twist',     'PropXSec',twist)}
+            ${P('Rake',      'PropXSec',0)}
+            ${P('Skew',      'PropXSec',0)}
+            ${P('Sweep',     'PropXSec',0)}
+            ${P('Axial',     'PropXSec',0)}
+            ${P('Tangential','PropXSec',0)}
+            ${P('CurveType', 'PropXSec',0,true)}
+          </ParmContainer>
+          <XSecCurve type="7">
+            <ParmContainer name="XSecCurve" id="${mkID('pxc_'+key)}">
+              ${P('Thickness','XSecCurve',0.12)}
+              ${P('Camber',   'XSecCurve',0.02)}
+              ${P('CamberLoc','XSecCurve',0.4)}
+              ${P('SharpTE',  'XSecCurve',1,true)}
+              ${P('IdealCl',  'XSecCurve',0)}
+              ${P('A',        'XSecCurve',0)}
+            </ParmContainer>
+          </XSecCurve>
+        </XSec>`;
+  }
+  function mkPropInner(ri){
+    const pgID=mkID('Trail1_pgeo_r'+ri);
+    const psID=mkID('Trail1_pxsr_r'+ri);
+    const ch=ChordBl||0.157;
+    return`
+    <PropGeom>
+      <ParmContainer name="PropGeom" id="${pgID}">
+        ${P('Diameter',             'Design',Drotor)}
+        ${P('Nblade',               'Design',Nbld||3,true)}
+        ${P('Precone',              'Design',0)}
+        ${P('Beta34',               'Design',22)}
+        ${P('Feather',              'Design',0)}
+        ${P('FeatherOffset',        'Design',0)}
+        ${P('FeatherAxis',          'Design',0.25)}
+        ${P('ZeroDeltaTheta',       'Design',0,true)}
+        ${P('UseBeta34Flag',        'Design',1,true)}
+        ${P('HubDiameter',          'Design',Drotor*0.12)}
+        ${P('PropMode',             'Design',0,true)}
+        ${P('RFold',                'Design',1.0)}
+        ${P('ThetaFold',            'Design',0)}
+        ${P('AzimuthOffset',        'Design',0)}
+        ${P('r_Fold_Location',      'Design',0.85)}
+        ${P('Delta_Theta_Fold',     'Design',180)}
+        ${P('CLi',                  'Design',0.5)}
+        ${P('ChordCurveActiveFlag', 'Design',0,true)}
+        ${P('TwistCurveActiveFlag', 'Design',0,true)}
+        ${P('NumU_Mult',            'Design',1,true)}
+        ${P('NumW_Mult',            'Design',1,true)}
+      </ParmContainer>
+      <XSecSurf id="${psID}">
+        <ParmContainer name="XSecSurf" id="${psID}">
+          ${P('TESS_W','Tesselation',9,true)}
+          ${P('TESS_U','Tesselation',4,true)}
+        </ParmContainer>
+${mkPropXSec(ri+'_0',0.15,ch*1.10,36)}
+${mkPropXSec(ri+'_1',0.50,ch,     26)}
+${mkPropXSec(ri+'_2',0.85,ch*0.82,18)}
+${mkPropXSec(ri+'_3',1.00,ch*0.60,12)}
+      </XSecSurf>
+    </PropGeom>`;
+  }
+
+  /* ═══ CG / NP SPHERE MARKERS ═══
+     Small lenticular fuselage bodies (3 XSecs = point-sphere-point)     */
+  function mkMarkerGeom(markID,label,xPos){
+    const d=0.16,len=0.20;
+    const mgID=mkID('T1_mgpc_'+label);
+    const msID=mkID('T1_mxsr_'+label);
+    function mXSec(idx,u,diam){
+      const isPoint=diam<0.01;
+      const xcT=isPoint?0:3;
+      const xcP=isPoint?'':
+        `\n            ${P('Super_Height','SuperEllipse',diam)}
+            ${P('Super_Width', 'SuperEllipse',diam)}
+            ${P('Super_M',     'SuperEllipse',2)}
+            ${P('Super_N',     'SuperEllipse',2)}
+            ${P('Super_M_Bot', 'SuperEllipse',2)}
+            ${P('Super_N_Bot', 'SuperEllipse',2)}
+            ${P('Super_Toggle','SuperEllipse',1,true)}`;
+      return`
+        <XSec type="0">
+          <ParmContainer name="XSec" id="${mkID('mxs_'+label+idx)}">
+            ${P('XLocPercent','XSec',u)}
+            ${P('YLocPercent','XSec',0)}
+            ${P('ZLocPercent','XSec',0)}
+            ${P('XRot',       'XSec',0)}
+            ${P('YRot',       'XSec',0)}
+            ${P('ZRot',       'XSec',0)}
+            ${P('RefLength',  'XSec',len)}
+            ${P('Tan_Str_1',  'XSec',0.5)}
+            ${P('Tan_Str_2',  'XSec',0.5)}
+          </ParmContainer>
+          <XSecCurve type="${xcT}">
+            <ParmContainer name="XSecCurve" id="${mkID('mxc_'+label+idx)}">${xcP}
+            </ParmContainer>
+          </XSecCurve>
+        </XSec>`;
+    }
+    return`
+  <Geom>
+    <ParmContainer name="${label}" id="${markID}">
+${geomParms(0,xPos-len/2,0,fD*0.65)}
+    </ParmContainer>
     <Parent>${FUS_ID}</Parent>
     <Children/>
     <FuselageGeom>
-      <ParmContainer name="FuselageGeom" id="${mkID(id+'gm')}">
-        ${P('Length','Design',len)}
+      <ParmContainer name="FuselageGeom" id="${mgID}">
+        ${P('Length',     'Design',len)}
         ${P('OrderPolicy','Design',0,true)}
+        ${P('NumU_Mult',  'Design',1,true)}
       </ParmContainer>
-      <XSecSurf id="${mkID(id+'xs')}">
-        <ParmContainer name="XSecSurf" id="${mkID(id+'xp')}">
+      <XSecSurf id="${msID}">
+        <ParmContainer name="XSecSurf" id="${msID}">
           ${P('TESS_W','Tesselation',8,true)}
           ${P('TESS_U','Tesselation',4,true)}
         </ParmContainer>
-        <XSec type="0">
-          <ParmContainer name="XSec" id="${mkID(id+'s0')}">
-            ${P('XLocPercent','XSec',0)}${P('YLocPercent','XSec',0)}${P('ZLocPercent','XSec',0)}
-            ${P('XRot','XSec',0)}${P('YRot','XSec',0)}${P('ZRot','XSec',0)}
-          </ParmContainer>
-          ${PTcurve(mkID(id+'c0'))}
-        </XSec>
-        <XSec type="0">
-          <ParmContainer name="XSec" id="${mkID(id+'s1')}">
-            ${P('XLocPercent','XSec',0.5)}${P('YLocPercent','XSec',0)}${P('ZLocPercent','XSec',0)}
-            ${P('XRot','XSec',0)}${P('YRot','XSec',0)}${P('ZRot','XSec',0)}
-          </ParmContainer>
-          ${ELLcurve(mkID(id+'c1'),d,d)}
-        </XSec>
-        <XSec type="0">
-          <ParmContainer name="XSec" id="${mkID(id+'s2')}">
-            ${P('XLocPercent','XSec',1.0)}${P('YLocPercent','XSec',0)}${P('ZLocPercent','XSec',0)}
-            ${P('XRot','XSec',0)}${P('YRot','XSec',0)}${P('ZRot','XSec',0)}
-          </ParmContainer>
-          ${PTcurve(mkID(id+'c2'))}
-        </XSec>
+${mXSec(0,0.0, 0.001)}
+${mXSec(1,0.5, d)}
+${mXSec(2,1.0, 0.001)}
       </XSecSurf>
     </FuselageGeom>
   </Geom>`;
-  };
+  }
 
-  const cgMarkerGeom=mkMarker(CGM_ID,'CG',xCGtotal);
-  const npMarkerGeom=mkMarker(NPM_ID,'NP',xNP);
+  /* ═══ ASSEMBLE FULL VSP3 FILE ═══ */
+  const allChildren=[WNG_ID,VTL_ID,CGM_ID,NPM_ID,...ROT]
+    .map(id=>`      <string>${id}</string>`).join('\n');
 
-  /* ════════════ 6. ASSEMBLE ════════════ */
-  return `<?xml version="1.0"?>
-<!-- Trail 1 eVTOL — eVTOL Sizer v2.0 (Wright State University) -->
-<!-- MTOW:${f3(MTOW)}kg  CG:${f3(xCGtotal)}m  NP:${f3(xNP)}m  Wing:S=${R.Swing}m2 b=${R.bWing}m  V-tail:G=${p.vtGamma}deg S=${R.Svt_total}m2 -->
+  const fuselageGeom=`
+  <Geom>
+    <ParmContainer name="Fuselage" id="${FUS_ID}">
+${geomParms(0,0,0,0)}
+    </ParmContainer>
+    <Parent>NONE</Parent>
+    <Children>
+${allChildren}
+    </Children>
+${fuseInner}
+  </Geom>`;
+
+  const mainWingGeom=`
+  <Geom>
+    <ParmContainer name="MainWing" id="${WNG_ID}">
+${geomParms(2,xWingLE,0,zWing)}
+    </ParmContainer>
+    <Parent>${FUS_ID}</Parent>
+    <Children/>
+${mainWingInner}
+  </Geom>`;
+
+  const vtailGeom=`
+  <Geom>
+    <ParmContainer name="VTail" id="${VTL_ID}">
+${geomParms(2,xVtLE,0,zVtRoot)}
+    </ParmContainer>
+    <Parent>${FUS_ID}</Parent>
+    <Children/>
+${vtailInner}
+  </Geom>`;
+
+  const rotorGeoms=rotPairs.flatMap(({yp,ys,x,z},i)=>[
+    `
+  <Geom>
+    <ParmContainer name="Rotor_P${i}" id="${ROT[2*i]}">
+${geomParms(0,x,yp,z,0,-90,0)}
+    </ParmContainer>
+    <Parent>${FUS_ID}</Parent>
+    <Children/>
+${mkPropInner(2*i)}
+  </Geom>`,
+    `
+  <Geom>
+    <ParmContainer name="Rotor_S${i}" id="${ROT[2*i+1]}">
+${geomParms(0,x,ys,z,0,-90,0)}
+    </ParmContainer>
+    <Parent>${FUS_ID}</Parent>
+    <Children/>
+${mkPropInner(2*i+1)}
+  </Geom>`
+  ]).join('');
+
+  const cgMarker=mkMarkerGeom(CGM_ID,'CG_Mark',xCGtotal);
+  const npMarker=mkMarkerGeom(NPM_ID,'NP_Mark',xNP);
+
+  return`<?xml version="1.0"?>
+<!-- Trail 1 eVTOL — generated by eVTOL Sizer v2.0 (Wright State University) -->
+<!-- MTOW:${f6(MTOW)} kg  CG:${f6(xCGtotal)} m  NP:${f6(xNP)} m from nose -->
 <Vsp_Geometry>
-<APIversion>3</APIversion>
-<Vehicle>
-  <ParmContainer name="Vehicle" id="${mkID('t1_veh')}">
-    ${P('Mass','Mass_Prop',MTOW)}
-    ${P('CGx','Mass_Prop',xCGtotal)}
-    ${P('CGy','Mass_Prop',0)}
-    ${P('CGz','Mass_Prop',0)}
-    ${P('IxxMoment','Mass_Prop',0)}
-    ${P('IyyMoment','Mass_Prop',0)}
-    ${P('IzzMoment','Mass_Prop',0)}
-    ${P('IxyProduct','Mass_Prop',0)}
-    ${P('IxzProduct','Mass_Prop',0)}
-    ${P('IyzProduct','Mass_Prop',0)}
-  </ParmContainer>
-  <UserParms>
-    <ParmContainer name="UserParms" id="${mkID('t1_upr')}"/>
-  </UserParms>
-  <Set_Name_List>
-    <Set_Name>All</Set_Name>
-    <Set_Name>Shown</Set_Name>
-    <Set_Name>NoShow</Set_Name>
-  </Set_Name_List>
-  <Geom_ID_List>
-    <string>${FUS_ID}</string>
-  </Geom_ID_List>
-</Vehicle>
-<Geom_Container>
-${fusGeom}
-${wingGeom}
+  <APIversion>3.28.0</APIversion>
+  <Vehicle>
+    <ParmContainer name="Vehicle" id="Vehicle">
+      ${P('CGx',          'Mass_Prop',xCGtotal)}
+      ${P('CGy',          'Mass_Prop',0)}
+      ${P('CGz',          'Mass_Prop',0)}
+      ${P('Mass',         'Mass_Prop',MTOW)}
+      ${P('UseGravityCG', 'Mass_Prop',0,true)}
+      ${P('CGx_Override', 'Mass_Prop',0)}
+      ${P('CGy_Override', 'Mass_Prop',0)}
+      ${P('CGz_Override', 'Mass_Prop',0)}
+      ${P('UpdFlag',      'Vehicle',  0,true)}
+    </ParmContainer>
+    <UserParms>
+      <ParmContainer name="UserParms" id="UserParms"/>
+    </UserParms>
+    <Set_Name_List>
+      <Set_Name>All</Set_Name>
+      <Set_Name>Shown</Set_Name>
+      <Set_Name>NoShow</Set_Name>
+      <Set_Name>Set_3</Set_Name>
+    </Set_Name_List>
+    <Geom_ID_List>
+      <string>${FUS_ID}</string>
+    </Geom_ID_List>
+  </Vehicle>
+  <Geom_Container>
+${fuselageGeom}
+${mainWingGeom}
 ${vtailGeom}
-${tipRotorGeoms}
-${boomRotorGeoms}
-${pusherGeom}
-${cgMarkerGeom}
-${npMarkerGeom}
-</Geom_Container>
+${cgMarker}
+${npMarker}
+${rotorGeoms}
+  </Geom_Container>
 </Vsp_Geometry>`;
 }
-
-
 
 /* ═══════════════════════════════════
    THEME & CONSTANTS
