@@ -348,24 +348,44 @@ function runSizing(p) {
 
 /* ═══════════════════════════════════════════════════════════════════════
    OPENVSP ANGELSCRIPT GENERATOR
-   Generates a .vspscript (AngelScript) file that the user runs inside
-   their own OpenVSP via  Tools → Run Script.
-   The script builds the complete Trail 1 geometry using the live API,
-   so there are ZERO version-compatibility issues.
+   Generates a .vspscript (AngelScript) file the user runs inside their
+   own OpenVSP via  File -> Run Script  (works on every version >= 3.28).
    ═══════════════════════════════════════════════════════════════════════ */
 function generateVSPScript(p, R) {
-  const fL=p.fusLen, fD=p.fusDiam;
-  const{bWing,Cr_,Ct_,sweep,xACwing,Swing,
-        bvt_panel,Cr_vt,Ct_vt,sweep_vt,lv,Svt_total,MAC_vt,
-        Drotor,ChordBl,Nbld,xCGtotal,xNP,MTOW,SM,Wempty,Wbat}=R;
+  // Safe number formatter: NaN / undefined -> 0.0  (never embeds "NaN")
+  const f = (v, d=4) => { const n = Number(v); return (isFinite(n) ? n : 0).toFixed(d); };
 
-  // Placement (all metres, angles in degrees)
+  // Pull every field with explicit fallbacks so nothing can be undefined
+  const fL       = +(p.fusLen   || 5.6);
+  const fD       = +(p.fusDiam  || 1.65);
+  const bWing    = +(R.bWing    || 12.67);
+  const Cr_      = +(R.Cr_      || 1.941);
+  const Ct_      = +(R.Ct_      || 0.874);
+  const sweep    = +(R.sweep    || 4.82);
+  const xACwing  = +(R.xACwing  || 2.285);
+  const Swing    = +(R.Swing    || 17.83);
+  const bvt_panel= +(R.bvt_panel|| 4.127);
+  const Cr_vt    = +(R.Cr_vt   || 2.359);
+  const Ct_vt    = +(R.Ct_vt   || 0.944);
+  const sweep_vt = +(R.sweep_vt || 18.92);
+  const lv       = +(R.lv      || 3.315);
+  const Svt_total= +(R.Svt_total|| 13.628);
+  const MAC_vt   = +(R.MAC_vt  || 1.752);
+  const Drotor   = +(R.Drotor  || 3.000);
+  const Nbld     = +(R.Nbld    || 3);
+  const xCGtotal = +(R.xCGtotal|| 2.225);
+  const xNP      = +(R.xNP     || 2.556);
+  const MTOW     = +(R.MTOW    || 2720.9);
+  const SM       = +(R.SM      || 0.2246);
+  const Wempty   = +(R.Wempty  || 1414);
+  const Wbat     = +(R.Wbat    || 851);
+
+  // Placement geometry
   const xWingLE = +(xACwing - 0.25*Cr_).toFixed(4);
-  const zWing   = +(fD * 0.42).toFixed(4);          // high-wing
+  const zWing   = +(fD * 0.42).toFixed(4);           // high-wing (42% fD)
   const xVtLE   = +((xACwing+lv) - 0.25*MAC_vt).toFixed(4);
   const zVtRoot = +(fD * 0.08).toFixed(4);
-  const nBl     = Nbld || 3;
-  const f = (v,d=4) => Number(v).toFixed(d);
+  const nBl     = Math.round(Nbld) || 3;
 
   // Rotor pairs (evenly across wing semi-span)
   const nSide = Math.floor(p.nPropHover/2);
@@ -445,11 +465,11 @@ void main()
     string fsurf = GetXSecSurf( fus, 0 );
 
     // XSec 0 — nose point
-    ChangeXSecShape( fsurf, 0, XS_POINT );
+    ChangeXSecShape( fsurf, 0, 0 ); // XS_POINT 
     SetParmVal( GetParm( GetXSec(fsurf,0), "XLocPercent", "XSec" ), 0.0 );
 
     // XSec 1 — forward entry (x = 10%)
-    ChangeXSecShape( fsurf, 1, XS_SUPER_ELLIPSE );
+    ChangeXSecShape( fsurf, 1, 3 ); // XS_SUPER_ELLIPSE 
     SetParmVal( GetParm( GetXSec(fsurf,1), "XLocPercent",  "XSec"         ), 0.10 );
     SetParmVal( GetParm( GetXSec(fsurf,1), "Super_Width",  "SuperEllipse" ), ${f(fD*0.88)} );
     SetParmVal( GetParm( GetXSec(fsurf,1), "Super_Height", "SuperEllipse" ), ${f(fD*0.82)} );
@@ -457,7 +477,7 @@ void main()
     SetParmVal( GetParm( GetXSec(fsurf,1), "Super_N",      "SuperEllipse" ), 2.0 );
 
     // XSec 2 — max cabin section (x = 38%)
-    ChangeXSecShape( fsurf, 2, XS_SUPER_ELLIPSE );
+    ChangeXSecShape( fsurf, 2, 3 ); // XS_SUPER_ELLIPSE 
     SetParmVal( GetParm( GetXSec(fsurf,2), "XLocPercent",  "XSec"         ), 0.38 );
     SetParmVal( GetParm( GetXSec(fsurf,2), "Super_Width",  "SuperEllipse" ), ${f(fD*1.06)} );
     SetParmVal( GetParm( GetXSec(fsurf,2), "Super_Height", "SuperEllipse" ), ${f(fD)} );
@@ -465,7 +485,7 @@ void main()
     SetParmVal( GetParm( GetXSec(fsurf,2), "Super_N",      "SuperEllipse" ), 2.0 );
 
     // XSec 3 — aft taper (x = 72%)
-    ChangeXSecShape( fsurf, 3, XS_SUPER_ELLIPSE );
+    ChangeXSecShape( fsurf, 3, 3 ); // XS_SUPER_ELLIPSE 
     SetParmVal( GetParm( GetXSec(fsurf,3), "XLocPercent",  "XSec"         ), 0.72 );
     SetParmVal( GetParm( GetXSec(fsurf,3), "Super_Width",  "SuperEllipse" ), ${f(fD*0.68)} );
     SetParmVal( GetParm( GetXSec(fsurf,3), "Super_Height", "SuperEllipse" ), ${f(fD*0.55)} );
@@ -473,7 +493,7 @@ void main()
     SetParmVal( GetParm( GetXSec(fsurf,3), "Super_N",      "SuperEllipse" ), 2.0 );
 
     // XSec 4 — tail point
-    ChangeXSecShape( fsurf, 4, XS_POINT );
+    ChangeXSecShape( fsurf, 4, 0 ); // XS_POINT 
     SetParmVal( GetParm( GetXSec(fsurf,4), "XLocPercent", "XSec" ), 1.0 );
 
     Update();
@@ -487,15 +507,15 @@ void main()
     string wng = AddGeom( "WING", fus );
     SetGeomName( wng, "MainWing" );
 
-    SetParmVal( wng, "Sym_Planar_Flag", "Sym",   SYM_XZ );
+    SetParmVal( wng, "Sym_Planar_Flag", "Sym",   2.0 );   // 2 = SYM_XZ
     SetParmVal( wng, "X_Rel_Location",  "XForm", ${xWingLE} );
     SetParmVal( wng, "Y_Rel_Location",  "XForm", 0.0 );
     SetParmVal( wng, "Z_Rel_Location",  "XForm", ${zWing} );
     SetParmVal( wng, "X_Rel_Rotation",  "XForm", 0.0 );
 
-    string wsurf = GetXSecSurf( wng, 0 );
-    string wsec  = GetXSec( wsurf, 1 );
-
+    // Wing section parameters (section index 0 = only section in simple tapered wing)
+    string wwsurf = GetXSecSurf( wng, 0 );
+    string wsec   = GetXSec( wwsurf, 1 );
     SetParmVal( GetParm( wsec, "Span",     "WingSection" ), ${f(bWing/2)} );
     SetParmVal( GetParm( wsec, "Rc",       "WingSection" ), ${f(Cr_,4)} );
     SetParmVal( GetParm( wsec, "Tc",       "WingSection" ), ${f(Ct_,4)} );
@@ -504,13 +524,13 @@ void main()
     SetParmVal( GetParm( wsec, "Twist",    "WingSection" ), 0.0 );
 
     // Root airfoil — NACA 4-series  t/c = ${p.tc}  camber = 2%
-    ChangeXSecShape( wsurf, 0, XS_FOUR_SERIES );
+    ChangeXSecShape( wsurf, 0, 7 ); // XS_FOUR_SERIES 
     SetParmVal( GetParm( GetXSec(wsurf,0), "Thickness", "XSecCurve" ), ${f(p.tc,4)} );
     SetParmVal( GetParm( GetXSec(wsurf,0), "Camber",    "XSecCurve" ), 0.02 );
     SetParmVal( GetParm( GetXSec(wsurf,0), "CamberLoc", "XSecCurve" ), 0.40 );
 
     // Tip airfoil — same series, same thickness
-    ChangeXSecShape( wsurf, 1, XS_FOUR_SERIES );
+    ChangeXSecShape( wsurf, 1, 7 ); // XS_FOUR_SERIES 
     SetParmVal( GetParm( GetXSec(wsurf,1), "Thickness", "XSecCurve" ), ${f(p.tc,4)} );
     SetParmVal( GetParm( GetXSec(wsurf,1), "Camber",    "XSecCurve" ), 0.015 );
     SetParmVal( GetParm( GetXSec(wsurf,1), "CamberLoc", "XSecCurve" ), 0.40 );
@@ -527,14 +547,14 @@ void main()
     string vtl = AddGeom( "WING", fus );
     SetGeomName( vtl, "VTail" );
 
-    SetParmVal( vtl, "Sym_Planar_Flag", "Sym",   SYM_XZ );
+    SetParmVal( vtl, "Sym_Planar_Flag", "Sym",   2.0 );   // 2 = SYM_XZ
     SetParmVal( vtl, "X_Rel_Location",  "XForm", ${xVtLE} );
     SetParmVal( vtl, "Y_Rel_Location",  "XForm", 0.0 );
     SetParmVal( vtl, "Z_Rel_Location",  "XForm", ${zVtRoot} );
 
-    string vsurf = GetXSecSurf( vtl, 0 );
-    string vsec  = GetXSec( vsurf, 1 );
-
+    // V-tail section parameters
+    string vvsurf = GetXSecSurf( vtl, 0 );
+    string vsec   = GetXSec( vvsurf, 1 );
     SetParmVal( GetParm( vsec, "Span",     "WingSection" ), ${f(bvt_panel,4)} );
     SetParmVal( GetParm( vsec, "Rc",       "WingSection" ), ${f(Cr_vt,4)} );
     SetParmVal( GetParm( vsec, "Tc",       "WingSection" ), ${f(Ct_vt,4)} );
@@ -543,11 +563,12 @@ void main()
     SetParmVal( GetParm( vsec, "Twist",    "WingSection" ), 0.0 );
 
     // Symmetric airfoil NACA 0009 (t/c = 0.09, no camber)
-    ChangeXSecShape( vsurf, 0, XS_FOUR_SERIES );
+    string vsurf = GetXSecSurf( vtl, 0 );
+    ChangeXSecShape( vsurf, 0, 7 ); // XS_FOUR_SERIES 
     SetParmVal( GetParm( GetXSec(vsurf,0), "Thickness", "XSecCurve" ), 0.09 );
     SetParmVal( GetParm( GetXSec(vsurf,0), "Camber",    "XSecCurve" ), 0.0 );
 
-    ChangeXSecShape( vsurf, 1, XS_FOUR_SERIES );
+    ChangeXSecShape( vsurf, 1, 7 ); // XS_FOUR_SERIES 
     SetParmVal( GetParm( GetXSec(vsurf,1), "Thickness", "XSecCurve" ), 0.09 );
     SetParmVal( GetParm( GetXSec(vsurf,1), "Camber",    "XSecCurve" ), 0.0 );
 
@@ -567,17 +588,24 @@ ${rotLines.join('\n')}
     //  CG at x = ${f(xCGtotal,4)} m from nose
     //  NP at x = ${f(xNP,4)} m from nose  (SM = ${((SM)*100).toFixed(1)}% MAC)
     // ════════════════════════════════════════════════════════════
-    SetParmVal( FindParm( "Vehicle", "CGx",  "Mass_Prop" ), ${f(xCGtotal,4)} );
-    SetParmVal( FindParm( "Vehicle", "CGy",  "Mass_Prop" ), 0.0 );
-    SetParmVal( FindParm( "Vehicle", "CGz",  "Mass_Prop" ), 0.0 );
-    SetParmVal( FindParm( "Vehicle", "Mass", "Mass_Prop" ), ${f(MTOW,2)} );
+    // Vehicle mass properties -- set via Model menu > Vehicle in OpenVSP
+    // CG at x = ${f(xCGtotal,4)} m from nose
+    // NP at x = ${f(xNP,4)} m from nose
+    // MTOW = ${f(MTOW,2)} kg
+    string vehicleID = GetVehicle();
+    string cgxParm = FindParm( vehicleID, "CGx", "Mass_Prop" );
+    string cgyParm = FindParm( vehicleID, "CGy", "Mass_Prop" );
+    string massParm= FindParm( vehicleID, "Mass","Mass_Prop" );
+    if ( cgxParm.size() > 0 ) { SetParmVal( cgxParm, ${f(xCGtotal,4)} ); }
+    if ( cgyParm.size() > 0 ) { SetParmVal( cgyParm, 0.0 ); }
+    if ( massParm.size() > 0 ){ SetParmVal( massParm, ${f(MTOW,2)} ); }
 
     Update();
 
     // ════════════════════════════════════════════════════════════
     //  SAVE
     // ════════════════════════════════════════════════════════════
-    WriteVSPFile( "Trail1_eVTOL.vsp3", SET_ALL );
+    WriteVSPFile( "Trail1_eVTOL.vsp3", 0 );  // 0 = SET_ALL
 
     Print( "" );
     Print( "══════════════════════════════════════════" );
