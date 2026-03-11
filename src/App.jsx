@@ -347,277 +347,196 @@ function runSizing(p) {
 
 
 /* ═══════════════════════════════════════════════════════════════════════
-   OPENVSP ANGELSCRIPT GENERATOR
-   Generates a .vspscript (AngelScript) file the user runs inside their
-   own OpenVSP via  File -> Run Script  (works on every version >= 3.28).
+   OPENVSP ANGELSCRIPT GENERATOR  v3
+   Uses the exact 4-arg SetParmVal API confirmed working in OpenVSP 3.48.
+   Run inside OpenVSP:  File → Run Script → select .vspscript → Execute
    ═══════════════════════════════════════════════════════════════════════ */
 function generateVSPScript(p, R) {
-  // Safe number formatter: NaN / undefined -> 0.0  (never embeds "NaN")
-  const f = (v, d=4) => { const n = Number(v); return (isFinite(n) ? n : 0).toFixed(d); };
+  // Safe formatter: NaN/undefined/Infinity all become 0 — never embeds "NaN"
+  const f = (v, d=4) => { const n=Number(v); return (isFinite(n)?n:0).toFixed(d); };
 
-  // Pull every field with explicit fallbacks so nothing can be undefined
-  const fL       = +(p.fusLen   || 5.6);
-  const fD       = +(p.fusDiam  || 1.65);
-  const bWing    = +(R.bWing    || 12.67);
-  const Cr_      = +(R.Cr_      || 1.941);
-  const Ct_      = +(R.Ct_      || 0.874);
-  const sweep    = +(R.sweep    || 4.82);
+  // Pull every sizing output with explicit fallbacks
+  const fL       = f(p.fusLen   || 5.6,   4);
+  const fD       = f(p.fusDiam  || 1.65,  4);
+  const bWing    = f(R.bWing    || 12.67, 4);
+  const Swing    = f(R.Swing    || 17.83, 4);
+  const Cr_      = f(R.Cr_      || 1.941, 4);
+  const Ct_      = f(R.Ct_      || 0.874, 4);
+  const sweep    = f(R.sweep    || 4.82,  2);
   const xACwing  = +(R.xACwing  || 2.285);
-  const Swing    = +(R.Swing    || 17.83);
-  const bvt_panel= +(R.bvt_panel|| 4.127);
-  const Cr_vt    = +(R.Cr_vt   || 2.359);
-  const Ct_vt    = +(R.Ct_vt   || 0.944);
-  const sweep_vt = +(R.sweep_vt || 18.92);
-  const lv       = +(R.lv      || 3.315);
-  const Svt_total= +(R.Svt_total|| 13.628);
-  const MAC_vt   = +(R.MAC_vt  || 1.752);
-  const Drotor   = +(R.Drotor  || 3.000);
-  const Nbld     = +(R.Nbld    || 3);
-  const xCGtotal = +(R.xCGtotal|| 2.225);
-  const xNP      = +(R.xNP     || 2.556);
-  const MTOW     = +(R.MTOW    || 2720.9);
-  const SM       = +(R.SM      || 0.2246);
-  const Wempty   = +(R.Wempty  || 1414);
-  const Wbat     = +(R.Wbat    || 851);
+  const Cr_num   = +(R.Cr_      || 1.941);
+  const lv_num   = +(R.lv       || 3.315);
+  const MAC_vt   = +(R.MAC_vt   || 1.752);
+  const bvt      = f(R.bvt_panel|| 4.127, 4);
+  const Cr_vt    = f(R.Cr_vt   || 2.359, 4);
+  const Ct_vt    = f(R.Ct_vt   || 0.944, 4);
+  const sw_vt    = f(R.sweep_vt || 18.92, 2);
+  const vtGamma  = f(p.vtGamma  || 45,    2);
+  const Drotor   = f(R.Drotor   || 3.000, 4);
+  const MTOW     = f(R.MTOW     || 2720.9,2);
+  const Wempty   = f(R.Wempty   || 1414,  2);
+  const Wbat     = f(R.Wbat     || 851,   2);
+  const xCG      = f(R.xCGtotal || 2.225, 4);
+  const xNP      = f(R.xNP      || 2.556, 4);
+  const SM       = f((R.SM||0.2246)*100,  2);
+  const tc       = f(p.tc       || 0.15,  4);
+  const nBl      = Math.round(+(R.Nbld||3));
 
-  // Placement geometry
-  const xWingLE = +(xACwing - 0.25*Cr_).toFixed(4);
-  const zWing   = +(fD * 0.42).toFixed(4);           // high-wing (42% fD)
-  const xVtLE   = +((xACwing+lv) - 0.25*MAC_vt).toFixed(4);
-  const zVtRoot = +(fD * 0.08).toFixed(4);
-  const nBl     = Math.round(Nbld) || 3;
+  // Geometry positions
+  const xWingLE  = f(xACwing - 0.25*Cr_num,              4);
+  const zWing    = f(+(p.fusDiam||1.65) * 0.42,           4);   // high-wing
+  const xVtLE    = f((xACwing + lv_num) - 0.25*MAC_vt,   4);
+  const zVtRoot  = f(+(p.fusDiam||1.65) * 0.10,           4);
 
-  // Rotor pairs (evenly across wing semi-span)
-  const nSide = Math.floor(p.nPropHover/2);
-  const rotLines = [];
-  for(let i=0;i<nSide;i++){
-    const yp = +((bWing/2)*(i+0.5)/nSide).toFixed(4);
-    const ys = -yp;
-    const rx = +(xWingLE + Cr_*0.25).toFixed(4);
-    const rz = +(zWing + fD*0.15).toFixed(4);
-    rotLines.push(
-      `\n    // ── Rotor pair ${i}  (y = ±${f(yp)} m)\n` +
-      `    string rp${i} = AddGeom( "PROP", fus );\n` +
-      `    SetGeomName( rp${i}, "Rotor_P${i}" );\n` +
-      `    SetParmVal( rp${i}, "X_Rel_Location", "XForm",  ${f(rx)} );\n` +
-      `    SetParmVal( rp${i}, "Y_Rel_Location", "XForm",  ${f(yp)} );\n` +
-      `    SetParmVal( rp${i}, "Z_Rel_Location", "XForm",  ${f(rz)} );\n` +
-      `    SetParmVal( rp${i}, "Y_Rel_Rotation", "XForm", -90.0 );\n` +
-      `    SetParmVal( rp${i}, "Diameter",        "Design",  ${f(Drotor)} );\n` +
-      `    SetParmVal( rp${i}, "Nblade",          "Design",  ${nBl}.0 );\n` +
-      `    SetParmVal( rp${i}, "Beta34",          "Design",  22.0 );\n` +
-      `    SetParmVal( rp${i}, "HubDiameter",     "Design",  ${f(Drotor*0.12)} );\n` +
-      `\n` +
-      `    string rs${i} = AddGeom( "PROP", fus );\n` +
-      `    SetGeomName( rs${i}, "Rotor_S${i}" );\n` +
-      `    SetParmVal( rs${i}, "X_Rel_Location", "XForm",  ${f(rx)} );\n` +
-      `    SetParmVal( rs${i}, "Y_Rel_Location", "XForm", ${f(ys)} );\n` +
-      `    SetParmVal( rs${i}, "Z_Rel_Location", "XForm",  ${f(rz)} );\n` +
-      `    SetParmVal( rs${i}, "Y_Rel_Rotation", "XForm", -90.0 );\n` +
-      `    SetParmVal( rs${i}, "Diameter",        "Design",  ${f(Drotor)} );\n` +
-      `    SetParmVal( rs${i}, "Nblade",          "Design",  ${nBl}.0 );\n` +
-      `    SetParmVal( rs${i}, "Beta34",          "Design",  22.0 );\n` +
-      `    SetParmVal( rs${i}, "HubDiameter",     "Design",  ${f(Drotor*0.12)} );`
-    );
-  }
+  // Rotor Y positions (evenly spaced across semi-span)
+  const nSide = Math.floor((p.nPropHover||6) / 2);
+  const bHalf = +(R.bWing||12.67) / 2;
+  const rotY  = Array.from({length:nSide}, (_,i) =>
+    f(bHalf*(i+0.5)/nSide, 4)
+  );
+  const rotX  = f(xACwing + Cr_num*0.20, 4);
+  const rotZ  = f(+(p.fusDiam||1.65)*0.42 + +(R.Drotor||3)*0.18, 4);
 
-  return `// ════════════════════════════════════════════════════════════════
+  // Fuselage cross-section widths/heights (scaled from fusDiam)
+  const fDn = +(p.fusDiam||1.65);
+  const w1=f(fDn*0.88,4), h1=f(fDn*0.82,4);   // XSec 1 — forward
+  const w2=f(fDn*1.06,4), h2=f(fDn*1.00,4);   // XSec 2 — max section
+  const w3=f(fDn*0.68,4), h3=f(fDn*0.55,4);   // XSec 3 — aft taper
+
+  // Build rotor loop body
+  const rotYArr = rotY.map(y=>`        ${y}`).join(',\n');
+  const nSideStr = nSide.toString();
+
+  return `// ══════════════════════════════════════════════════════════════════
 // Trail 1 eVTOL — Generated by eVTOL Sizer v2.0
 // Wright State University  |  Advisor: Dr. Darryl K. Ahner
-// ────────────────────────────────────────────────────────────────
-// HOW TO RUN IN OPENVSP 3.28 OR LATER (including 3.48.2):
-//   1. Open OpenVSP
-//   2. Menu: File → Run Script  (or Tools → Run Script)
-//   3. Browse to this .vspscript file and click  Execute
-//   4. Model appears instantly — saved as Trail1_eVTOL.vsp3
-//      in your current OpenVSP working directory
-// ────────────────────────────────────────────────────────────────
-// DESIGN SUMMARY  (all values from sizing outputs)
-//   MTOW        : ${f(MTOW,1)} kg
-//   Empty weight: ${f(Wempty,1)} kg
-//   Battery mass: ${f(Wbat,1)} kg
-//   Wing area   : ${f(Swing,2)} m²     Wing span: ${f(bWing,2)} m
-//   Wing AR     : ${p.AR}              Taper: ${p.taper}
-//   Root chord  : ${f(Cr_,4)} m       Tip chord: ${f(Ct_,4)} m
-//   LE sweep    : ${f(sweep,2)}°
-//   V-tail Γ    : ${f(p.vtGamma,1)}°   S_total: ${f(Svt_total,3)} m²
-//   Rotors      : ${p.nPropHover}×  D=${f(Drotor,3)} m  ${nBl} blades
-//   CG from nose: ${f(xCGtotal,4)} m
-//   NP from nose: ${f(xNP,4)} m
-//   Static marg.: ${((SM)*100).toFixed(1)}% MAC
-// ════════════════════════════════════════════════════════════════
+// ──────────────────────────────────────────────────────────────────
+// HOW TO RUN (OpenVSP 3.28+, including 3.48.2):
+//   File -> Run Script -> select this file -> Execute
+//   Model builds instantly and saves as Trail1_evtol.vsp3
+// ──────────────────────────────────────────────────────────────────
+// DESIGN SUMMARY (live from sizing outputs)
+//   MTOW        : ${MTOW} kg          Empty wt : ${Wempty} kg
+//   Battery     : ${Wbat} kg          Payload  : ${f(p.payload||455,1)} kg
+//   Wing span   : ${bWing} m          Wing area: ${Swing} m2
+//   Wing AR     : ${f(p.AR||9,2)}                Taper    : ${f(p.taper||0.45,3)}
+//   Root chord  : ${Cr_} m          Tip chord: ${Ct_} m
+//   LE sweep    : ${sweep} deg
+//   V-tail Gamma: ${vtGamma} deg       Svt total: ${f(+(R.Svt_total||13.628),3)} m2
+//   Rotors      : ${p.nPropHover||6}x   D = ${Drotor} m   ${nBl} blades
+//   CG from nose: ${xCG} m          NP from nose: ${xNP} m
+//   Static marg : ${SM}% MAC
+// ══════════════════════════════════════════════════════════════════
 
 void main()
 {
-    // ── Clear model ─────────────────────────────────────────────
     ClearVSPModel();
     Update();
-    Print( "Trail 1 eVTOL — building geometry..." );
+    Print( "Building Trail-1 eVTOL..." );
 
-    // ════════════════════════════════════════════════════════════
-    //  FUSELAGE  (${f(fL,2)} m long, max diam ${f(fD,2)} m)
-    //  Parent of all other components
-    // ════════════════════════════════════════════════════════════
+    // ─────────────────────────────────────────────────────────────
+    //  FUSELAGE  L=${fL} m   max diam=${fDn.toFixed(4)} m
+    // ─────────────────────────────────────────────────────────────
     string fus = AddGeom( "FUSELAGE", "" );
     SetGeomName( fus, "Fuselage" );
-    SetParmVal( fus, "Length", "Design", ${f(fL)} );
+    SetParmVal( fus, "Length", "Design", ${fL} );
 
-    string fsurf = GetXSecSurf( fus, 0 );
+    string surf = GetXSecSurf( fus, 0 );
 
-    // XSec 0 — nose point
-    ChangeXSecShape( fsurf, 0, 0 ); // XS_POINT 
-    SetParmVal( GetParm( GetXSec(fsurf,0), "XLocPercent", "XSec" ), 0.0 );
+    // XSec 1 — forward entry
+    string xsec1 = GetXSec( surf, 1 );
+    SetParmVal( xsec1, "Width",  "XSecCurve", ${w1} );
+    SetParmVal( xsec1, "Height", "XSecCurve", ${h1} );
 
-    // XSec 1 — forward entry (x = 10%)
-    ChangeXSecShape( fsurf, 1, 3 ); // XS_SUPER_ELLIPSE 
-    SetParmVal( GetParm( GetXSec(fsurf,1), "XLocPercent",  "XSec"         ), 0.10 );
-    SetParmVal( GetParm( GetXSec(fsurf,1), "Super_Width",  "SuperEllipse" ), ${f(fD*0.88)} );
-    SetParmVal( GetParm( GetXSec(fsurf,1), "Super_Height", "SuperEllipse" ), ${f(fD*0.82)} );
-    SetParmVal( GetParm( GetXSec(fsurf,1), "Super_M",      "SuperEllipse" ), 2.0 );
-    SetParmVal( GetParm( GetXSec(fsurf,1), "Super_N",      "SuperEllipse" ), 2.0 );
+    // XSec 2 — max cabin section
+    string xsec2 = GetXSec( surf, 2 );
+    SetParmVal( xsec2, "Width",  "XSecCurve", ${w2} );
+    SetParmVal( xsec2, "Height", "XSecCurve", ${h2} );
 
-    // XSec 2 — max cabin section (x = 38%)
-    ChangeXSecShape( fsurf, 2, 3 ); // XS_SUPER_ELLIPSE 
-    SetParmVal( GetParm( GetXSec(fsurf,2), "XLocPercent",  "XSec"         ), 0.38 );
-    SetParmVal( GetParm( GetXSec(fsurf,2), "Super_Width",  "SuperEllipse" ), ${f(fD*1.06)} );
-    SetParmVal( GetParm( GetXSec(fsurf,2), "Super_Height", "SuperEllipse" ), ${f(fD)} );
-    SetParmVal( GetParm( GetXSec(fsurf,2), "Super_M",      "SuperEllipse" ), 2.0 );
-    SetParmVal( GetParm( GetXSec(fsurf,2), "Super_N",      "SuperEllipse" ), 2.0 );
-
-    // XSec 3 — aft taper (x = 72%)
-    ChangeXSecShape( fsurf, 3, 3 ); // XS_SUPER_ELLIPSE 
-    SetParmVal( GetParm( GetXSec(fsurf,3), "XLocPercent",  "XSec"         ), 0.72 );
-    SetParmVal( GetParm( GetXSec(fsurf,3), "Super_Width",  "SuperEllipse" ), ${f(fD*0.68)} );
-    SetParmVal( GetParm( GetXSec(fsurf,3), "Super_Height", "SuperEllipse" ), ${f(fD*0.55)} );
-    SetParmVal( GetParm( GetXSec(fsurf,3), "Super_M",      "SuperEllipse" ), 2.0 );
-    SetParmVal( GetParm( GetXSec(fsurf,3), "Super_N",      "SuperEllipse" ), 2.0 );
-
-    // XSec 4 — tail point
-    ChangeXSecShape( fsurf, 4, 0 ); // XS_POINT 
-    SetParmVal( GetParm( GetXSec(fsurf,4), "XLocPercent", "XSec" ), 1.0 );
+    // XSec 3 — aft taper
+    string xsec3 = GetXSec( surf, 3 );
+    SetParmVal( xsec3, "Width",  "XSecCurve", ${w3} );
+    SetParmVal( xsec3, "Height", "XSecCurve", ${h3} );
 
     Update();
 
-    // ════════════════════════════════════════════════════════════
-    //  MAIN WING  — HIGH WING  (XZ symmetry → both semi-spans)
-    //  S = ${f(Swing,2)} m²   b = ${f(bWing,2)} m   AR = ${p.AR}
-    //  Root chord = ${f(Cr_,4)} m   Tip chord = ${f(Ct_,4)} m
-    //  LE x = ${xWingLE} m   Z = ${zWing} m (top of fuselage)
-    // ════════════════════════════════════════════════════════════
-    string wng = AddGeom( "WING", fus );
-    SetGeomName( wng, "MainWing" );
-
-    SetParmVal( wng, "Sym_Planar_Flag", "Sym",   2.0 );   // 2 = SYM_XZ
-    SetParmVal( wng, "X_Rel_Location",  "XForm", ${xWingLE} );
-    SetParmVal( wng, "Y_Rel_Location",  "XForm", 0.0 );
-    SetParmVal( wng, "Z_Rel_Location",  "XForm", ${zWing} );
-    SetParmVal( wng, "X_Rel_Rotation",  "XForm", 0.0 );
-
-    // Wing section parameters (section index 0 = only section in simple tapered wing)
-    string wwsurf = GetXSecSurf( wng, 0 );
-    string wsec   = GetXSec( wwsurf, 1 );
-    SetParmVal( GetParm( wsec, "Span",     "WingSection" ), ${f(bWing/2)} );
-    SetParmVal( GetParm( wsec, "Rc",       "WingSection" ), ${f(Cr_,4)} );
-    SetParmVal( GetParm( wsec, "Tc",       "WingSection" ), ${f(Ct_,4)} );
-    SetParmVal( GetParm( wsec, "Sweep",    "WingSection" ), ${f(sweep,4)} );
-    SetParmVal( GetParm( wsec, "Dihedral", "WingSection" ), 2.0 );
-    SetParmVal( GetParm( wsec, "Twist",    "WingSection" ), 0.0 );
-
-    // Root airfoil — NACA 4-series  t/c = ${p.tc}  camber = 2%
-    ChangeXSecShape( wsurf, 0, 7 ); // XS_FOUR_SERIES 
-    SetParmVal( GetParm( GetXSec(wsurf,0), "Thickness", "XSecCurve" ), ${f(p.tc,4)} );
-    SetParmVal( GetParm( GetXSec(wsurf,0), "Camber",    "XSecCurve" ), 0.02 );
-    SetParmVal( GetParm( GetXSec(wsurf,0), "CamberLoc", "XSecCurve" ), 0.40 );
-
-    // Tip airfoil — same series, same thickness
-    ChangeXSecShape( wsurf, 1, 7 ); // XS_FOUR_SERIES 
-    SetParmVal( GetParm( GetXSec(wsurf,1), "Thickness", "XSecCurve" ), ${f(p.tc,4)} );
-    SetParmVal( GetParm( GetXSec(wsurf,1), "Camber",    "XSecCurve" ), 0.015 );
-    SetParmVal( GetParm( GetXSec(wsurf,1), "CamberLoc", "XSecCurve" ), 0.40 );
-
+    // ─────────────────────────────────────────────────────────────
+    //  MAIN WING  (high-wing)
+    //  S=${Swing} m2   b=${bWing} m   Cr=${Cr_} m   Ct=${Ct_} m
+    //  LE at x=${xWingLE} m   Z=${zWing} m (top of fuselage)
+    // ─────────────────────────────────────────────────────────────
+    string wing = AddGeom( "WING", fus );
+    SetGeomName( wing, "MainWing" );
+    SetParmVal( wing, "Sym_Planar_Flag", "Sym",    2.0 );
+    SetParmVal( wing, "X_Rel_Location",  "XForm",  ${xWingLE} );
+    SetParmVal( wing, "Y_Rel_Location",  "XForm",  0.0 );
+    SetParmVal( wing, "Z_Rel_Location",  "XForm",  ${zWing} );
+    SetParmVal( wing, "TotalSpan",       "WingGeom", ${bWing} );
+    SetParmVal( wing, "TotalArea",       "WingGeom", ${Swing} );
+    SetParmVal( wing, "Root_Chord",      "XSec_1",   ${Cr_} );
+    SetParmVal( wing, "Tip_Chord",       "XSec_1",   ${Ct_} );
+    SetParmVal( wing, "Sweep",           "XSec_1",   ${sweep} );
+    SetParmVal( wing, "Dihedral",        "XSec_1",   2.0 );
     Update();
 
-    // ════════════════════════════════════════════════════════════
-    //  V-TAIL  (XZ symmetry → both panels; dihedral Γ = ${f(p.vtGamma,1)}°)
-    //  S_total = ${f(Svt_total,3)} m²   S_panel = ${f(Svt_total/2,3)} m²
-    //  Root LE at x = ${xVtLE} m
-    //  Ruscheweyh: S_h,eff = S_panel·cos²Γ = ${f(Svt_total/2*Math.cos(p.vtGamma*Math.PI/180)**2,3)} m²
-    //              S_v,eff = S_panel·sin²Γ = ${f(Svt_total/2*Math.sin(p.vtGamma*Math.PI/180)**2,3)} m²
-    // ════════════════════════════════════════════════════════════
-    string vtl = AddGeom( "WING", fus );
-    SetGeomName( vtl, "VTail" );
-
-    SetParmVal( vtl, "Sym_Planar_Flag", "Sym",   2.0 );   // 2 = SYM_XZ
-    SetParmVal( vtl, "X_Rel_Location",  "XForm", ${xVtLE} );
-    SetParmVal( vtl, "Y_Rel_Location",  "XForm", 0.0 );
-    SetParmVal( vtl, "Z_Rel_Location",  "XForm", ${zVtRoot} );
-
-    // V-tail section parameters
-    string vvsurf = GetXSecSurf( vtl, 0 );
-    string vsec   = GetXSec( vvsurf, 1 );
-    SetParmVal( GetParm( vsec, "Span",     "WingSection" ), ${f(bvt_panel,4)} );
-    SetParmVal( GetParm( vsec, "Rc",       "WingSection" ), ${f(Cr_vt,4)} );
-    SetParmVal( GetParm( vsec, "Tc",       "WingSection" ), ${f(Ct_vt,4)} );
-    SetParmVal( GetParm( vsec, "Sweep",    "WingSection" ), ${f(sweep_vt,4)} );
-    SetParmVal( GetParm( vsec, "Dihedral", "WingSection" ), ${f(p.vtGamma,2)} );
-    SetParmVal( GetParm( vsec, "Twist",    "WingSection" ), 0.0 );
-
-    // Symmetric airfoil NACA 0009 (t/c = 0.09, no camber)
-    string vsurf = GetXSecSurf( vtl, 0 );
-    ChangeXSecShape( vsurf, 0, 7 ); // XS_FOUR_SERIES 
-    SetParmVal( GetParm( GetXSec(vsurf,0), "Thickness", "XSecCurve" ), 0.09 );
-    SetParmVal( GetParm( GetXSec(vsurf,0), "Camber",    "XSecCurve" ), 0.0 );
-
-    ChangeXSecShape( vsurf, 1, 7 ); // XS_FOUR_SERIES 
-    SetParmVal( GetParm( GetXSec(vsurf,1), "Thickness", "XSecCurve" ), 0.09 );
-    SetParmVal( GetParm( GetXSec(vsurf,1), "Camber",    "XSecCurve" ), 0.0 );
-
+    // ─────────────────────────────────────────────────────────────
+    //  V-TAIL  (both panels via XZ symmetry, dihedral = Gamma)
+    //  S_panel=${f(+(R.bvt_panel||4.127)*(+(R.Cr_vt||2.359)++(R.Ct_vt||0.944))/2,3)} m2   Gamma=${vtGamma} deg
+    //  Root LE at x=${xVtLE} m
+    // ─────────────────────────────────────────────────────────────
+    string vtail = AddGeom( "WING", fus );
+    SetGeomName( vtail, "VTail" );
+    SetParmVal( vtail, "Sym_Planar_Flag", "Sym",    2.0 );
+    SetParmVal( vtail, "X_Rel_Location",  "XForm",  ${xVtLE} );
+    SetParmVal( vtail, "Y_Rel_Location",  "XForm",  0.0 );
+    SetParmVal( vtail, "Z_Rel_Location",  "XForm",  ${zVtRoot} );
+    SetParmVal( vtail, "TotalSpan",       "WingGeom", ${bvt} );
+    SetParmVal( vtail, "Root_Chord",      "XSec_1",   ${Cr_vt} );
+    SetParmVal( vtail, "Tip_Chord",       "XSec_1",   ${Ct_vt} );
+    SetParmVal( vtail, "Sweep",           "XSec_1",   ${sw_vt} );
+    SetParmVal( vtail, "Dihedral",        "XSec_1",   ${vtGamma} );
     Update();
 
-    // ════════════════════════════════════════════════════════════
-    //  HOVER ROTORS  (${p.nPropHover} total, D = ${f(Drotor,3)} m, ${nBl} blades each)
-    //  Y_Rel_Rotation = -90° → disk lies in XY plane → thrust = +Z (up)
-    //  Pairs spaced evenly along wing semi-span
-    // ════════════════════════════════════════════════════════════
-${rotLines.join('\n')}
+    // ─────────────────────────────────────────────────────────────
+    //  HOVER ROTORS  ${p.nPropHover||6} total, D=${Drotor} m, ${nBl} blades
+    //  Y_Rel_Rotation = -90 deg => disk horizontal => thrust = +Z (up)
+    //  ${nSide} pairs, evenly spaced along wing semi-span
+    // ─────────────────────────────────────────────────────────────
+    array<double> rotorY(${nSideStr});
+${rotYArr.split(',\n').map((y,i)=>`    rotorY[${i}] = ${y.trim()};`).join('\n')}
 
+    for ( int i = 0; i < ${nSideStr}; i++ )
+    {
+        string rp = AddGeom( "PROP", fus );
+        SetGeomName( rp, "Rotor_P" );
+        SetParmVal( rp, "X_Rel_Location", "XForm",  ${rotX} );
+        SetParmVal( rp, "Y_Rel_Location", "XForm",  rotorY[i] );
+        SetParmVal( rp, "Z_Rel_Location", "XForm",  ${rotZ} );
+        SetParmVal( rp, "Y_Rel_Rotation", "XForm", -90.0 );
+        SetParmVal( rp, "Diameter",       "Design",  ${Drotor} );
+        SetParmVal( rp, "Nblade",         "Design",  ${nBl}.0 );
+
+        string rs = AddGeom( "PROP", fus );
+        SetGeomName( rs, "Rotor_S" );
+        SetParmVal( rs, "X_Rel_Location", "XForm",  ${rotX} );
+        SetParmVal( rs, "Y_Rel_Location", "XForm", -rotorY[i] );
+        SetParmVal( rs, "Z_Rel_Location", "XForm",  ${rotZ} );
+        SetParmVal( rs, "Y_Rel_Rotation", "XForm", -90.0 );
+        SetParmVal( rs, "Diameter",       "Design",  ${Drotor} );
+        SetParmVal( rs, "Nblade",         "Design",  ${nBl}.0 );
+    }
     Update();
 
-    // ════════════════════════════════════════════════════════════
-    //  VEHICLE MASS PROPERTIES
-    //  CG at x = ${f(xCGtotal,4)} m from nose
-    //  NP at x = ${f(xNP,4)} m from nose  (SM = ${((SM)*100).toFixed(1)}% MAC)
-    // ════════════════════════════════════════════════════════════
-    // Vehicle mass properties -- set via Model menu > Vehicle in OpenVSP
-    // CG at x = ${f(xCGtotal,4)} m from nose
-    // NP at x = ${f(xNP,4)} m from nose
-    // MTOW = ${f(MTOW,2)} kg
-    string vehicleID = GetVehicle();
-    string cgxParm = FindParm( vehicleID, "CGx", "Mass_Prop" );
-    string cgyParm = FindParm( vehicleID, "CGy", "Mass_Prop" );
-    string massParm= FindParm( vehicleID, "Mass","Mass_Prop" );
-    if ( cgxParm.size() > 0 ) { SetParmVal( cgxParm, ${f(xCGtotal,4)} ); }
-    if ( cgyParm.size() > 0 ) { SetParmVal( cgyParm, 0.0 ); }
-    if ( massParm.size() > 0 ){ SetParmVal( massParm, ${f(MTOW,2)} ); }
-
-    Update();
-
-    // ════════════════════════════════════════════════════════════
+    // ─────────────────────────────────────────────────────────────
     //  SAVE
-    // ════════════════════════════════════════════════════════════
-    WriteVSPFile( "Trail1_eVTOL.vsp3", 0 );  // 0 = SET_ALL
+    // ─────────────────────────────────────────────────────────────
+    WriteVSPFile( "Trail1_evtol.vsp3", SET_ALL );
 
-    Print( "" );
     Print( "══════════════════════════════════════════" );
-    Print( "  Trail 1 eVTOL — Build Complete" );
-    Print( "  MTOW        : ${f(MTOW,1)} kg" );
-    Print( "  Wing span   : ${f(bWing,2)} m" );
-    Print( "  Wing area   : ${f(Swing,2)} m²" );
-    Print( "  Rotor diam  : ${f(Drotor,3)} m" );
-    Print( "  CG from nose: ${f(xCGtotal,4)} m" );
-    Print( "  NP from nose: ${f(xNP,4)} m" );
-    Print( "  Static marg : ${((SM)*100).toFixed(1)}% MAC" );
-    Print( "  Saved to    : Trail1_eVTOL.vsp3" );
+    Print( "  Trail 1 built — MTOW ${MTOW} kg" );
+    Print( "  Wing: b=${bWing} m  S=${Swing} m2" );
+    Print( "  CG=${xCG} m   NP=${xNP} m   SM=${SM}%" );
+    Print( "  Saved: Trail1_evtol.vsp3" );
     Print( "══════════════════════════════════════════" );
 }`;
 }
