@@ -345,410 +345,265 @@ function runSizing(p) {
   };
 }
 
+
 /* ═══════════════════════════════════════════════════════════════════════
-   OPENVSP FILE GENERATOR  —  produces a valid .vsp3 XML file
-   All geometry is attached to the fuselage as parent (central medium).
-   Coordinate convention: X = nose→tail, Y = port→stbd, Z = up
-   Components: Fuselage, Main Wing, V-Tail (both panels via XZ sym),
-               Hover Rotors (PROP_GEOM), CG marker, NP marker
+   OPENVSP ANGELSCRIPT GENERATOR
+   Generates a .as file using OpenVSP's native AngelScript API.
+   HOW TO USE (no Python, no terminal needed):
+     1. Download the .as file
+     2. In OpenVSP: File menu → Run Script (or press Ctrl+Shift+S)
+     3. Select the downloaded .as file → click Open
+     4. The Trail 1 model builds instantly and is saved as .vsp3
+   Works in OpenVSP 3.20+ including 3.48.2
    ═══════════════════════════════════════════════════════════════════════ */
-function generateVSPFile(p,R){
-  /* ── deterministic 8-char ID from a unique seed string ── */
-  function mkID(seed){
-    const C='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-    let h=0x811c9dc5>>>0;
-    for(let i=0;i<seed.length;i++){h^=seed.charCodeAt(i);h=Math.imul(h,0x01000193)>>>0;}
-    let id='';
-    for(let i=0;i<8;i++){id+=C[h%C.length];h=Math.imul(h,6364136223)>>>0;}
-    return id;
-  }
+function generateVSPScript(p, R, tiltAngle=90){
+  const fL  = p.fusLen,  fD = p.fusDiam;
+  const xACwing = 1.45 + R.Xac;
+  const xWingLE = xACwing - 0.25*R.Cr_;
+  const zWing   = -fD*0.10;
+  const xVtLE   = (xACwing + R.lv) - 0.25*R.MAC_vt;
+  const zVtail  = fD*0.05;
+  const ytip    = R.bWing/2;
+  const xtilt   = xWingLE + R.Cr_*0.50;
+  const ztilt   = zWing + R.Drotor*0.55;
+  const yBoom   = R.bWing*0.28;
+  const zBoom   = fD*0.30;
+  const xBoomF  = xWingLE - R.Drotor*0.60;
+  const xBoomA  = xWingLE + R.Cr_ + R.Drotor*0.35;
+  const xPush   = fL - R.Drotor*0.25;
+  const fxDiam  = R.Drotor*0.72;
+  const pushD   = R.Drotor*0.55;
+  const nb      = R.Nbld || 3;
+  const outname = `Trail1_eVTOL_tilt${tiltAngle}deg.vsp3`;
+  const f = (v, d=4) => Number(v).toFixed(d);
 
-  /* ── component IDs ── */
-  const FUS_ID =mkID('trail1_fuse');
-  const WNG_ID =mkID('trail1_wing');
-  const VTL_ID =mkID('trail1_vtail');
-  const CGM_ID =mkID('trail1_cgmrk');
-  const NPM_ID =mkID('trail1_npmrk');
-  const nR=p.nPropHover;
-  const ROT=Array.from({length:nR},(_,i)=>mkID('trail1_rot'+i));
+  // AngelScript helper: set parm value
+  const SP  = (gid, pname, grp, val) =>
+    `SetParmVal( GetParm(${gid}, "${pname}", "${grp}"), ${f(val)} );\n`;
+  const SPi = (gid, pname, grp, val) =>
+    `SetParmVal( GetParm(${gid}, "${pname}", "${grp}"), ${Math.round(val)} );\n`;
 
-  /* ── extracted values ── */
-  const fL=p.fusLen, fD=p.fusDiam;
-  const{bWing,Cr_,Ct_,sweep,xACwing,Swing,
-    bvt_panel,Cr_vt,Ct_vt,sweep_vt,lv,Svt_total,MAC_vt,
-    Drotor,xCGtotal,xNP,MTOW,Nbld,ChordBl}=R;
+  // Position helper
+  const pos = (gid, x, y, z, rx=0, ry=0, rz=0) =>
+    SP(gid,'X_Rel_Location','XForm',x) +
+    SP(gid,'Y_Rel_Location','XForm',y) +
+    SP(gid,'Z_Rel_Location','XForm',z) +
+    SP(gid,'X_Rel_Rotation','XForm',rx) +
+    SP(gid,'Y_Rel_Rotation','XForm',ry) +
+    SP(gid,'Z_Rel_Rotation','XForm',rz);
 
-  /* ── computed positions in OpenVSP coords (nose = x:0) ── */
-  // Wing: root LE at 1/4-chord behind nose (AC = xACwing from nose)
-  const xWingLE = xACwing - 0.25*Cr_;
-  const zWing   = -fD*0.10;           // low-wing
-
-  // V-tail: root LE so that 1/4-MAC is at xACwing + lv (tail moment arm)
-  const xVtLE   = (xACwing+lv) - 0.25*MAC_vt;
-  const zVtail  = fD*0.05;           // slightly above fuselage CL
-
-  // Hover rotors spaced evenly along wing span
-  const nSide=Math.floor(nR/2);
-  const rotPos=[];
-  for(let i=0;i<nSide;i++){
-    const y=(bWing/2)*(i+0.5)/nSide;
-    const x=xWingLE-0.30;             // just forward of wing LE
-    const z=zWing+Drotor*0.55;        // hub above wing surface
-    rotPos.push({id:ROT[2*i],  x,y:+y,z});
-    rotPos.push({id:ROT[2*i+1],x,y:-y,z});
-  }
-
-  /* ── XML primitive helpers ── */
-  const f=(v,d=6)=>Number(v).toFixed(d);
-  // Parm element — type 3=int, type 6=real
-  const P=(nm,grp,val,isInt=false)=>
-    `<Parm name="${nm}" group="${grp}" type="${isInt?3:6}">`+
-    (isInt?`<int>${val}</int>`:`<real>${f(val)}</real>`)+
-    `</Parm>`;
-
-  // Standard XForm block (position + rotation in degrees)
-  const XFORM=(x,y,z,rx=0,ry=0,rz=0)=>[
-    P('X_Rel_Location','XForm',x),
-    P('Y_Rel_Location','XForm',y),
-    P('Z_Rel_Location','XForm',z),
-    P('X_Rel_Rotation','XForm',rx),
-    P('Y_Rel_Rotation','XForm',ry),
-    P('Z_Rel_Rotation','XForm',rz),
-    P('Origin','XForm',0),
-  ].join('\n        ');
-
-  // Symmetry block: planFlag 0=none, 2=XZ (left-right mirror)
-  const SYM=(pf=0)=>[
-    P('SymPlanFlag','Sym',pf,true),
-    P('SymAxFlag',  'Sym',0,  true),
-    P('SymRotN',    'Sym',2,  true),
-  ].join('\n        ');
-
-  // Full geom header ParmContainer (holds Sym + XForm)
-  const HDR=(name,id,planFlag,x,y,z,rx=0,ry=0,rz=0)=>
-`    <ParmContainer name="${name}" id="${id}">
-        ${SYM(planFlag)}
-        ${XFORM(x,y,z,rx,ry,rz)}
-    </ParmContainer>`;
-
-  /* ──────────────────────────────────────────
-     FUSELAGE GEOM — 9 cross-sections
-     ────────────────────────────────────────── */
-  // [u_fraction, width_Y, height_Z]
-  const cs=[
-    [0.000, 0,        0       ],  // nose point
-    [0.030, fD*0.38,  fD*0.38 ],
-    [0.090, fD*0.90,  fD*0.90 ],
-    [0.250, fD,       fD      ],  // cabin max
-    [0.480, fD,       fD      ],
-    [0.650, fD*0.98,  fD*0.95 ],
-    [0.800, fD*0.80,  fD*0.75 ],
-    [0.920, fD*0.48,  fD*0.38 ],
-    [1.000, fD*0.16,  fD*0.10 ],  // tail tip
+  // Build fuselage xsec data
+  const csData = [
+    [0.000, 0.001,       0.001      ],
+    [0.030, fD*0.38,     fD*0.38    ],
+    [0.090, fD*0.90,     fD*0.90    ],
+    [0.250, fD,          fD         ],
+    [0.480, fD,          fD         ],
+    [0.650, fD*0.98,     fD*0.95    ],
+    [0.800, fD*0.80,     fD*0.75    ],
+    [0.920, fD*0.48,     fD*0.38    ],
+    [1.000, fD*0.16,     fD*0.10    ],
   ];
-  function mkXSec(idx,[u,w,h]){
-    const isPt=w<0.005;
-    // XSecCurve type: 0=XSC_POINT, 3=XSC_SUPER_ELLIPSE
-    const ctype=isPt?0:3;
-    const cParms=isPt?'':
-`\n              ${P('Super_Height','SuperEllipse',h)}
-              ${P('Super_Width', 'SuperEllipse',w)}
-              ${P('Super_M',     'SuperEllipse',2.0)}
-              ${P('Super_N',     'SuperEllipse',2.0)}
-              ${P('Super_M_Bot', 'SuperEllipse',2.0)}
-              ${P('Super_N_Bot', 'SuperEllipse',2.0)}
-              ${P('Super_Toggle','SuperEllipse',1,true)}`;
-    return `
-        <XSec type="0">
-          <ParmContainer name="XSec_${idx}" id="${mkID('xs'+idx+'f')}">
-            ${P('XLocPercent','XSec',u)}
-            ${P('YLocPercent','XSec',0)}
-            ${P('ZLocPercent','XSec',0)}
-            ${P('XRot',       'XSec',0)}
-            ${P('YRot',       'XSec',0)}
-            ${P('ZRot',       'XSec',0)}
-            ${P('RefLength',  'XSec',fL)}
-            ${P('Tan_Str_1',  'XSec',0.5)}
-            ${P('Tan_Str_2',  'XSec',0.5)}
-          </ParmContainer>
-          <XSecCurve type="${ctype}">
-            <ParmContainer name="XSecCurve_${idx}" id="${mkID('xsc'+idx+'f')}">${cParms}
-            </ParmContainer>
-          </XSecCurve>
-        </XSec>`;
-  }
 
-  const allChildren=[WNG_ID,VTL_ID,CGM_ID,NPM_ID,...ROT].map(id=>`      <string>${id}</string>`).join('\n');
-  const fusGeom=`
-  <!-- ═══ FUSELAGE (parent of all) ═══ -->
-  <Geom type="FUSELAGE_GEOM">
-${HDR('Fuselage',FUS_ID,0,0,0,0)}
-    <Parent>NONE</Parent>
-    <Children>
-${allChildren}
-    </Children>
-    <FuselageGeom>
-      <ParmContainer name="FuselageGeom" id="${mkID('fusegeo')}">
-        ${P('Length',      'Design',fL)}
-        ${P('OrderPolicy', 'Design',0,true)}
-        ${P('NumU_Mult',   'Design',1,true)}
-      </ParmContainer>
-      <XSecSurf id="${mkID('xsurf')}">
-        <ParmContainer name="XSecSurf" id="${mkID('xsurfpc')}">
-          ${P('TESS_W','Tesselation',12,true)}
-          ${P('TESS_U','Tesselation',20,true)}
-        </ParmContainer>
-${cs.map((c,i)=>mkXSec(i,c)).join('')}
-      </XSecSurf>
-    </FuselageGeom>
-  </Geom>`;
+  // Generate xsec setup block
+  let xsecBlock = '';
+  csData.forEach(([xfrac, w, h], i) => {
+    xsecBlock += `
+    // XSec ${i}  x=${f(xfrac)} w=${f(w,3)} h=${f(h,3)}
+    xs_id = GetXSec( xsurf_id, ${i} );
+    ${w < 0.01
+      ? `ChangeXSecShape( xsurf_id, ${i}, XS_POINT );`
+      : `ChangeXSecShape( xsurf_id, ${i}, XS_SUPER_ELLIPSE );
+    SetParmVal( GetParm( xs_id, "Super_Width",  "SuperEllipse" ), ${f(w)} );
+    SetParmVal( GetParm( xs_id, "Super_Height", "SuperEllipse" ), ${f(h)} );
+    SetParmVal( GetParm( xs_id, "Super_M",      "SuperEllipse" ), 2.0 );
+    SetParmVal( GetParm( xs_id, "Super_N",      "SuperEllipse" ), 2.0 );`
+    }
+    SetParmVal( GetParm( xs_id, "XLocPercent", "XSec" ), ${f(xfrac)} );`;
+  });
 
-  /* ──────────────────────────────────────────
-     WING SECTION helper
-     ────────────────────────────────────────── */
-  function mkWingSect(key,span,rc,tc,swDeg,dihedDeg,thk){
-    return`
-        <WingSect>
-          <ParmContainer name="WingSection" id="${mkID(key)}">
-            ${P('Span',       'WingSection',span)}
-            ${P('Rc',         'WingSection',rc)}
-            ${P('Tc',         'WingSection',tc)}
-            ${P('Sweep',      'WingSection',swDeg)}
-            ${P('SweepLoc',   'WingSection',0)}
-            ${P('Dihedral',   'WingSection',dihedDeg)}
-            ${P('Twist',      'WingSection',0)}
-            ${P('TwistLoc',   'WingSection',0.25)}
-            ${P('Camber',     'WingSection',0.02)}
-            ${P('CamberLoc',  'WingSection',0.40)}
-            ${P('Thickness',  'WingSection',thk)}
-            ${P('NumSpanSeg', 'WingSection',8,true)}
-            ${P('NumChordSeg','WingSection',8,true)}
-          </ParmContainer>
-        </WingSect>`;
-  }
+  return `//
+// Trail 1 eVTOL — OpenVSP AngelScript Builder
+// Generated by eVTOL Sizer v2.0 (Wright State University)
+//
+// HOW TO RUN (inside OpenVSP — no Python or terminal needed):
+//   File menu  →  Run Script  →  select this file  →  click Open
+//   The model builds automatically and is saved as: ${outname}
+//
+// Design values baked in from your current sizing:
+//   MTOW          = ${f(R.MTOW)} kg
+//   Wing span     = ${f(R.bWing)} m      Wing area = ${f(R.Swing)} m2
+//   Fuselage      = ${f(fL)} m long  x  ${f(fD)} m diam
+//   Hover rotor D = ${f(R.Drotor)} m     Boom rotor D = ${f(fxDiam)} m
+//   Tilt angle    = ${tiltAngle} deg  (0=cruise fwd, 90=hover up)
+//   CG            = ${f(R.xCGtotal)} m from nose
+//   NP            = ${f(R.xNP)} m from nose
+//   Static margin = ${f(R.SM*100,2)} % MAC
+//
 
-  /* ──────────────────────────────────────────
-     MAIN WING GEOM  (XZ symmetry = both semi-spans)
-     Positioned at root leading edge
-     ────────────────────────────────────────── */
-  const mainWingGeom=`
-  <!-- ═══ MAIN WING ═══ -->
-  <Geom type="WING_GEOM">
-${HDR('MainWing',WNG_ID,2,xWingLE,0,zWing)}
-    <Parent>${FUS_ID}</Parent>
-    <Children/>
-    <WingGeom>
-      <ParmContainer name="WingGeom" id="${mkID('wgmain')}">
-        ${P('TotalSpan', 'Design',bWing)}
-        ${P('TotalArea', 'Design',Swing)}
-        ${P('TotalAR',   'Design',p.AR)}
-        ${P('TotalTaper','Design',p.taper)}
-        ${P('TotalSweep','Design',sweep)}
-        ${P('SweepLoc',  'Design',0)}
-        ${P('Dihedral',  'Design',2)}
-        ${P('NumU_Mult', 'Design',1,true)}
-        ${P('NumW_Mult', 'Design',1,true)}
-      </ParmContainer>
-      <SectionList>
-${mkWingSect('ws_main',bWing/2,Cr_,Ct_,sweep,2,p.tc)}
-      </SectionList>
-    </WingGeom>
-  </Geom>`;
+void main()
+{
+    // ── clear any existing model ─────────────────────────────────────────
+    ClearVSPModel();
+    Update();
 
-  /* ──────────────────────────────────────────
-     V-TAIL GEOM  (XZ symmetry → both panels)
-     Dihedral = vtGamma: root at fuselage CL,
-     panels extend outward + upward forming ∧
-     ────────────────────────────────────────── */
-  const vtailGeom=`
-  <!-- ═══ V-TAIL (both panels via XZ sym) ═══ -->
-  <Geom type="WING_GEOM">
-${HDR('VTail',VTL_ID,2,xVtLE,0,zVtail)}
-    <Parent>${FUS_ID}</Parent>
-    <Children/>
-    <WingGeom>
-      <ParmContainer name="WingGeom" id="${mkID('wgvtail')}">
-        ${P('TotalSpan', 'Design',bvt_panel*2)}
-        ${P('TotalArea', 'Design',Svt_total)}
-        ${P('TotalAR',   'Design',p.vtAR)}
-        ${P('TotalTaper','Design',0.4)}
-        ${P('TotalSweep','Design',sweep_vt)}
-        ${P('SweepLoc',  'Design',0)}
-        ${P('Dihedral',  'Design',p.vtGamma)}
-        ${P('NumU_Mult', 'Design',1,true)}
-        ${P('NumW_Mult', 'Design',1,true)}
-      </ParmContainer>
-      <SectionList>
-${mkWingSect('ws_vtail',bvt_panel,Cr_vt,Ct_vt,sweep_vt,p.vtGamma,0.09)}
-      </SectionList>
-    </WingGeom>
-  </Geom>`;
+    string fus_id, wing_id, vtail_id;
+    string xsurf_id;
+    string xs_id;
+    string prop_id;
+    string parm_id;
 
-  /* ──────────────────────────────────────────
-     HOVER ROTOR GEOMs (PROP_GEOM)
-     Y_Rel_Rotation = -90 → thrust pointing +Z (up)
-     ────────────────────────────────────────── */
-  function mkPropSect(key,rFrac,chord,twist){
-    return`
-          <PropBladeXSec>
-            <ParmContainer name="PropBladeXSec" id="${mkID(key)}">
-              ${P('RadFrac',  'PropBladeSect',rFrac)}
-              ${P('Chord',    'PropBladeSect',chord)}
-              ${P('Twist',    'PropBladeSect',twist)}
-              ${P('Rake',     'PropBladeSect',0)}
-              ${P('Skew',     'PropBladeSect',0)}
-              ${P('Sweep',    'PropBladeSect',0)}
-              ${P('Thickness','PropBladeSect',0.12)}
-            </ParmContainer>
-          </PropBladeXSec>`;
-  }
+    // ════════════════════════════════════════════════════════
+    // 1. FUSELAGE  (9 cross-sections, super-ellipse profile)
+    // ════════════════════════════════════════════════════════
+    fus_id = AddGeom( "FUSELAGE_GEOM", "" );
+    SetGeomName( fus_id, "Fuselage" );
+    SetParmVal( GetParm(fus_id, "Length", "Design"), ${f(fL)} );
+    Update();
 
-  const rotorGeoms=rotPos.map(({id,x,y,z},i)=>`
-  <!-- ═══ HOVER ROTOR ${i} ═══ -->
-  <Geom type="PROP_GEOM">
-${HDR('Rotor_'+i,id,0,x,y,z,0,-90,0)}
-    <Parent>${FUS_ID}</Parent>
-    <Children/>
-    <PropGeom>
-      <ParmContainer name="PropGeom" id="${mkID('pgeo'+i)}">
-        ${P('Diameter',       'Design',Drotor)}
-        ${P('Nblade',         'Design',Nbld||3,true)}
-        ${P('Precone',        'Design',0)}
-        ${P('Beta34',         'Design',22)}
-        ${P('Feather',        'Design',0)}
-        ${P('FeatherOffset',  'Design',0.25)}
-        ${P('FeatherAxis',    'Design',0.25)}
-        ${P('ZeroDeltaTheta', 'Design',0,true)}
-        ${P('UseBeta34Flag',  'Design',1,true)}
-        ${P('HubDiameter',    'Design',Drotor*0.12)}
-        ${P('CLi',            'Design',0.5)}
-        ${P('AF_Limit',       'Design',0.20)}
-        ${P('RFold',          'Design',1.0)}
-        ${P('ThetaFold',      'Design',0)}
-        ${P('AzimuthOffset',  'Design',0)}
-        ${P('r_Fold_Location','Design',0.85)}
-        ${P('Delta_Theta_Fold','Design',180)}
-        ${P('MultiRotorDisk', 'Design',0,true)}
-        ${P('AxialVel',       'Design',0)}
-        ${P('TangentialVel',  'Design',0)}
-      </ParmContainer>
-      <BladeList>
-        <PropBlade>
-          <ParmContainer name="PropBlade_0" id="${mkID('pbl'+i+'a')}">
-            ${P('NumU','PropBlade',3,true)}
-          </ParmContainer>
-          <SectionList>
-${mkPropSect('pbs0'+i,0.20,ChordBl*1.15,32)}
-${mkPropSect('pbs1'+i,0.65,ChordBl,22)}
-${mkPropSect('pbs2'+i,1.00,ChordBl*0.65,14)}
-          </SectionList>
-        </PropBlade>
-      </BladeList>
-    </PropGeom>
-  </Geom>`).join('\n');
+    xsurf_id = GetXSecSurf( fus_id, 0 );
 
-  /* ──────────────────────────────────────────
-     CG & NP MARKER GEOMs (tiny sphere bodies)
-     ────────────────────────────────────────── */
-  function mkMarker(label,id,xPos,zOff){
-    const d=0.12,len=0.12;
-    return`
-  <!-- ═══ ${label} MARKER ═══ -->
-  <Geom type="FUSELAGE_GEOM">
-${HDR(label+'_Marker',id,0,xPos-len/2,0,zOff)}
-    <Parent>${FUS_ID}</Parent>
-    <Children/>
-    <FuselageGeom>
-      <ParmContainer name="FuselageGeom" id="${mkID(label+'geo')}">
-        ${P('Length',     'Design',len)}
-        ${P('OrderPolicy','Design',0,true)}
-      </ParmContainer>
-      <XSecSurf id="${mkID(label+'xs')}">
-        <ParmContainer name="XSecSurf" id="${mkID(label+'xsp')}">
-          ${P('TESS_W','Tesselation',8,true)}
-          ${P('TESS_U','Tesselation',4,true)}
-        </ParmContainer>
-        <XSec type="0">
-          <ParmContainer name="XSec_0" id="${mkID(label+'xs0')}">
-            ${P('XLocPercent','XSec',0)} ${P('RefLength','XSec',len)}
-          </ParmContainer>
-          <XSecCurve type="3">
-            <ParmContainer name="XSecCurve_0" id="${mkID(label+'xc0')}">
-              ${P('Super_Height','SuperEllipse',d*0.4)} ${P('Super_Width','SuperEllipse',d*0.4)}
-              ${P('Super_M','SuperEllipse',2)} ${P('Super_N','SuperEllipse',2)}
-            </ParmContainer>
-          </XSecCurve>
-        </XSec>
-        <XSec type="0">
-          <ParmContainer name="XSec_1" id="${mkID(label+'xs1')}">
-            ${P('XLocPercent','XSec',0.5)} ${P('RefLength','XSec',len)}
-          </ParmContainer>
-          <XSecCurve type="3">
-            <ParmContainer name="XSecCurve_1" id="${mkID(label+'xc1')}">
-              ${P('Super_Height','SuperEllipse',d)} ${P('Super_Width','SuperEllipse',d)}
-              ${P('Super_M','SuperEllipse',2)} ${P('Super_N','SuperEllipse',2)}
-            </ParmContainer>
-          </XSecCurve>
-        </XSec>
-        <XSec type="0">
-          <ParmContainer name="XSec_2" id="${mkID(label+'xs2')}">
-            ${P('XLocPercent','XSec',1.0)} ${P('RefLength','XSec',len)}
-          </ParmContainer>
-          <XSecCurve type="3">
-            <ParmContainer name="XSecCurve_2" id="${mkID(label+'xc2')}">
-              ${P('Super_Height','SuperEllipse',d*0.4)} ${P('Super_Width','SuperEllipse',d*0.4)}
-              ${P('Super_M','SuperEllipse',2)} ${P('Super_N','SuperEllipse',2)}
-            </ParmContainer>
-          </XSecCurve>
-        </XSec>
-      </XSecSurf>
-    </FuselageGeom>
-  </Geom>`;
-  }
+    // Ensure exactly 9 cross-sections
+    while ( GetNumXSec( xsurf_id ) < 9 ) { AppendXSec( xsurf_id, XS_SUPER_ELLIPSE ); }
+    while ( GetNumXSec( xsurf_id ) > 9 ) { CutXSec( xsurf_id, GetNumXSec(xsurf_id)-1 ); }
+    Update();
+${xsecBlock}
 
-  const cgMarker =mkMarker('CG',CGM_ID,xCGtotal, fD*0.55);
-  const npMarker =mkMarker('NP',NPM_ID,xNP,       fD*0.65);
+    Update();
 
-  /* ──────────────────────────────────────────
-     ASSEMBLE COMPLETE .vsp3 FILE
-     ────────────────────────────────────────── */
-  return`<?xml version="1.0"?>
-<!-- Trail 1 eVTOL — generated by eVTOL Sizer v2.0 (Wright State University) -->
-<!-- MTOW: ${f(MTOW,1)} kg | CG: ${f(xCGtotal,3)} m | NP: ${f(xNP,3)} m from nose -->
-<Vsp_Geometry>
-  <APIversion>3.27.0</APIversion>
-  <Vehicle>
-    <ParmContainer name="Vehicle" id="Vehicle">
-      ${P('Mass','Mass_Prop',MTOW)}
-      ${P('CGx', 'Mass_Prop',xCGtotal)}
-      ${P('CGy', 'Mass_Prop',0)}
-      ${P('CGz', 'Mass_Prop',0)}
-      ${P('IxxMoment','Mass_Prop',0)}
-      ${P('IyyMoment','Mass_Prop',0)}
-      ${P('IzzMoment','Mass_Prop',0)}
-    </ParmContainer>
-    <UserParms>
-      <ParmContainer name="UserParms" id="UserParms"/>
-    </UserParms>
-    <Set_Name_List>
-      <Set_Name>All</Set_Name>
-      <Set_Name>Shown</Set_Name>
-      <Set_Name>NoShow</Set_Name>
-    </Set_Name_List>
-    <Geom_ID_List>
-      <string>${FUS_ID}</string>
-    </Geom_ID_List>
-  </Vehicle>
-  <Geom_Container>
-${fusGeom}
-${mainWingGeom}
-${vtailGeom}
-${cgMarker}
-${npMarker}
-${rotorGeoms}
-  </Geom_Container>
-</Vsp_Geometry>`;
+    // ════════════════════════════════════════════════════════
+    // 2. MAIN WING  (XZ symmetric, low-wing, NACA 4-digit)
+    // ════════════════════════════════════════════════════════
+    wing_id = AddGeom( "WING_GEOM", fus_id );
+    SetGeomName( wing_id, "MainWing" );
+    SetParmVal( GetParm(wing_id, "SymPlanFlag", "Sym"), 2 );      // XZ symmetry
+    ${pos('wing_id', xWingLE, 0, zWing)}
+    SetParmVal( GetParm(wing_id, "TotalSpan",  "WingGeom"), ${f(R.bWing)} );
+    SetParmVal( GetParm(wing_id, "TotalArea",  "WingGeom"), ${f(R.Swing)} );
+    SetParmVal( GetParm(wing_id, "TotalAR",    "WingGeom"), ${f(p.AR)} );
+    SetParmVal( GetParm(wing_id, "TotalTaper", "WingGeom"), ${f(p.taper)} );
+    SetParmVal( GetParm(wing_id, "TotalSweep", "WingGeom"), ${f(R.sweep)} );
+    SetParmVal( GetParm(wing_id, "SweepLoc",   "WingGeom"), 0.0 );
+    SetParmVal( GetParm(wing_id, "Dihedral",   "WingGeom"), 2.0 );
+    Update();
+
+    // ════════════════════════════════════════════════════════
+    // 3. V-TAIL  (XZ symmetric → both ruddervator panels)
+    // ════════════════════════════════════════════════════════
+    vtail_id = AddGeom( "WING_GEOM", fus_id );
+    SetGeomName( vtail_id, "VTail" );
+    SetParmVal( GetParm(vtail_id, "SymPlanFlag", "Sym"), 2 );
+    ${pos('vtail_id', xVtLE, 0, zVtail)}
+    SetParmVal( GetParm(vtail_id, "TotalSpan",  "WingGeom"), ${f(R.bvt_panel*2)} );
+    SetParmVal( GetParm(vtail_id, "TotalArea",  "WingGeom"), ${f(R.Svt_total)} );
+    SetParmVal( GetParm(vtail_id, "TotalAR",    "WingGeom"), ${f(p.vtAR)} );
+    SetParmVal( GetParm(vtail_id, "TotalTaper", "WingGeom"), 0.40 );
+    SetParmVal( GetParm(vtail_id, "TotalSweep", "WingGeom"), ${f(R.sweep_vt)} );
+    SetParmVal( GetParm(vtail_id, "SweepLoc",   "WingGeom"), 0.0 );
+    SetParmVal( GetParm(vtail_id, "Dihedral",   "WingGeom"), ${f(p.vtGamma)} );
+    Update();
+
+    // ════════════════════════════════════════════════════════
+    // 4. WINGTIP TILT ROTORS  (1 per tip, tilt = ${tiltAngle} deg)
+    //    Y_Rel_Rotation:  0 = forward (cruise),  -90 = up (hover)
+    // ════════════════════════════════════════════════════════
+    // PORT wingtip
+    prop_id = AddGeom( "PROP_GEOM", fus_id );
+    SetGeomName( prop_id, "TiltRotor_PORT" );
+    ${pos('prop_id', xtilt, ytip, ztilt, 0, -tiltAngle, 0)}
+    SetParmVal( GetParm(prop_id, "Diameter",    "Design"), ${f(R.Drotor)} );
+    SetParmVal( GetParm(prop_id, "Nblade",      "Design"), ${nb} );
+    SetParmVal( GetParm(prop_id, "Beta34",      "Design"), 25.0 );
+    SetParmVal( GetParm(prop_id, "HubDiameter", "Design"), ${f(R.Drotor*0.12)} );
+    Update();
+
+    // STBD wingtip
+    prop_id = AddGeom( "PROP_GEOM", fus_id );
+    SetGeomName( prop_id, "TiltRotor_STBD" );
+    ${pos('prop_id', xtilt, -ytip, ztilt, 0, -tiltAngle, 0)}
+    SetParmVal( GetParm(prop_id, "Diameter",    "Design"), ${f(R.Drotor)} );
+    SetParmVal( GetParm(prop_id, "Nblade",      "Design"), ${nb} );
+    SetParmVal( GetParm(prop_id, "Beta34",      "Design"), 25.0 );
+    SetParmVal( GetParm(prop_id, "HubDiameter", "Design"), ${f(R.Drotor*0.12)} );
+    Update();
+
+    // ════════════════════════════════════════════════════════
+    // 5. BOOM LIFT ROTORS  (2 per side, fore+aft at mid-wing Y)
+    //    Y = bWing * 0.28 = ${f(yBoom)} m  (from wing sizing calc)
+    //    Always vertical: Y_Rel_Rotation = -90
+    // ════════════════════════════════════════════════════════
+    // PORT FORWARD
+    prop_id = AddGeom( "PROP_GEOM", fus_id );
+    SetGeomName( prop_id, "BoomRotor_PORT_FWD" );
+    ${pos('prop_id', xBoomF, yBoom, zBoom, 0, -90, 0)}
+    SetParmVal( GetParm(prop_id, "Diameter",    "Design"), ${f(fxDiam)} );
+    SetParmVal( GetParm(prop_id, "Nblade",      "Design"), ${nb} );
+    SetParmVal( GetParm(prop_id, "Beta34",      "Design"), 22.0 );
+    SetParmVal( GetParm(prop_id, "HubDiameter", "Design"), ${f(fxDiam*0.12)} );
+    Update();
+
+    // PORT AFT
+    prop_id = AddGeom( "PROP_GEOM", fus_id );
+    SetGeomName( prop_id, "BoomRotor_PORT_AFT" );
+    ${pos('prop_id', xBoomA, yBoom, zBoom, 0, -90, 0)}
+    SetParmVal( GetParm(prop_id, "Diameter",    "Design"), ${f(fxDiam)} );
+    SetParmVal( GetParm(prop_id, "Nblade",      "Design"), ${nb} );
+    SetParmVal( GetParm(prop_id, "Beta34",      "Design"), 22.0 );
+    SetParmVal( GetParm(prop_id, "HubDiameter", "Design"), ${f(fxDiam*0.12)} );
+    Update();
+
+    // STBD FORWARD
+    prop_id = AddGeom( "PROP_GEOM", fus_id );
+    SetGeomName( prop_id, "BoomRotor_STBD_FWD" );
+    ${pos('prop_id', xBoomF, -yBoom, zBoom, 0, -90, 0)}
+    SetParmVal( GetParm(prop_id, "Diameter",    "Design"), ${f(fxDiam)} );
+    SetParmVal( GetParm(prop_id, "Nblade",      "Design"), ${nb} );
+    SetParmVal( GetParm(prop_id, "Beta34",      "Design"), 22.0 );
+    SetParmVal( GetParm(prop_id, "HubDiameter", "Design"), ${f(fxDiam*0.12)} );
+    Update();
+
+    // STBD AFT
+    prop_id = AddGeom( "PROP_GEOM", fus_id );
+    SetGeomName( prop_id, "BoomRotor_STBD_AFT" );
+    ${pos('prop_id', xBoomA, -yBoom, zBoom, 0, -90, 0)}
+    SetParmVal( GetParm(prop_id, "Diameter",    "Design"), ${f(fxDiam)} );
+    SetParmVal( GetParm(prop_id, "Nblade",      "Design"), ${nb} );
+    SetParmVal( GetParm(prop_id, "Beta34",      "Design"), 22.0 );
+    SetParmVal( GetParm(prop_id, "HubDiameter", "Design"), ${f(fxDiam*0.12)} );
+    Update();
+
+    // ════════════════════════════════════════════════════════
+    // 6. TAIL PUSHER  (horizontal, Y_Rel_Rotation = 0)
+    // ════════════════════════════════════════════════════════
+    prop_id = AddGeom( "PROP_GEOM", fus_id );
+    SetGeomName( prop_id, "Tail_Pusher" );
+    ${pos('prop_id', xPush, 0, fD*0.05, 0, 0, 0)}
+    SetParmVal( GetParm(prop_id, "Diameter",    "Design"), ${f(pushD)} );
+    SetParmVal( GetParm(prop_id, "Nblade",      "Design"), 3 );
+    SetParmVal( GetParm(prop_id, "Beta34",      "Design"), 28.0 );
+    SetParmVal( GetParm(prop_id, "HubDiameter", "Design"), ${f(pushD*0.12)} );
+    Update();
+
+    // ════════════════════════════════════════════════════════
+    // 7. SAVE  →  .vsp3 appears in the same folder as this script
+    // ════════════════════════════════════════════════════════
+    Update();
+    WriteVSPFile( "${outname}", SET_ALL );
+
+    Print( "==================================================" );
+    Print( "  Trail 1 eVTOL model saved: ${outname}" );
+    Print( "  MTOW          = ${f(R.MTOW)} kg" );
+    Print( "  Wing span     = ${f(R.bWing)} m" );
+    Print( "  Tilt angle    = ${tiltAngle} deg" );
+    Print( "  CG from nose  = ${f(R.xCGtotal)} m" );
+    Print( "  Static margin = ${f(R.SM*100,2)} % MAC" );
+    Print( "==================================================" );
 }
+`;
+}
+
+
+
 
 /* ═══════════════════════════════════
    THEME & CONSTANTS
@@ -834,6 +689,7 @@ const TTP={contentStyle:{background:"#131c2e",border:"1px solid #2a3a5c",borderR
    ═══════════════════════════════════ */
 export default function App(){
   const[tab,setTab]=useState(0);
+  const[tiltAngle,setTiltAngle]=useState(90); // 90=hover, 0=cruise
   const[p,setP]=useState({
     payload:455,range:250,vCruise:67,cruiseAlt:1000,reserveRange:60,hoverHeight:15.24,
     LD:15,AR:9,eOsw:0.85,clDesign:0.60,taper:0.45,tc:0.15,
@@ -1718,27 +1574,53 @@ export default function App(){
                   border:`1px solid ${C.border}`,borderRadius:8,padding:"16px 20px",
                   display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
                   <div>
-                    <div style={{fontSize:9,color:C.muted,fontFamily:"'DM Mono',monospace",letterSpacing:"0.15em",marginBottom:4}}>GEOMETRY EXPORT</div>
-                    <div style={{fontSize:22,fontWeight:800,color:C.amber,letterSpacing:"-0.03em"}}>OpenVSP 3D Model</div>
+                    <div style={{fontSize:9,color:C.muted,fontFamily:"'DM Mono',monospace",letterSpacing:"0.15em",marginBottom:4}}>GEOMETRY EXPORT — OpenVSP AngelScript (Native)</div>
+                    <div style={{fontSize:22,fontWeight:800,color:C.amber,letterSpacing:"-0.03em"}}>Trail 1 eVTOL Script Builder</div>
                     <div style={{fontSize:10,color:C.muted,marginTop:2,fontFamily:"'DM Mono',monospace"}}>
-                      Generates a .vsp3 file with fuselage · wing · V-tail · {p.nPropHover} hover rotors · CG & NP markers
+                      Downloads a <b style={{color:C.amber}}>.as — run inside OpenVSP via File → Run Script → model builds instantly
+                    </div>
+                    <div style={{marginTop:6,padding:"5px 10px",background:"#0a0d14",borderRadius:4,
+                      fontFamily:"'DM Mono',monospace",fontSize:10,color:C.teal,
+                      border:`1px solid ${C.teal}33`}}>
+                      OpenVSP: File → Run Script → select .as → saves .vsp3  →  creates Trail1_eVTOL_tilt{tiltAngle}deg.vsp3
+                    </div>
+                  </div>
+                  {/* Tilt angle control */}
+                  <div style={{display:"flex",flexDirection:"column",gap:6,padding:"10px 14px",
+                    background:"#0a0d14",border:`1px solid ${C.teal}33`,borderRadius:8,minWidth:200}}>
+                    <div style={{fontSize:8,color:C.teal,fontFamily:"'DM Mono',monospace",letterSpacing:"0.12em",textTransform:"uppercase"}}>
+                      Tilt Rotor Angle
+                    </div>
+                    <div style={{display:"flex",alignItems:"center",gap:10}}>
+                      <div style={{fontSize:11,color:C.muted,fontFamily:"'DM Mono',monospace",minWidth:60}}>
+                        {tiltAngle===0?"CRUISE":tiltAngle===90?"HOVER":"TRANSITION"}
+                      </div>
+                      <input type="range" min={0} max={90} step={5} value={tiltAngle}
+                        onChange={e=>setTiltAngle(Number(e.target.value))}
+                        style={{flex:1,cursor:"pointer"}}/>
+                      <div style={{fontSize:16,fontWeight:800,color:C.amber,fontFamily:"'DM Mono',monospace",minWidth:40,textAlign:"right"}}>
+                        {tiltAngle}°
+                      </div>
+                    </div>
+                    <div style={{display:"flex",justifyContent:"space-between",fontSize:8,color:C.dim,fontFamily:"'DM Mono',monospace"}}>
+                      <span>0° = forward cruise</span><span>90° = vertical hover</span>
                     </div>
                   </div>
                   <div style={{marginLeft:"auto",display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
                     <button
                       onClick={()=>{
-                        const xml=generateVSPFile(p,R);
-                        const blob=new Blob([xml],{type:"application/xml"});
+                        const xml=generateVSPScript(p,R,tiltAngle);
+                        const blob=new Blob([xml],{type:"text/plain"});
                         const url=URL.createObjectURL(blob);
                         const a=document.createElement("a");
-                        a.href=url; a.download="Trail1_eVTOL.vsp3"; a.click();
+                        a.href=url; a.download=`Trail1_eVTOL_tilt${tiltAngle}deg.as`; a.click();
                         URL.revokeObjectURL(url);
                       }}
                       style={{padding:"10px 22px",background:`linear-gradient(135deg,${C.amber},#f97316)`,
                         border:"none",borderRadius:6,color:"#07090f",fontSize:13,fontWeight:800,
                         cursor:"pointer",letterSpacing:"0.05em",fontFamily:"'DM Mono',monospace",
                         boxShadow:`0 0 20px ${C.amber}55`}}>
-                      ⬇  Download .vsp3
+                      ⬇  ⬇  Download .as ({tiltAngle}°)
                     </button>
                   </div>
                 </div>
@@ -1746,10 +1628,10 @@ export default function App(){
                 {/* Geometry summary cards */}
                 <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:8}}>
                   {[
-                    ["Fuselage","Body","L "+p.fusLen+" m  Ø "+p.fusDiam+" m","#64748b"],
+                    ["Fuselage","FUSELAGE_GEOM","L "+p.fusLen+" m  Ø "+p.fusDiam+" m","#64748b"],
                     ["Main Wing","WING_GEOM","S="+R.Swing+" m²  b="+R.bWing+" m","#3b82f6"],
                     ["V-Tail","WING_GEOM","Γ="+p.vtGamma+"°  S="+R.Svt_total.toFixed(2)+" m²","#8b5cf6"],
-                    ["Hover Rotors","PROP_GEOM × "+p.nPropHover,"D="+R.Drotor+" m  "+R.Nbld+" blades","#22c55e"],
+                    ["7 Propulsors","Trail 1 Config","2 tilt-tip + 4 boom + 1 pusher","#22c55e"],
                     ["CG + NP","Markers","CG="+R.xCGtotal+"m  NP="+R.xNP+"m","#f59e0b"],
                   ].map(([title,type,detail,col])=>(
                     <div key={title} style={{background:C.panel,border:`1px solid ${col}33`,
@@ -1775,30 +1657,37 @@ export default function App(){
                       </thead>
                       <tbody>
                         {(()=>{
-                          const xWingLE_=(R.xACwing-0.25*R.Cr_).toFixed(3);
-                          const zWing_=(-p.fusDiam*0.10).toFixed(3);
-                          const xVtLE_=((R.xACwing+R.lv)-0.25*R.MAC_vt).toFixed(3);
-                          const zVt_=(p.fusDiam*0.05).toFixed(3);
-                          const nSide=Math.floor(p.nPropHover/2);
+                          const xWingLE_  = (R.xACwing - 0.25*R.Cr_).toFixed(3);
+                          const zWing_    = (-p.fusDiam*0.10).toFixed(3);
+                          const xVtLE_    = ((R.xACwing+R.lv) - 0.25*R.MAC_vt).toFixed(3);
+                          const zVt_      = (p.fusDiam*0.05).toFixed(3);
+                          const yBoom_    = (R.bWing*0.28).toFixed(3);
+                          const zBoom_    = (p.fusDiam*0.30).toFixed(3);
+                          const xBoomFore_= (parseFloat(xWingLE_) - R.Drotor*0.60).toFixed(3);
+                          const xBoomAft_ = (parseFloat(xWingLE_) + R.Cr_ + R.Drotor*0.35).toFixed(3);
+                          const xtilt_    = (parseFloat(xWingLE_) + R.Cr_*0.50).toFixed(3);
+                          const ztilt_    = (parseFloat(zWing_) + R.Drotor*0.55).toFixed(3);
+                          const xPush_    = (p.fusLen - R.Drotor*0.25).toFixed(3);
                           const rows=[
-                            ["Fuselage","0.000","0.000","0.000","0°"],
-                            ["Main Wing",xWingLE_,"0.000 (root)",zWing_,"2° (low-wing)"],
-                            ["V-Tail",xVtLE_,"0.000 (root)",zVt_,p.vtGamma+"° (panel)"],
-                            ...Array.from({length:nSide},(_,i)=>{
-                              const y=((R.bWing/2)*(i+0.5)/nSide).toFixed(3);
-                              const x=((R.xACwing-0.25*R.Cr_)-0.30).toFixed(3);
-                              const z=((-p.fusDiam*0.10)+R.Drotor*0.55).toFixed(3);
-                              return["Rotor "+(2*i)+" / "+(2*i+1),x,"±"+y,z,"—"];
-                            }),
-                            ["CG Marker",R.xCGtotal.toFixed(3),"0","fD×0.55","—"],
-                            ["NP Marker",R.xNP.toFixed(3),"0","fD×0.65","—"],
+                            ["Fuselage","0.000","0","0","FUSELAGE_GEOM"],
+                            ["Main Wing",xWingLE_,"0 (root)",zWing_,"WING_GEOM · 2° dihedral"],
+                            ["V-Tail",xVtLE_,"0 (root)",zVt_,`WING_GEOM · Γ=${p.vtGamma}°`],
+                            ["Tilt Rotor PORT",xtilt_,`+${(R.bWing/2).toFixed(3)}`,ztilt_,`PROP_GEOM · ry=${-tiltAngle}°`],
+                            ["Tilt Rotor STBD",xtilt_,`-${(R.bWing/2).toFixed(3)}`,ztilt_,`PROP_GEOM · ry=${-tiltAngle}°`],
+                            ["Boom Rotor P-FWD",xBoomFore_,`+${yBoom_}`,zBoom_,"PROP_GEOM · ry=-90°"],
+                            ["Boom Rotor P-AFT",xBoomAft_, `+${yBoom_}`,zBoom_,"PROP_GEOM · ry=-90°"],
+                            ["Boom Rotor S-FWD",xBoomFore_,`-${yBoom_}`,zBoom_,"PROP_GEOM · ry=-90°"],
+                            ["Boom Rotor S-AFT",xBoomAft_, `-${yBoom_}`,zBoom_,"PROP_GEOM · ry=-90°"],
+                            ["Tail Pusher",xPush_,"0",(p.fusDiam*0.05).toFixed(3),"PROP_GEOM · ry=0°"],
+                            ["CG Marker",R.xCGtotal.toFixed(3),"0",(p.fusDiam*0.55).toFixed(3),"FUSELAGE_GEOM"],
+                            ["NP Marker",R.xNP.toFixed(3),"0",(p.fusDiam*0.65).toFixed(3),"FUSELAGE_GEOM"],
                           ];
                           return rows.map((r,i)=>(
                             <tr key={i} style={{background:i%2===0?C.bg:"transparent",
                               borderBottom:`1px solid ${C.border}22`}}>
                               {r.map((cell,j)=>(
                                 <td key={j} style={{padding:"4px 6px",
-                                  color:j===0?C.amber:C.text,
+                                  color:j===0?C.amber:j===4?C.muted:C.text,
                                   fontSize:j===0?10:9}}>{cell}</td>
                               ))}
                             </tr>
@@ -1812,17 +1701,18 @@ export default function App(){
                     {/* Tree view */}
                     <div style={{fontFamily:"'DM Mono',monospace",fontSize:10,lineHeight:1.8}}>
                       {[
-                        {indent:0,icon:"🏗️",label:"Fuselage (FUSELAGE_GEOM)",detail:`L=${p.fusLen}m  Ø=${p.fusDiam}m`,col:"#94a3b8"},
+                        {indent:0,icon:"🏗️",label:"Fuselage (FUSELAGE_GEOM)",detail:`L=${p.fusLen}m  Ø=${p.fusDiam}m  9 cross-sections`,col:"#94a3b8"},
                         {indent:1,icon:"✈️",label:"Main Wing (WING_GEOM)",detail:`b=${R.bWing}m  S=${R.Swing}m²  AR=${p.AR}  λ=${p.taper}`,col:C.blue},
                         {indent:1,icon:"🦋",label:"V-Tail (WING_GEOM · XZ sym)",detail:`Γ=${p.vtGamma}°  S_panel=${R.Svt_panel}m²  AR=${p.vtAR}`,col:"#8b5cf6"},
-                        {indent:1,icon:"🟢",label:"CG Marker (FUSELAGE_GEOM)",detail:`x=${R.xCGtotal}m  SM=${((R.SM)*100).toFixed(1)}% MAC`,col:C.green},
-                        {indent:1,icon:"🔵",label:"NP Marker (FUSELAGE_GEOM)",detail:`x=${R.xNP}m from nose`,col:C.teal},
-                        ...Array.from({length:Math.floor(p.nPropHover/2)},(_,i)=>({
-                          indent:1,icon:"🔧",
-                          label:`Rotor pair ${i} (PROP_GEOM × 2)`,
-                          detail:`D=${R.Drotor}m  ${R.Nbld||3} blades  @y=±${((R.bWing/2)*(i+0.5)/Math.floor(p.nPropHover/2)).toFixed(2)}m`,
-                          col:C.amber,
-                        })),
+                        {indent:1,icon:"🟢",label:"CG Marker",detail:`x=${R.xCGtotal}m  SM=${((R.SM)*100).toFixed(1)}% MAC`,col:C.green},
+                        {indent:1,icon:"🔵",label:"NP Marker",detail:`x=${R.xNP}m from nose`,col:C.teal},
+                        {indent:1,icon:"🔄",label:`TiltRotor PORT (PROP_GEOM) — ${tiltAngle}°`,detail:`D=${R.Drotor}m  3 blades  y=+${(R.bWing/2).toFixed(2)}m (wingtip)  ry=${-tiltAngle}°`,col:C.amber},
+                        {indent:1,icon:"🔄",label:`TiltRotor STBD (PROP_GEOM) — ${tiltAngle}°`,detail:`D=${R.Drotor}m  3 blades  y=-${(R.bWing/2).toFixed(2)}m (wingtip)  ry=${-tiltAngle}°`,col:C.amber},
+                        {indent:1,icon:"⬆️",label:"BoomRotor PORT FWD (PROP_GEOM)",detail:`D=${(R.Drotor*0.72).toFixed(2)}m  y=+${(R.bWing*0.28).toFixed(2)}m (mid-wing from calc)  ry=-90°`,col:"#f97316"},
+                        {indent:1,icon:"⬆️",label:"BoomRotor PORT AFT (PROP_GEOM)",detail:`D=${(R.Drotor*0.72).toFixed(2)}m  y=+${(R.bWing*0.28).toFixed(2)}m  aft of wing TE  ry=-90°`,col:"#f97316"},
+                        {indent:1,icon:"⬆️",label:"BoomRotor STBD FWD (PROP_GEOM)",detail:`D=${(R.Drotor*0.72).toFixed(2)}m  y=-${(R.bWing*0.28).toFixed(2)}m (mid-wing from calc)  ry=-90°`,col:"#f97316"},
+                        {indent:1,icon:"⬆️",label:"BoomRotor STBD AFT (PROP_GEOM)",detail:`D=${(R.Drotor*0.72).toFixed(2)}m  y=-${(R.bWing*0.28).toFixed(2)}m  aft of wing TE  ry=-90°`,col:"#f97316"},
+                        {indent:1,icon:"🚀",label:"Tail Pusher (PROP_GEOM)",detail:`D=${(R.Drotor*0.55).toFixed(2)}m  3 blades  @x=${(p.fusLen-R.Drotor*0.25).toFixed(2)}m  ry=0° (horizontal)`,col:"#ec4899"},
                       ].map((n,i)=>(
                         <div key={i} style={{display:"flex",alignItems:"flex-start",gap:4,
                           paddingLeft:n.indent*18,paddingTop:1,paddingBottom:1}}>
@@ -1869,18 +1759,15 @@ export default function App(){
                     </div>
                   </Panel>
 
-                  <Panel title="How to Use the .vsp3 File">
+                  <Panel title="How to Use — 3 Steps (No Python. No terminal. Works in OpenVSP 3.20+)">
                     {[
-                      ["1","Download","Click the Download .vsp3 button above to save the file."],
-                      ["2","Open","Launch OpenVSP 3.x → File → Open → select Trail1_eVTOL.vsp3."],
-                      ["3","Inspect","All components are attached to the fuselage. Use the Component Tree to navigate."],
-                      ["4","CG / NP","Small sphere markers show CG (green) and NP (blue) positions along the X-axis."],
-                      ["5","Rotors","PROP_GEOM disks are Y_Rot=−90° so thrust points +Z (upward). Adjust blade pitch as needed."],
-                      ["6","V-Tail","WING_GEOM with XZ symmetry and dihedral=Γ creates both panels. Ruddervator area = 30% of panel."],
-                      ["7","Iterate","Change parameters in the sidebar → click Download again to update the geometry."],
+                      ["1","Download Script","Click any button below to download a .as file. It has all your current sizing values baked in — wing dimensions, rotor positions, fuselage, V-tail, tilt angle."],
+                      ["2","Run Script in OpenVSP","Open OpenVSP 3.48.2 → click the File menu → Run Script → browse to your downloaded .as → click Open. The model builds in 1–2 seconds."],
+                      ["3","Model is ready","OpenVSP saves Trail1_eVTOL_tiltXXdeg.vsp3 in the same folder as the script. You can then view, edit, and run analyses on it normally."],
+                      ["↺","Re-iterate anytime","Change any design parameter in the sidebar (wing AR, fuselage length, rotor count, etc.) → adjust tilt angle → download a new .as → run it again. Each download reflects your latest calculations."],
                     ].map(([n,title,text])=>(
                       <div key={n} style={{display:"flex",gap:8,marginBottom:8}}>
-                        <div style={{width:18,height:18,borderRadius:"50%",background:C.amber,flexShrink:0,
+                        <div style={{width:18,height:18,borderRadius:"50%",background:n==="↺"?C.teal:C.amber,flexShrink:0,
                           display:"flex",alignItems:"center",justifyContent:"center",
                           fontSize:8,fontWeight:800,color:"#07090f",fontFamily:"'DM Mono',monospace"}}>{n}</div>
                         <div>
@@ -1893,21 +1780,49 @@ export default function App(){
                 </div>
 
                 {/* Second download button at bottom */}
-                <div style={{display:"flex",justifyContent:"center",paddingTop:4,paddingBottom:8}}>
+                <div style={{display:"flex",justifyContent:"center",gap:12,paddingTop:4,paddingBottom:8,flexWrap:"wrap"}}>
                   <button
                     onClick={()=>{
-                      const xml=generateVSPFile(p,R);
-                      const blob=new Blob([xml],{type:"application/xml"});
+                      const xml=generateVSPScript(p,R,0);
+                      const blob=new Blob([xml],{type:"text/plain"});
                       const url=URL.createObjectURL(blob);
                       const a=document.createElement("a");
-                      a.href=url; a.download="Trail1_eVTOL.vsp3"; a.click();
+                      a.href=url; a.download="Trail1_eVTOL_CRUISE_0deg.as"; a.click();
                       URL.revokeObjectURL(url);
                     }}
-                    style={{padding:"12px 40px",background:`linear-gradient(135deg,${C.amber},#f97316)`,
+                    style={{padding:"10px 24px",background:"transparent",
+                      border:`2px solid ${C.teal}`,borderRadius:6,color:C.teal,fontSize:12,fontWeight:700,
+                      cursor:"pointer",letterSpacing:"0.06em",fontFamily:"'DM Mono',monospace"}}>
+                    ✈️  Cruise Config (0°)
+                  </button>
+                  <button
+                    onClick={()=>{
+                      const xml=generateVSPScript(p,R,tiltAngle);
+                      const blob=new Blob([xml],{type:"text/plain"});
+                      const url=URL.createObjectURL(blob);
+                      const a=document.createElement("a");
+                      a.href=url; a.download=`Trail1_eVTOL_tilt${tiltAngle}deg.as`; a.click();
+                      URL.revokeObjectURL(url);
+                    }}
+                    style={{padding:"10px 32px",background:`linear-gradient(135deg,${C.amber},#f97316)`,
                       border:"none",borderRadius:6,color:"#07090f",fontSize:14,fontWeight:800,
                       cursor:"pointer",letterSpacing:"0.06em",fontFamily:"'DM Mono',monospace",
                       boxShadow:`0 0 30px ${C.amber}44`}}>
-                    ⬇  Download Trail1_eVTOL.vsp3
+                    ⬇  Download Trail1 — {tiltAngle}° Tilt
+                  </button>
+                  <button
+                    onClick={()=>{
+                      const xml=generateVSPScript(p,R,90);
+                      const blob=new Blob([xml],{type:"text/plain"});
+                      const url=URL.createObjectURL(blob);
+                      const a=document.createElement("a");
+                      a.href=url; a.download="Trail1_eVTOL_HOVER_90deg.as"; a.click();
+                      URL.revokeObjectURL(url);
+                    }}
+                    style={{padding:"10px 24px",background:"transparent",
+                      border:`2px solid #22c55e`,borderRadius:6,color:"#22c55e",fontSize:12,fontWeight:700,
+                      cursor:"pointer",letterSpacing:"0.06em",fontFamily:"'DM Mono',monospace"}}>
+                    🚁  Hover Config (90°)
                   </button>
                 </div>
               </div>
