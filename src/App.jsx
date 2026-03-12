@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback } from "react";
 import {
   AreaChart, Area, LineChart, Line, BarChart, Bar, RadarChart, Radar,
+  ComposedChart,
   PolarGrid, PolarAngleAxis, XAxis, YAxis, CartesianGrid, Tooltip,
   Legend, ResponsiveContainer, ReferenceLine, Cell, PieChart, Pie
 } from "recharts";
@@ -279,7 +280,7 @@ function runSizing(p) {
   const Tend=tPhases[6],phPow=[Phov,Pcl,Pcr,Math.abs(Pdc),Phov,Pres];
   const phV=[0.5,Vcl,p.vCruise,Vdc,0.5,Vres];
   const Ecum_ph=[0,Eto,Eto+Ecl,Eto+Ecl+Ecr,Eto+Ecl+Ecr+Edc,Eto+Ecl+Ecr+Edc+Eld,Etot];
-  const N=200,powerSteps=[],socSteps=[],velSteps=[];
+  const N=200,powerSteps=[],socSteps=[],velSteps=[],energySteps=[];
   for(let i=0;i<=N;i++){
     const t=Tend*i/N;
     let ph=5; for(let j=0;j<6;j++)if(t>=tPhases[j]&&t<tPhases[j+1]){ph=j;break;}
@@ -289,6 +290,7 @@ function runSizing(p) {
     powerSteps.push({t:+t.toFixed(0),P:+phPow[ph].toFixed(1),ph:["TO","Climb","Cruise","Desc","Land","Res"][ph]});
     socSteps.push({t:+t.toFixed(0),SoC:+soc.toFixed(2)});
     velSteps.push({t:+t.toFixed(0),V:+phV[ph].toFixed(1)});
+    energySteps.push({t:+t.toFixed(0),E:+Ec.toFixed(3),P:+phPow[ph].toFixed(1),ph:["TO","Climb","Cruise","Desc","Land","Res"][ph]});
   }
 
   /* Convergence chart data */
@@ -339,7 +341,7 @@ function runSizing(p) {
     SEDpack:+SEDpack.toFixed(1),Nseries,Npar,Ncells,PackV:+PackV.toFixed(0),PackAh:+PackAh.toFixed(1),
     PackkWh:+PackkWh.toFixed(3),CrateHov:+CrateHov.toFixed(2),CrateCr:+CrateCr.toFixed(2),Pheat:+Pheat.toFixed(1),
     Vstall:+Vstall.toFixed(2),VA:+VA.toFixed(2),VD:+VD.toFixed(2),
-    vnData,rpData,polarData,powerSteps,socSteps,velSteps,convData,weightBreak,dragComp,tPhases,
+    vnData,rpData,polarData,powerSteps,socSteps,velSteps,energySteps,convData,weightBreak,dragComp,tPhases,
     checks,feasible:checks.every(c=>c.ok),
     vtGamma_opt:+vtGamma_opt_deg.toFixed(1),Svt_total:+Svt_total.toFixed(3),Svt_panel:+Svt_panel.toFixed(3),governs_pitch:Svt_panel_pitch>=Svt_panel_yaw,ruddervator_combined_auth:+ruddervator_combined_auth.toFixed(3),delta_yaw_rv_deg:+delta_yaw_rv_deg.toFixed(2),
     Sh_req:+Sh_req.toFixed(3),Sv_req:+Sv_req.toFixed(3),Sh_eff:+Sh_eff.toFixed(3),Sv_eff:+Sv_eff.toFixed(3),
@@ -1212,6 +1214,52 @@ export default function App(){
                       <Area type="stepAfter" dataKey="V" stroke={C.teal} strokeWidth={2} fill="url(#vg)" dot={false} name="Speed (m/s)"/>
                       <ReferenceLine y={p.vCruise} stroke={C.blue} strokeDasharray="4 3" label={{value:"Vcr",fill:C.blue,fontSize:11}}/>
                     </AreaChart>
+                  </ResponsiveContainer>
+                </Panel>
+
+                {/* ── Energy vs Mission Time ── */}
+                <Panel title="Energy vs Mission Time" h={270}>
+                  <ResponsiveContainer width="100%" height={220}>
+                    <AreaChart data={R.energySteps} margin={{top:5,right:10,left:-10,bottom:0}}>
+                      <defs><linearGradient id="eg" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor={C.green} stopOpacity={0.4}/><stop offset="95%" stopColor={C.green} stopOpacity={0.02}/>
+                      </linearGradient></defs>
+                      <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
+                      <XAxis dataKey="t" tick={{fontSize:11,fill:"#94a3b8"}} label={{value:"Time (s)",position:"insideBottom",fontSize:12,fill:"#94a3b8"}}/>
+                      <YAxis tick={{fontSize:11,fill:"#94a3b8"}} label={{value:"kWh",angle:-90,position:"insideLeft",fontSize:12,fill:"#94a3b8"}}/>
+                      <Tooltip {...TTP} formatter={(v)=>[`${v} kWh`,"Cumulative Energy"]}/>
+                      <ReferenceLine y={R.Etot} stroke={C.amber} strokeDasharray="4 3" strokeWidth={1.5}
+                        label={{value:`Total ${R.Etot} kWh`,position:"insideTopRight",fontSize:11,fill:C.amber}}/>
+                      <Area type="monotone" dataKey="E" stroke={C.green} strokeWidth={2} fill="url(#eg)" dot={false} name="Energy (kWh)"/>
+                      {R.tPhases.slice(1,-1).map((tp,i)=><ReferenceLine key={i} x={Math.round(tp)} stroke={PHC[i]} strokeDasharray="4 3" strokeWidth={1}/>)}
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </Panel>
+
+                {/* ── Power & Energy vs Mission Time (dual-axis) ── */}
+                <Panel title="Power & Energy vs Mission Time" h={290}>
+                  <ResponsiveContainer width="100%" height={240}>
+                    <ComposedChart data={R.energySteps} margin={{top:5,right:50,left:-10,bottom:0}}>
+                      <defs><linearGradient id="pg2" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor={C.amber} stopOpacity={0.35}/><stop offset="95%" stopColor={C.amber} stopOpacity={0.02}/>
+                      </linearGradient></defs>
+                      <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
+                      <XAxis dataKey="t" tick={{fontSize:11,fill:"#94a3b8"}} label={{value:"Time (s)",position:"insideBottom",fontSize:12,fill:"#94a3b8"}}/>
+                      <YAxis yAxisId="pwr" orientation="left"
+                        tick={{fontSize:11,fill:C.amber}}
+                        label={{value:"Power (kW)",angle:-90,position:"insideLeft",fontSize:12,fill:C.amber}}/>
+                      <YAxis yAxisId="eng" orientation="right"
+                        tick={{fontSize:11,fill:C.green}}
+                        label={{value:"Energy (kWh)",angle:90,position:"insideRight",fontSize:12,fill:C.green}}/>
+                      <Tooltip {...TTP} formatter={(v,n)=>n==="Power (kW)"?[`${v} kW`,n]:[`${v} kWh`,n]}/>
+                      <Legend iconSize={9} wrapperStyle={{fontSize:12,color:"#94a3b8"}}/>
+                      {R.tPhases.slice(1,-1).map((tp,i)=>
+                        <ReferenceLine key={i} yAxisId="pwr" x={Math.round(tp)} stroke={PHC[i]} strokeDasharray="4 3" strokeWidth={1}/>)}
+                      <Area yAxisId="pwr" type="stepAfter" dataKey="P" stroke={C.amber} strokeWidth={2}
+                        fill="url(#pg2)" dot={false} name="Power (kW)"/>
+                      <Line yAxisId="eng" type="monotone" dataKey="E" stroke={C.green} strokeWidth={2}
+                        dot={false} name="Energy (kWh)"/>
+                    </ComposedChart>
                   </ResponsiveContainer>
                 </Panel>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
