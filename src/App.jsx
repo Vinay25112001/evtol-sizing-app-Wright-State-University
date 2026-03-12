@@ -493,6 +493,351 @@ ${yVals.map((v,i)=>`    y[${i}] = ${v};`).join('\n')}
 }`;
 }
 
+
+/* ═══════════════════════════════════════════════════════════════════════
+   PDF REPORT GENERATOR
+   Builds a complete HTML document with KaTeX-rendered LaTeX equations.
+   User clicks "Download PDF" → new window opens → browser print dialog
+   → "Save as PDF". Native browser PDF engine = perfect quality.
+   ═══════════════════════════════════════════════════════════════════════ */
+function generateReport(p, R) {
+  const n = (v, d=3) => (typeof v==="number" && isFinite(v)) ? v.toFixed(d) : "—";
+  const now = new Date().toLocaleDateString("en-US",{year:"numeric",month:"long",day:"numeric"});
+  const feasBadge = R.feasible
+    ? `<span class="badge green">✓ FEASIBLE</span>`
+    : `<span class="badge amber">⚠ CHECK DESIGN</span>`;
+
+  // ── Section builder helpers ──────────────────────────────────────────
+  const sec = (id, title, content) =>
+    `<section id="${id}"><h2>${title}</h2>${content}</section>`;
+
+  const eq = (latex, note="") =>
+    `<div class="eq-block"><span class="katex-eq" data-latex="${latex.replace(/"/g,'&quot;')}"></span>${note?`<div class="eq-note">${note}</div>`:""}</div>`;
+
+  const sub = (latex, note="") =>
+    `<span class="katex-inline" data-latex="${latex.replace(/"/g,'&quot;')}"></span>${note}`;
+
+  const row = (label, formula, value, unit="") =>
+    `<tr><td class="td-label">${label}</td><td class="td-formula">${formula}</td><td class="td-value">${value}</td><td class="td-unit">${unit}</td></tr>`;
+
+  const table = (headers, rows) =>
+    `<table class="data-table"><thead><tr>${headers.map(h=>`<th>${h}</th>`).join("")}</tr></thead><tbody>${rows.join("")}</tbody></table>`;
+
+  const check = (ok, label, val) =>
+    `<tr class="${ok?"ok":"fail"}"><td>${ok?"✓":"✗"}</td><td>${label}</td><td>${val}</td></tr>`;
+
+  // ── COVER PAGE ───────────────────────────────────────────────────────
+  const cover = `
+  <div class="cover-page">
+    <div class="cover-logo">AEROSPACE DESIGN SUITE</div>
+    <div class="cover-title">eVTOL Aircraft<br>Sizing Report</div>
+    <div class="cover-sub">Trail 1 Design — Parametric Sizing Analysis</div>
+    <div class="cover-line"></div>
+    <table class="cover-meta">
+      <tr><td>Institution</td><td>Wright State University</td></tr>
+      <tr><td>Advisor</td><td>Dr. Darryl K. Ahner</td></tr>
+      <tr><td>Framework</td><td>MATLAB-MBSE Integrated Sizing Framework</td></tr>
+      <tr><td>Algorithm</td><td>eVTOL_Full_Analysis_v2.m — JavaScript Port</td></tr>
+      <tr><td>Report Generated</td><td>${now}</td></tr>
+      <tr><td>Design Status</td><td>${feasBadge}</td></tr>
+    </table>
+    <div class="cover-kpi-grid">
+      <div class="kpi"><div class="kpi-val">${n(R.MTOW,1)} kg</div><div class="kpi-lbl">MTOW</div></div>
+      <div class="kpi"><div class="kpi-val">${n(R.Etot,2)} kWh</div><div class="kpi-lbl">Total Energy</div></div>
+      <div class="kpi"><div class="kpi-val">${n(R.Phov,1)} kW</div><div class="kpi-lbl">Hover Power</div></div>
+      <div class="kpi"><div class="kpi-val">${n(R.bWing,2)} m</div><div class="kpi-lbl">Wing Span</div></div>
+      <div class="kpi"><div class="kpi-val">${n(R.SM*100,1)}%</div><div class="kpi-lbl">Static Margin</div></div>
+      <div class="kpi"><div class="kpi-val">${n(R.LDact,2)}</div><div class="kpi-lbl">Actual L/D</div></div>
+    </div>
+  </div>`;
+
+  // ── 1. DESIGN INPUTS ─────────────────────────────────────────────────
+  const s1 = sec("inputs","1. Design Inputs & Mission Requirements",`
+  <p>The following input parameters define the baseline design for the Trail 1 eVTOL configuration. All sizing calculations are derived directly from these values.</p>
+  ${table(["Parameter","Symbol","Value","Unit"],[
+    row("Payload","m<sub>pay</sub>",p.payload,"kg"),
+    row("Design Range","R",p.range,"km"),
+    row("Cruise Speed","V<sub>cr</sub>",p.vCruise,"m/s ("+n(p.vCruise*3.6,1)+" km/h)"),
+    row("Cruise Altitude","h<sub>cr</sub>",p.cruiseAlt,"m"),
+    row("Reserve Range","R<sub>res</sub>",p.reserveRange,"km"),
+    row("Hover Height","h<sub>hov</sub>",p.hoverHeight,"m"),
+    row("L/D (design)","(L/D)<sub>des</sub>",p.LD,""),
+    row("Wing AR","AR",p.AR,""),
+    row("Oswald Efficiency","e",p.eOsw,""),
+    row("Design C<sub>L</sub>","C<sub>L,des</sub>",p.clDesign,""),
+    row("Taper Ratio","λ",p.taper,""),
+    row("t/c Ratio","(t/c)",p.tc,""),
+    row("No. of Rotors","N<sub>rot</sub>",p.nPropHover,""),
+    row("Rotor Diameter","D<sub>rot</sub>",p.propDiam,"m"),
+    row("Hover FOM","η<sub>hov</sub>",p.etaHov,""),
+    row("System Efficiency","η<sub>sys</sub>",p.etaSys,""),
+    row("Rate of Climb","RoC",p.rateOfClimb,"m/s"),
+    row("Climb Angle","γ<sub>cl</sub>",p.climbAngle,"°"),
+    row("Cell Spec. Energy","SED<sub>cell</sub>",p.sedCell,"Wh/kg"),
+    row("Battery Efficiency","η<sub>bat</sub>",p.etaBat,""),
+    row("Min. SoC","SoC<sub>min</sub>",p.socMin,""),
+    row("Empty Weight Frac.","EWF",p.ewf,""),
+    row("Fuselage Length","L<sub>fus</sub>",p.fusLen,"m"),
+    row("Fuselage Diameter","D<sub>fus</sub>",p.fusDiam,"m"),
+    row("V-Tail Dihedral","Γ",p.vtGamma,"°"),
+    row("Horiz. Tail Vol. Coeff.","C<sub>h</sub>",p.vtCh,""),
+    row("Vert. Tail Vol. Coeff.","C<sub>v</sub>",p.vtCv,""),
+    row("V-Tail AR","AR<sub>vt</sub>",p.vtAR,""),
+  ])}
+  `);
+
+  // ── 2. ATMOSPHERE MODEL ──────────────────────────────────────────────
+  const s2 = sec("atmo","2. Atmosphere Model (ISA)",`
+  <p>All aerodynamic calculations use the International Standard Atmosphere (ISA) model evaluated at the cruise altitude h = ${p.cruiseAlt} m.</p>
+  ${eq("T_{cr} = T_0 - L_{lapse} \\cdot h_{cr} = 288.15 - 0.0065 \\times "+p.cruiseAlt+" = "+n(288.15-0.0065*p.cruiseAlt,2)+"\\text{ K}",
+    "Temperature at cruise altitude")}
+  ${eq("\\rho_{cr} = \\rho_{SL}\\left(\\frac{T_{cr}}{T_0}\\right)^{\\left(\\frac{g_0}{L_{lapse}\\,R_{air}}\\right)-1} = "+n(R.MTOW ? 1.225*Math.pow((288.15-0.0065*p.cruiseAlt)/288.15, (-9.81/(-0.0065*287))-1) : 1.112,4)+"\\text{ kg/m}^3",
+    "Density at cruise altitude (ISA troposphere)")}
+  ${eq("a_{cr} = \\sqrt{\\gamma R_{air} T_{cr}} = \\sqrt{1.4 \\times 287 \\times "+(288.15-0.0065*p.cruiseAlt).toFixed(2)+"} = "+n(Math.sqrt(1.4*287*(288.15-0.0065*p.cruiseAlt)),2)+"\\text{ m/s}",
+    "Speed of sound at cruise altitude")}
+  ${eq("M = \\frac{V_{cr}}{a_{cr}} = \\frac{"+p.vCruise+"}{"+n(Math.sqrt(1.4*287*(288.15-0.0065*p.cruiseAlt)),2)+"} = "+n(R.Mach,4),
+    "Cruise Mach number")}
+  `);
+
+  // ── 3. WEIGHT SIZING ─────────────────────────────────────────────────
+  const s3 = sec("weight","3. Weight & Energy Sizing (Iterative)",`
+  <p>The MTOW is found by simultaneously converging the weight and energy fractions using a nested iterative scheme. The battery mass fraction is:</p>
+  ${eq("f_{bat} = \\frac{g_0 \\cdot R}{(L/D)\\,\\eta_{sys}\\,\\text{SED}_{cell}\\times 3600}","Battery mass fraction (range-energy method)")}
+  ${eq("W_{bat} = \\frac{E_{total}\\times 1000\\,(1+\\text{SoC}_{min})}{\\text{SED}_{cell}\\,\\eta_{bat}}","Battery mass from total mission energy")}
+  ${eq("\\text{MTOW} = m_{pay} + f_{EW}\\cdot\\text{MTOW} + W_{bat}","Weight closure equation (solved iteratively)")}
+  ${table(["Quantity","Symbol","Value","Unit"],[
+    row("MTOW (initial)","MTOW<sub>1</sub>",n(R.MTOW1,1),"kg"),
+    row("MTOW (converged)","MTOW",n(R.MTOW,1),"kg"),
+    row("Empty Weight","W<sub>e</sub>",n(R.Wempty,1),"kg"),
+    row("Battery Mass","W<sub>bat</sub>",n(R.Wbat,1),"kg"),
+    row("Payload","m<sub>pay</sub>",p.payload,"kg"),
+    row("Battery Mass Fraction","W<sub>bat</sub>/MTOW",n(R.Wbat/R.MTOW*100,1),"%"),
+  ])}
+  `);
+
+  // ── 4. MISSION ENERGY ────────────────────────────────────────────────
+  const s4 = sec("energy","4. Mission Energy Breakdown",`
+  <p>The mission is divided into six phases: Takeoff (hover), Climb, Cruise, Descent, Landing (hover), and Reserve.</p>
+  ${eq("E_{total} = E_{TO}+E_{cl}+E_{cr}+E_{dc}+E_{ld}+E_{res} = "+n(R.Etot,3)+"\\text{ kWh}","Total mission energy")}
+  ${eq("P_{hov} = \\frac{W\\,g_0}{\\eta_{hov}}\\sqrt{\\frac{W\\,g_0}{2\\,\\rho_{SL}\\,N_{rot}\\,A_{disk}}} = "+n(R.Phov,2)+"\\text{ kW}","Hover power (actuator disk theory)")}
+  ${eq("P_{cr} = \\frac{W\\,g_0\\,V_{cr}}{\\eta_{sys}\\,(L/D)} = "+n(R.Pcr,2)+"\\text{ kW}","Cruise power")}
+  ${table(["Phase","Power (kW)","Time (s)","Energy (kWh)"],[
+    row("Takeoff (Hover)","P<sub>hov</sub> = "+n(R.Phov,2),n(R.tto,0),n(R.Eto,3)),
+    row("Climb","P<sub>cl</sub> = "+n(R.Pcl,2),n(R.tcl,0),n(R.Ecl,3)),
+    row("Cruise","P<sub>cr</sub> = "+n(R.Pcr,2),n(R.tcr,0),n(R.Ecr,3)),
+    row("Descent","P<sub>dc</sub> = "+n(R.Pdc,2),n(R.tdc,0),n(R.Edc,3)),
+    row("Landing (Hover)","P<sub>hov</sub> = "+n(R.Phov,2),n(R.tld,0),n(R.Eld,3)),
+    row("Reserve","P<sub>res</sub> = "+n(R.Pres,2),n(R.tres,0),n(R.Eres,3)),
+    row("<strong>Total</strong>","","<strong>"+n(R.Tend,0)+" s</strong>","<strong>"+n(R.Etot,3)+"</strong>"),
+  ])}
+  `);
+
+  // ── 5. WING AERODYNAMICS ─────────────────────────────────────────────
+  const s5 = sec("wing","5. Wing Design & Aerodynamics",`
+  <p>Wing area is sized to provide the required lift at cruise using the design lift coefficient C<sub>L,des</sub> = ${p.clDesign}.</p>
+  ${eq("S_w = \\frac{2\\,L_{req}}{\\rho_{cr}\\,V_{cr}^2\\,C_{L,des}} = \\frac{2\\times"+n(R.MTOW*9.81,1)+"}{"+n(1.225*Math.pow((288.15-0.0065*p.cruiseAlt)/288.15,(-9.81/(-0.0065*287))-1),4)+"\\times"+p.vCruise+"^2\\times"+p.clDesign+"} = "+n(R.Swing,2)+"\\text{ m}^2","Wing reference area")}
+  ${eq("b_w = \\sqrt{AR\\cdot S_w} = \\sqrt{"+p.AR+"\\times"+n(R.Swing,2)+"} = "+n(R.bWing,2)+"\\text{ m}","Wing span")}
+  ${eq("C_r = \\frac{2S_w}{b_w(1+\\lambda)} = "+n(R.Cr_,3)+"\\text{ m}, \\quad C_t = \\lambda\\,C_r = "+n(R.Ct_,3)+"\\text{ m}","Root and tip chord (taper λ = "+p.taper+")")}
+  ${eq("\\bar{c} = \\frac{2}{3}C_r\\frac{1+\\lambda+\\lambda^2}{1+\\lambda} = "+n(R.MAC,3)+"\\text{ m}","Mean aerodynamic chord (MAC)")}
+  ${eq("\\Lambda_{LE} = \\arctan\\!\\left(\\frac{C_r - C_t}{b_w/2}\\right) = \\arctan\\!\\left(\\frac{"+n(R.Cr_,3)+"-"+n(R.Ct_,3)+"}{"+n(R.bWing/2,3)+"}\\right) = "+n(R.sweep,2)+"^\\circ","Leading edge sweep (semi-span denominator)")}
+  ${eq("C_{D_0,total} = "+n(R.CD0tot,5)+", \\quad C_{D_i} = \\frac{C_{L,des}^2}{\\pi\\,AR\\,e} = "+n(R.CDi,5),"Parasitic and induced drag coefficients")}
+  ${eq("(L/D)_{actual} = \\frac{C_{L,des}}{C_{D_0}+C_{D_i}} = "+n(R.LDact,2),"Actual cruise lift-to-drag ratio")}
+  ${table(["Parameter","Symbol","Value","Unit"],[
+    row("Wing Area","S<sub>w</sub>",n(R.Swing,2),"m²"),
+    row("Wing Span","b<sub>w</sub>",n(R.bWing,3),"m"),
+    row("Root Chord","C<sub>r</sub>",n(R.Cr_,3),"m"),
+    row("Tip Chord","C<sub>t</sub>",n(R.Ct_,3),"m"),
+    row("MAC","c̄",n(R.MAC,3),"m"),
+    row("y<sub>MAC</sub>","ȳ<sub>MAC</sub>",n(R.Ymac,3),"m"),
+    row("LE Sweep","Λ<sub>LE</sub>",n(R.sweep,2),"°"),
+    row("Wing Loading","W/S",n(R.WL,1),"N/m²"),
+    row("Re (MAC)","Re",n(R.Re_,0),""),
+    row("Selected Airfoil","—",R.selAF?.name||"—",""),
+    row("Actual L/D","(L/D)<sub>act</sub>",n(R.LDact,2),""),
+    row("C<sub>D0</sub> total","C<sub>D0</sub>",n(R.CD0tot,5),""),
+    row("C<sub>Di</sub>","C<sub>Di</sub>",n(R.CDi,5),""),
+  ])}
+  `);
+
+  // ── 6. PROPULSION ────────────────────────────────────────────────────
+  const s6 = sec("prop","6. Hover Propulsion Sizing",`
+  <p>Rotor disk area is sized from actuator disk theory to satisfy the hover power budget with the given figure of merit η<sub>hov</sub> = ${p.etaHov}.</p>
+  ${eq("T_{rotor} = \\frac{W\\,g_0}{N_{rot}} = \\frac{"+n(R.MTOW,1)+"\\times 9.81}{"+p.nPropHover+"} = "+n(R.MTOW*9.81/p.nPropHover,1)+"\\text{ N}","Thrust per rotor")}
+  ${eq("A_{disk} = \\frac{T_{rotor}^3}{2\\,\\rho_{SL}\\,(P_{rotor}\\,\\eta_{hov})^2}","Disk area from actuator disk momentum theory")}
+  ${eq("D_{rotor} = 2\\sqrt{A_{disk}/\\pi} = "+n(R.Drotor,3)+"\\text{ m}","Rotor diameter")}
+  ${eq("\\Omega_{tip} = \\sqrt{\\frac{2P_{rotor}\\eta_{hov}}{\\rho_{SL}\\,A_{disk}}}, \\quad \\text{RPM} = \\frac{60\\,\\Omega_{tip}}{2\\pi R} = "+n(R.RPM,0),"Tip speed and rotational speed")}
+  ${table(["Parameter","Symbol","Value","Unit"],[
+    row("Hover Power (total)","P<sub>hov</sub>",n(R.Phov,2),"kW"),
+    row("Power per Rotor","P<sub>rotor</sub>",n(R.Phov/p.nPropHover,2),"kW"),
+    row("Rotor Diameter","D<sub>rot</sub>",n(R.Drotor,3),"m"),
+    row("Disk Loading","DL",n(R.DLrotor,1),"N/m²"),
+    row("Power Loading","PL",n(R.PLrotor,1),"N/W"),
+    row("Tip Speed","Ω<sub>tip</sub>",n(R.TipSpd,1),"m/s"),
+    row("Tip Mach","M<sub>tip</sub>",n(R.TipMach,4),""),
+    row("RPM","n",n(R.RPM,0),"rpm"),
+    row("No. of Blades","N<sub>bl</sub>",R.Nbld,""),
+    row("Blade Chord","c<sub>bl</sub>",n(R.ChordBl,4),"m"),
+    row("Motor Power","P<sub>mot</sub>",n(R.PmotKW,2),"kW"),
+    row("Peak Power","P<sub>peak</sub>",n(R.PpeakKW,2),"kW"),
+  ])}
+  `);
+
+  // ── 7. BATTERY ───────────────────────────────────────────────────────
+  const s7 = sec("battery","7. Battery System Sizing",`
+  ${eq("W_{bat} = \\frac{E_{total}\\times 1000\\,(1+\\text{SoC}_{min})}{\\text{SED}_{cell}\\,\\eta_{bat}} = \\frac{"+n(R.Etot,3)+"\\times 1000\\times(1+"+p.socMin+")}{"+p.sedCell+"\\times"+p.etaBat+"} = "+n(R.Wbat,1)+"\\text{ kg}","Battery mass")}
+  ${eq("\\text{SED}_{pack} = \\frac{E_{total}}{W_{bat}} = "+n(R.SEDpack,1)+"\\text{ Wh/kg}","Pack-level specific energy density")}
+  ${eq("N_{series} = \\text{round}\\!\\left(\\frac{V_{pack}}{V_{cell}}\\right) = \\text{round}\\!\\left(\\frac{800}{3.6}\\right) = "+R.Nseries,"Series cell count for 800V pack")}
+  ${table(["Parameter","Symbol","Value","Unit"],[
+    row("Battery Mass","W<sub>bat</sub>",n(R.Wbat,1),"kg"),
+    row("Total Energy","E<sub>total</sub>",n(R.Etot,3),"kWh"),
+    row("Pack SED","SED<sub>pack</sub>",n(R.SEDpack,1),"Wh/kg"),
+    row("Pack Voltage","V<sub>pack</sub>",n(R.PackV,0),"V"),
+    row("Pack Capacity","Q<sub>pack</sub>",n(R.PackAh,1),"Ah"),
+    row("Series Cells","N<sub>s</sub>",R.Nseries,""),
+    row("Parallel Strings","N<sub>p</sub>",R.Npar,""),
+    row("Total Cells","N<sub>cells</sub>",R.Ncells,""),
+    row("C-rate (Hover)","C<sub>hov</sub>",n(R.CrateHov,2),"C"),
+    row("C-rate (Cruise)","C<sub>cr</sub>",n(R.CrateCr,2),"C"),
+  ])}
+  `);
+
+  // ── 8. STABILITY ─────────────────────────────────────────────────────
+  const xACwing = n(+(p.fusLen*0.2589 + (R.Cr_-(R.MAC-0.25*R.MAC))),3);
+  const s8 = sec("stability","8. Longitudinal Stability",`
+  <p>The static margin (SM) measures stability: positive SM indicates the neutral point (NP) is aft of the centre of gravity (CG).</p>
+  ${eq("x_{CG,total} = \\frac{W_e\\,x_{CG,e}+W_{bat}\\,x_{CG,bat}+m_{pay}\\,x_{CG,pay}}{\\text{MTOW}} = "+n(R.xCGtotal,3)+"\\text{ m from nose}","Total centre of gravity")}
+  ${eq("x_{NP} = x_{AC,wing} + \\frac{S_h}{S_w}\\,\\eta_h\\,(1-\\varepsilon_\\alpha)\\,l_h = "+n(R.SM_vt !== undefined ? R.xNP : R.xNP,3)+"\\text{ m from nose}","Neutral point (stick-fixed)")}
+  ${eq("SM = \\frac{x_{NP}-x_{CG}}{\\bar{c}} = \\frac{"+n(R.xNP,3)+"-"+n(R.xCGtotal,3)+"}{"+n(R.MAC,3)+"} = "+n(R.SM*100,1)+"\\%\\;\\text{MAC}","Static margin")}
+  ${table(["Quantity","Symbol","Value","Unit"],[
+    row("Wing AC from nose","x<sub>AC,w</sub>",xACwing,"m"),
+    row("Total CG from nose","x<sub>CG</sub>",n(R.xCGtotal,3),"m"),
+    row("Neutral Point from nose","x<sub>NP</sub>",n(R.xNP,3),"m"),
+    row("Static Margin","SM",n(R.SM*100,2),"%  MAC"),
+    row("MAC","c̄",n(R.MAC,3),"m"),
+  ])}
+  `);
+
+  // ── 9. V-TAIL ────────────────────────────────────────────────────────
+  const s9 = sec("vtail","9. V-Tail Sizing (Ruscheweyh / Raymer)",`
+  <p>The V-tail replaces both the horizontal and vertical stabilisers. Each panel is inclined at dihedral angle Γ = ${p.vtGamma}° from horizontal.</p>
+  ${eq("S_{h,req} = \\frac{C_h\\,S_w\\,\\bar{c}}{l_v} = \\frac{"+p.vtCh+"\\times"+n(R.Swing,2)+"\\times"+n(R.MAC,3)+"}{"+n(R.lv,3)+"} = "+n(R.Sh_req,3)+"\\text{ m}^2","Required horizontal tail area")}
+  ${eq("S_{v,req} = \\frac{C_v\\,S_w\\,b_w}{l_v} = \\frac{"+p.vtCv+"\\times"+n(R.Swing,2)+"\\times"+n(R.bWing,2)+"}{"+n(R.lv,3)+"} = "+n(R.Sv_req,3)+"\\text{ m}^2","Required vertical tail area")}
+  ${eq("S_{panel} = \\max\\!\\left(\\frac{S_{h,req}}{\\cos^2\\Gamma},\\,\\frac{S_{v,req}}{\\sin^2\\Gamma}\\right) = "+n(R.Svt_panel,3)+"\\text{ m}^2","V-tail panel area (governing constraint)")}
+  ${eq("\\Gamma_{opt} = \\arctan\\!\\sqrt{\\frac{S_{v,req}}{S_{h,req}}} = "+n(R.vtGamma_opt,1)+"^\\circ","Optimal dihedral angle for minimum panel area")}
+  ${eq("b_{vt} = \\sqrt{AR_{vt}\\cdot S_{panel}} = "+n(R.bvt_panel,3)+"\\text{ m}, \\quad C_{r,vt} = "+n(R.Cr_vt,3)+"\\text{ m}, \\quad C_{t,vt} = "+n(R.Ct_vt,3)+"\\text{ m}","V-tail panel geometry")}
+  ${table(["Parameter","Symbol","Value","Unit"],[
+    row("Tail moment arm","l<sub>v</sub>",n(R.lv,3),"m"),
+    row("Req. H-tail area","S<sub>h,req</sub>",n(R.Sh_req,3),"m²"),
+    row("Req. V-tail area","S<sub>v,req</sub>",n(R.Sv_req,3),"m²"),
+    row("Panel area","S<sub>panel</sub>",n(R.Svt_panel,3),"m²"),
+    row("Total V-tail area","S<sub>vt,total</sub>",n(R.Svt_total,3),"m²"),
+    row("Optimal Γ","Γ<sub>opt</sub>",n(R.vtGamma_opt,1),"°"),
+    row("Chosen Γ","Γ",p.vtGamma,"°"),
+    row("Panel span","b<sub>vt</sub>",n(R.bvt_panel,3),"m"),
+    row("Root chord","C<sub>r,vt</sub>",n(R.Cr_vt,3),"m"),
+    row("Tip chord","C<sub>t,vt</sub>",n(R.Ct_vt,3),"m"),
+    row("LE sweep","Λ<sub>LE,vt</sub>",n(R.sweep_vt,2),"°"),
+    row("Pitch authority","—",n(R.pitch_ratio*100,1),"%"),
+    row("Yaw authority","—",n(R.yaw_ratio*100,1),"%"),
+  ])}
+  `);
+
+  // ── 10. FEASIBILITY ──────────────────────────────────────────────────
+  const s10 = sec("feasibility","10. Feasibility Checks",`
+  <table class="check-table"><thead><tr><th>Pass</th><th>Criterion</th><th>Value</th></tr></thead><tbody>
+    ${(R.checks||[]).map(c=>check(c.ok,c.label,c.val)).join("")}
+  </tbody></table>
+  `);
+
+  // ── FULL HTML PAGE ───────────────────────────────────────────────────
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>eVTOL Sizing Report — Trail 1</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{
+    delimiters:[
+      {left:'$$',right:'$$',display:true},
+      {left:'$',right:'$',display:false}
+    ]
+  });renderKatex();"></script>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Segoe UI',Arial,sans-serif;font-size:10pt;color:#1a1a2e;background:#fff;line-height:1.5}
+  .cover-page{min-height:100vh;display:flex;flex-direction:column;justify-content:center;
+    align-items:center;padding:60px 80px;page-break-after:always;
+    background:linear-gradient(160deg,#0d1b2a 0%,#1b2a4a 60%,#243b55 100%)}
+  .cover-logo{font-size:8pt;color:#7fa3c8;letter-spacing:0.35em;font-family:monospace;margin-bottom:28px}
+  .cover-title{font-size:38pt;font-weight:900;color:#fff;text-align:center;line-height:1.1;margin-bottom:10px}
+  .cover-sub{font-size:12pt;color:#94a3b8;margin-bottom:30px;text-align:center}
+  .cover-line{width:120px;height:3px;background:linear-gradient(90deg,#f59e0b,#3b82f6);margin-bottom:30px;border-radius:2px}
+  .cover-meta{border-collapse:collapse;color:#c8d6e5;font-size:10pt;margin-bottom:36px;width:480px}
+  .cover-meta td{padding:7px 16px;border-bottom:1px solid #2a3a5c}
+  .cover-meta td:first-child{color:#94a3b8;font-size:8.5pt;text-transform:uppercase;letter-spacing:0.05em;width:160px}
+  .cover-kpi-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;width:480px}
+  .kpi{background:#ffffff0f;border:1px solid #ffffff18;border-radius:8px;padding:14px;text-align:center}
+  .kpi-val{font-size:18pt;font-weight:800;color:#f59e0b;font-family:monospace}
+  .kpi-lbl{font-size:7.5pt;color:#7fa3c8;text-transform:uppercase;letter-spacing:0.1em;margin-top:3px}
+  .badge{display:inline-block;padding:3px 10px;border-radius:4px;font-size:8.5pt;font-weight:700;letter-spacing:0.05em}
+  .badge.green{background:#16a34a22;color:#16a34a;border:1px solid #16a34a44}
+  .badge.amber{background:#d9770622;color:#d97706;border:1px solid #d9770644}
+  section{padding:28px 56px;page-break-inside:avoid}
+  section:not(.cover-page){border-bottom:1px solid #e5e7eb}
+  h2{font-size:14pt;font-weight:800;color:#0f172a;margin-bottom:14px;padding-bottom:6px;
+    border-bottom:2px solid #3b82f6;display:flex;align-items:center;gap:8px}
+  h2::before{content:attr(data-num);display:none}
+  p{color:#374151;margin-bottom:10px;font-size:9.5pt}
+  .eq-block{background:#f8faff;border-left:3px solid #3b82f6;padding:10px 18px;margin:10px 0 6px;border-radius:0 6px 6px 0}
+  .eq-note{font-size:8pt;color:#64748b;margin-top:4px;font-style:italic}
+  .data-table{width:100%;border-collapse:collapse;margin:10px 0 18px;font-size:9pt}
+  .data-table th{background:#0f172a;color:#e2e8f0;padding:7px 10px;text-align:left;font-size:8.5pt;letter-spacing:0.03em}
+  .data-table td{padding:6px 10px;border-bottom:1px solid #e5e7eb}
+  .data-table tr:nth-child(even) td{background:#f8faff}
+  .td-label{color:#374151;font-weight:600;white-space:nowrap}
+  .td-formula{color:#1e3a5f;font-style:italic;min-width:140px}
+  .td-value{color:#0f172a;font-weight:700;font-family:monospace;text-align:right;white-space:nowrap}
+  .td-unit{color:#64748b;font-size:8.5pt;white-space:nowrap;padding-left:6px}
+  .check-table{width:100%;border-collapse:collapse;margin:10px 0;font-size:9.5pt}
+  .check-table th{background:#0f172a;color:#e2e8f0;padding:7px 12px;text-align:left;font-size:8.5pt}
+  .check-table td{padding:7px 12px;border-bottom:1px solid #e5e7eb}
+  .check-table tr.ok td:first-child{color:#16a34a;font-weight:800;font-size:11pt}
+  .check-table tr.fail td:first-child{color:#dc2626;font-weight:800;font-size:11pt}
+  .check-table tr.ok{background:#f0fdf4}
+  .check-table tr.fail{background:#fef2f2}
+  @media print{
+    @page{margin:18mm 18mm 18mm 18mm;size:A4}
+    .cover-page{min-height:0;page-break-after:always}
+    section{page-break-inside:avoid}
+    h2{page-break-after:avoid}
+  }
+</style>
+</head>
+<body>
+${cover}
+${s1}${s2}${s3}${s4}${s5}${s6}${s7}${s8}${s9}${s10}
+<section style="background:#0f172a;color:#94a3b8;text-align:center;padding:24px;font-size:8pt">
+  Generated by eVTOL Sizer v2.0 — Wright State University — ${now}<br>
+  All calculations based on Raymer (Aircraft Design: A Conceptual Approach) and MATLAB eVTOL_Full_Analysis_v2.m
+</section>
+<script>
+function renderKatex(){
+  document.querySelectorAll('.katex-eq').forEach(el=>{
+    try{katex.render(el.dataset.latex,el,{displayMode:true,throwOnError:false});}catch(e){}
+  });
+  document.querySelectorAll('.katex-inline').forEach(el=>{
+    try{katex.render(el.dataset.latex,el,{displayMode:false,throwOnError:false});}catch(e){}
+  });
+}
+window.addEventListener('load',()=>{setTimeout(()=>window.print(),1200);});
+</script>
+</body>
+</html>`;
+}
+
 /* ═══════════════════════════════════
    THEME & CONSTANTS
    ═══════════════════════════════════ */
@@ -652,6 +997,16 @@ export default function App(){
           vtGamma:45,vtCh:0.40,vtCv:0.05,vtAR:2.5})}
           style={{marginLeft:"auto",padding:"5px 12px",background:"transparent",border:`1px solid ${C.border}`,
             borderRadius:4,color:C.muted,fontSize:9,cursor:"pointer",fontFamily:"'DM Mono',monospace"}}>↺ RESET</button>
+        {R&&<button onClick={()=>{
+            const html=generateReport(p,R);
+            const w=window.open("","_blank");
+            w.document.write(html);
+            w.document.close();
+          }}
+          style={{padding:"5px 14px",background:"linear-gradient(135deg,#1e3a5f,#1e40af)",
+            border:"1px solid #3b82f6",borderRadius:4,color:"#93c5fd",fontSize:9,cursor:"pointer",
+            fontFamily:"'DM Mono',monospace",fontWeight:700,letterSpacing:"0.05em",
+            boxShadow:"0 0 12px #3b82f620"}}>⬇ PDF REPORT</button>}
       </div>
 
       <div style={{display:"flex",flex:1,overflow:"hidden"}}>
