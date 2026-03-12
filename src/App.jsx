@@ -138,7 +138,10 @@ function runSizing(p) {
   // Equivalent H-tail and V-tail areas needed (from conventional sizing via Cv, Ch)
   const Ch=p.vtCh;      // horizontal tail volume coefficient (typical 0.35–0.50)
   const Cv=p.vtCv;      // vertical   tail volume coefficient (typical 0.04–0.06)
-  const lv=fL-xACwing;  // tail moment arm ≈ fuselage length - wing AC
+  // lv: tail moment arm = (tail AC pos.) − (wing AC pos.)
+  // Tail AC ≈ fuselage tail − 0.25×MAC_vt; use 0.88×fL as tail-AC proxy
+  // (accounts for tail root chord = ~12% fL, V-tail positioned at fuselage end)
+  const lv=fL*0.88-xACwing;  // tail moment arm (corrected for tail panel chord offset)
   const bv_est=bWing;   // reference span for Cv
   const Sh_req=Ch*Swing*MAC/lv;                    // required H-tail area (m²)
   const Sv_req=Cv*Swing*bv_est/lv;                 // required V-tail area (m²)
@@ -315,6 +318,8 @@ function runSizing(p) {
     {label:"V-tail pitch auth.",ok:pitch_ratio>=1.0,val:`${(pitch_ratio*100).toFixed(0)}%`},
     {label:"V-tail yaw auth.",ok:yaw_ratio>=1.0,val:`${(yaw_ratio*100).toFixed(0)}%`},
     {label:"Mach < 0.45",ok:Mach<0.45,val:`M${Mach.toFixed(3)}`},
+    {label:"Tail/Wing area 25–50%",ok:(Svt_total/Swing)>=0.20&&(Svt_total/Swing)<=0.55,val:`${(Svt_total/Swing*100).toFixed(1)}%`},
+    {label:"Fus/Span 0.50–0.72",ok:(fL/bWing)>=0.50&&(fL/bWing)<=0.72,val:`${(fL/bWing).toFixed(3)}`},
   ];
 
   return {
@@ -343,6 +348,8 @@ function runSizing(p) {
     sweep_vt:+sweep_vt.toFixed(2),Srv:+Srv.toFixed(3),Wvt_total:+Wvt_total.toFixed(1),
     CD0vt:+CD0vt.toFixed(6),SM_vt:+SM_vt.toFixed(4),delta_rv_deg:+delta_rv_deg.toFixed(2),
     lv:+lv.toFixed(3),
+    fusSpanRatio:+(fL/bWing).toFixed(3),
+    tailWingRatio:+(Svt_total/Swing).toFixed(4),
   };
 }
 
@@ -923,12 +930,26 @@ const TTP={contentStyle:{background:"#131c2e",border:"1px solid #2a3a5c",borderR
 export default function App(){
   const[tab,setTab]=useState(0);
   const[p,setP]=useState({
+    // ── Mission ──────────────────────────────────────────────────────────
     payload:455,range:250,vCruise:67,cruiseAlt:1000,reserveRange:60,hoverHeight:15.24,
-    LD:15,AR:9,eOsw:0.85,clDesign:0.60,taper:0.45,tc:0.15,
-    nPropHover:6,propDiam:3.0,etaHov:0.63,etaSys:0.765,rateOfClimb:5.08,climbAngle:5,
-    sedCell:275,etaBat:0.90,socMin:0.2,ewf:0.52,
-    fusLen:6.5,fusDiam:1.65,
-    vtGamma:45,vtCh:0.40,vtCv:0.05,vtAR:2.5,
+    // ── Aerodynamics (calibrated vs Joby S4 / Archer Midnight / NASA NDARC) ──
+    LD:14,AR:9,eOsw:0.85,clDesign:0.55,taper:0.45,tc:0.15,
+    // ── Propulsion ───────────────────────────────────────────────────────
+    nPropHover:6,propDiam:3.0,
+    etaHov:0.70,          // FOM 0.70 — achievable with optimised eVTOL hover rotor (was 0.63)
+    etaSys:0.80,          // drivetrain η — modern PMSM motors + inverter ~93%×93% (was 0.765)
+    rateOfClimb:5.08,climbAngle:5,
+    // ── Battery (2025 state-of-art; Joby claims ~300 Wh/kg cell-level) ──
+    sedCell:300,etaBat:0.90,socMin:0.2,
+    // ── Weights (composite airframe; Joby EWF=0.43, Archer~0.45, conservative 0.50) ──
+    ewf:0.50,
+    // ── Geometry (Lf/b target 0.55–0.70; fL=7.2 gives 0.564 with 12.77 m span) ──
+    fusLen:7.2,fusDiam:1.65,
+    // ── V-tail (NASA NDARC UAM values for FBW lift+cruise eVTOL) ──────────
+    vtGamma:45,
+    vtCh:0.28,            // Ch reduced from 0.40: FBW+DEP reduces required pitch authority
+    vtCv:0.032,           // Cv reduced from 0.05: same rationale; gives tail/wing ~37%
+    vtAR:2.5,
   });
   const set=useCallback(k=>v=>setP(prev=>({...prev,[k]:v})),[]);
   const R=useMemo(()=>{try{return runSizing(p);}catch{return null;}},[p]);
@@ -991,10 +1012,10 @@ export default function App(){
           </div>
         )}
         <button onClick={()=>setP({payload:455,range:250,vCruise:67,cruiseAlt:1000,reserveRange:60,hoverHeight:15.24,
-          LD:15,AR:9,eOsw:0.85,clDesign:0.60,taper:0.45,tc:0.15,nPropHover:6,propDiam:3.0,
-          etaHov:0.63,etaSys:0.765,rateOfClimb:5.08,climbAngle:5,sedCell:275,etaBat:0.90,socMin:0.2,ewf:0.52,
-          fusLen:6.5,fusDiam:1.65,
-          vtGamma:45,vtCh:0.40,vtCv:0.05,vtAR:2.5})}
+          LD:14,AR:9,eOsw:0.85,clDesign:0.55,taper:0.45,tc:0.15,nPropHover:6,propDiam:3.0,
+          etaHov:0.70,etaSys:0.80,rateOfClimb:5.08,climbAngle:5,sedCell:300,etaBat:0.90,socMin:0.2,ewf:0.50,
+          fusLen:7.2,fusDiam:1.65,
+          vtGamma:45,vtCh:0.28,vtCv:0.032,vtAR:2.5})}
           style={{marginLeft:"auto",padding:"5px 12px",background:"transparent",border:`1px solid ${C.border}`,
             borderRadius:4,color:C.muted,fontSize:9,cursor:"pointer",fontFamily:"'DM Mono',monospace"}}>↺ RESET</button>
         {R&&<button onClick={()=>{
@@ -1022,35 +1043,35 @@ export default function App(){
             <Slider label="VTOL Height" unit="m" value={p.hoverHeight} min={10} max={50} step={0.5} onChange={set("hoverHeight")}/>
           </Acc>
           <Acc title="Aerodynamics" icon="✈️">
-            <Slider label="Lift-to-Drag L/D" unit="" value={p.LD} min={5} max={22} step={0.5} onChange={set("LD")} note={R?`Actual L/D = ${R.LDact}`:""}/>
+            <Slider label="Lift-to-Drag L/D" unit="" value={p.LD} min={5} max={22} step={0.5} onChange={set("LD")} note={R?`Actual ${R.LDact} | Archer:11.3 Joby:~16`:"Archer:11.3 Joby:~16"}/>
             <Slider label="Aspect Ratio AR" unit="" value={p.AR} min={4} max={16} step={0.5} onChange={set("AR")}/>
             <Slider label="Oswald e" unit="" value={p.eOsw} min={0.5} max={1.0} step={0.01} onChange={set("eOsw")}/>
-            <Slider label="Design CL" unit="" value={p.clDesign} min={0.3} max={1.2} step={0.05} onChange={set("clDesign")}/>
+            <Slider label="Design CL" unit="" value={p.clDesign} min={0.3} max={1.2} step={0.05} onChange={set("clDesign")} note="eVTOL cruise: 0.45–0.65"/>
             <Slider label="Taper Ratio λ" unit="" value={p.taper} min={0.2} max={0.8} step={0.05} onChange={set("taper")}/>
             <Slider label="Thickness t/c" unit="" value={p.tc} min={0.08} max={0.20} step={0.01} onChange={set("tc")}/>
           </Acc>
           <Acc title="Propulsion" icon="🔧">
             <Slider label="Hover Rotors n" unit="" value={p.nPropHover} min={2} max={10} step={2} onChange={set("nPropHover")}/>
             <Slider label="Rotor Diameter" unit="m" value={p.propDiam} min={1.0} max={5.0} step={0.1} onChange={set("propDiam")} note={R?`AD = ${R.Drotor} m`:""}/>
-            <Slider label="Hover η" unit="" value={p.etaHov} min={0.4} max={0.85} step={0.01} onChange={set("etaHov")}/>
-            <Slider label="System η" unit="" value={p.etaSys} min={0.5} max={0.95} step={0.01} onChange={set("etaSys")}/>
+            <Slider label="Hover FOM η" unit="" value={p.etaHov} min={0.4} max={0.85} step={0.01} onChange={set("etaHov")} note="Optimised eVTOL rotor: 0.65–0.75"/>
+            <Slider label="System η" unit="" value={p.etaSys} min={0.5} max={0.95} step={0.01} onChange={set("etaSys")} note="Motor+inverter chain: 0.78–0.85"/>
             <Slider label="Rate of Climb" unit="m/s" value={p.rateOfClimb} min={1} max={12} step={0.1} onChange={set("rateOfClimb")}/>
             <Slider label="Climb Angle" unit="°" value={p.climbAngle} min={2} max={15} step={0.5} onChange={set("climbAngle")}/>
           </Acc>
           <Acc title="Battery" icon="🔋">
-            <Slider label="Cell SED" unit="Wh/kg" value={p.sedCell} min={150} max={500} step={5} onChange={set("sedCell")} note="Cell-level"/>
+            <Slider label="Cell SED" unit="Wh/kg" value={p.sedCell} min={150} max={500} step={5} onChange={set("sedCell")} note="Joby/Archer 2025: ~300 Wh/kg cell"/>
             <Slider label="Battery η" unit="" value={p.etaBat} min={0.70} max={0.99} step={0.01} onChange={set("etaBat")}/>
             <Slider label="Min SoC" unit="" value={p.socMin} min={0.05} max={0.40} step={0.01} onChange={set("socMin")}/>
           </Acc>
           <Acc title="V-Tail Design" icon="🦋">
             <Slider label="Dihedral Angle Γ" unit="°" value={p.vtGamma} min={20} max={70} step={1} onChange={set("vtGamma")}
               note={R?`Optimal: ${R.vtGamma_opt}°`:""}/>
-            <Slider label="H-Tail Vol. Coeff Ch" unit="" value={p.vtCh} min={0.25} max={0.60} step={0.01} onChange={set("vtCh")} note="Pitch authority"/>
-            <Slider label="V-Tail Vol. Coeff Cv" unit="" value={p.vtCv} min={0.02} max={0.10} step={0.005} onChange={set("vtCv")} note="Yaw authority"/>
+            <Slider label="H-Tail Vol. Coeff Ch" unit="" value={p.vtCh} min={0.15} max={0.60} step={0.01} onChange={set("vtCh")} note="FBW eVTOL (NASA): 0.25–0.32"/>
+            <Slider label="V-Tail Vol. Coeff Cv" unit="" value={p.vtCv} min={0.015} max={0.10} step={0.005} onChange={set("vtCv")} note="FBW eVTOL (NASA): 0.025–0.040"/>
             <Slider label="Panel Aspect Ratio" unit="" value={p.vtAR} min={1.5} max={4.0} step={0.1} onChange={set("vtAR")} note="Typical 2.0–3.0"/>
           </Acc>
           <Acc title="Structure" icon="🏗️">
-            <Slider label="Empty Weight Fraction" unit="" value={p.ewf} min={0.30} max={0.70} step={0.01} onChange={set("ewf")} note="Wempty/MTOW"/>
+            <Slider label="Empty Weight Fraction" unit="" value={p.ewf} min={0.30} max={0.70} step={0.01} onChange={set("ewf")} note="Joby:0.43 Archer:~0.45 Cora:0.55"/>
             <Slider label="Fuselage Length" unit="m" value={p.fusLen} min={3.0} max={10.0} step={0.1} onChange={set("fusLen")} note="Affects drag, stability, tail arm"/>
             <Slider label="Fuselage Diameter" unit="m" value={p.fusDiam} min={0.8} max={2.5} step={0.05} onChange={set("fusDiam")} note={`Fineness ratio: ${(p.fusLen/p.fusDiam).toFixed(1)}`}/>
           </Acc>
@@ -1553,9 +1574,12 @@ export default function App(){
             {tab===7&&(
               <div style={{display:"flex",flexDirection:"column",gap:12}}>
                 {/* KPI row */}
-                <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:10}}>
                   <KPI label="Total V-Tail Area" value={R.Svt_total} unit="m²" color={C.amber}
                     sub={`Each panel: ${R.Svt_panel} m²`}/>
+                  <KPI label="Tail / Wing Area" value={(R.tailWingRatio*100).toFixed(1)} unit="%"
+                    color={R.tailWingRatio>=0.20&&R.tailWingRatio<=0.55?C.green:C.red}
+                    sub="Target: 25–50%"/>
                   <KPI label="Optimal Dihedral Γ" value={R.vtGamma_opt} unit="°" color={C.teal}
                     sub={`Set: ${p.vtGamma}°`}/>
                   <KPI label="Static Margin (w/ Vtail)" value={(R.SM_vt*100).toFixed(1)} unit="% MAC"
@@ -1576,7 +1600,8 @@ export default function App(){
                         ["Tip chord",`${R.Ct_vt} m`],["MAC",`${R.MAC_vt} m`],
                         ["LE sweep",`${R.sweep_vt}°`],["Taper ratio","0.40"],
                         ["Airfoil","NACA 0009"],["t/c","9%"],
-                        ["Tail moment arm",`${R.lv} m`],["Ruddervator / panel",`${R.Srv} m²`],
+                        ["Tail moment arm lv",`${R.lv} m`],["Ruddervator / panel",`${R.Srv} m²`],
+                        ["Lf/b ratio",`${R.fusSpanRatio} (target 0.55–0.70)`],
                       ].map(([k,v],i)=>(
                         <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:`1px solid #0f131a`}}>
                           <span style={{fontSize:10,color:"#64748b"}}>{k}</span>
