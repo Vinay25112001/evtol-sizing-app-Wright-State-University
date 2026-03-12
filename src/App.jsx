@@ -73,7 +73,7 @@ function runSizing(p) {
   const MAC=(2/3)*Cr_*(1+p.taper+p.taper**2)/(1+p.taper);
   const Ymac=(bWing/6)*(1+2*p.taper)/(1+p.taper);
   const Xac=Cr_-MAC+0.25*MAC;
-  const sweep=Math.atan((Cr_-Ct_)/bWing)*180/Math.PI;
+  const sweep=Math.atan((Cr_-Ct_)/(bWing/2))*180/Math.PI;  // LE sweep: semi-span in denominator
   const Re_=rhoCr*p.vCruise*MAC/muCr;
 
   /* Airfoil selection */
@@ -100,7 +100,8 @@ function runSizing(p) {
   /* Drag (Raymer) */
   const Sww=2*Swing*(1+0.25*p.tc*(1+p.taper*0.25));
   const fL=p.fusLen,fD=p.fusDiam;
-  const Swf=Math.PI*fD*fL*Math.pow(1-2/fL,2/3)*(1+1/(fL/fD)**2);
+  const lambda_f=fL/fD;  // fineness ratio
+  const Swf=Math.PI*fD*fL*Math.pow(1-2/lambda_f,2/3)*(1+1/lambda_f**2);  // Raymer Eq 12.31
   const Swhs=2*Swing*0.18,Swvs=2*Swing*0.12,Swn=p.nPropHover*Math.PI*0.2*0.35;
   const Refus=rhoCr*p.vCruise*fL/muCr;
   const Cfw=0.455/Math.log10(Re_)**2.58/(1+0.144*Mach**2)**0.65;
@@ -115,11 +116,11 @@ function runSizing(p) {
   const CDtot=CD0tot+CDi,LDact=p.clDesign/CDtot;
 
   /* Stability */
-  const xCGfus=fL*0.42,xCGwing=1.45+Xac,xCGbat=fL*0.38,xCGpay=fL*0.40;
+  const xCGfus=fL*0.42,xCGwing=fL*0.2589+Xac,xCGbat=fL*0.38,xCGpay=fL*0.40;  // wing LE = 25.9% fL
   const Wfusc=Wempty*0.35,Wwingc=Wempty*0.18,Wmotc=Wempty*0.22,Wavc=Wempty*0.04,Wothc=Wempty*0.21;
   const xCGempty=(Wfusc*xCGfus+Wwingc*xCGwing+Wmotc*xCGfus+Wavc*0.8+Wothc*xCGfus)/Wempty;
   const xCGtotal=(Wempty*xCGempty+Wbat*xCGbat+p.payload*xCGpay)/MTOW;
-  const xACwing=1.45+Xac,lh=fL-xACwing,Sh=Swing*0.18;
+  const xACwing=fL*0.2589+Xac,lh=fL-xACwing,Sh=Swing*0.18;  // wing LE scales with fL
   const CLaW=2*Math.PI*(1+0.77*p.tc),dw=2*CLaW/(Math.PI*p.AR);
   const xNP=xACwing+(Sh/Swing)*0.9*(1-dw)*lh;
   const SM=(xNP-xCGtotal)/MAC;
@@ -190,7 +191,7 @@ function runSizing(p) {
   const Cr_vt=2*Svt_panel/(bvt_panel*(1+taper_vt));
   const Ct_vt=Cr_vt*taper_vt;
   const MAC_vt=(2/3)*Cr_vt*(1+taper_vt+taper_vt**2)/(1+taper_vt);
-  const sweep_vt=Math.atan((Cr_vt-Ct_vt)/bvt_panel)*180/Math.PI;
+  const sweep_vt=Math.atan((Cr_vt-Ct_vt)/(bvt_panel/2))*180/Math.PI;  // LE sweep: semi-span
 
   // Ruddervator sizing: control surface = 25–35% of panel chord
   const ruddervator_chord_frac=0.30;
@@ -362,15 +363,15 @@ function generateVSPScript(p, R) {
   const Swing   = f(R.Swing     || 17.83, 2);
   const Cr_     = f(R.Cr_       || 1.941, 2);
   const Ct_     = f(R.Ct_       || 0.874, 2);
-  const sw      = f(R.sweep     || 4.82,  1);
-  const xACw    = +(R.xACwing   || 2.285);
+  const sw      = f(R.sweep     || 9.57,  1);   // corrected LE sweep
+  const xACw    = +(R.xACwing   || 2.518);  // corrected (scales with fL)
   const Cr_n    = +(R.Cr_       || 1.941);
   const lv_n    = +(R.lv        || 3.315);
   const MACvt   = +(R.MAC_vt    || 1.752);
-  const bvt     = f(R.bvt_panel || 4.127, 2);
-  const Cr_vt   = f(R.Cr_vt     || 2.359, 2);
-  const Ct_vt   = f(R.Ct_vt     || 0.944, 2);
-  const sw_vt   = f(R.sweep_vt  || 18.92, 1);
+  const bvt     = f(R.bvt_panel || 3.766, 2);  // corrected
+  const Cr_vt   = f(R.Cr_vt     || 2.152, 2);  // corrected
+  const Ct_vt   = f(R.Ct_vt     || 0.861, 2);  // corrected
+  const sw_vt   = f(R.sweep_vt  || 34.44, 1);  // corrected LE sweep
   const vtG     = f(p.vtGamma   || 45,    1);
   const Drot    = f(R.Drotor    || 3.000, 2);
   const MTOW    = f(R.MTOW      || 2720.9,1);
