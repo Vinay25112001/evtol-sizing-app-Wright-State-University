@@ -331,7 +331,7 @@ function runSizing(p) {
     Swing:+Swing.toFixed(2),WL:+WL.toFixed(1),bWing:+bWing.toFixed(2),Cr_:+Cr_.toFixed(3),Ct_:+Ct_.toFixed(3),
     MAC:+MAC.toFixed(3),Ymac:+Ymac.toFixed(3),Xac:+Xac.toFixed(3),sweep:+sweep.toFixed(2),Re_:+Re_.toFixed(0),Mach:+Mach.toFixed(4),
     selAF,afScored,LDact:+LDact.toFixed(2),CD0tot:+CD0tot.toFixed(5),CDi:+CDi.toFixed(5),CDtot:+CDtot.toFixed(5),dragComp,
-    SM:+SM.toFixed(4),xCGtotal:+xCGtotal.toFixed(3),xNP:+xNP.toFixed(3),
+    SM:+SM.toFixed(4),xCGtotal:+xCGtotal.toFixed(3),xNP:+xNP.toFixed(3),xCGempty:+xCGempty.toFixed(3),xACwing:+xACwing.toFixed(3),
     Drotor:+Drotor.toFixed(3),DLrotor:+DLrotor.toFixed(1),PLrotor:+PLrotor.toFixed(1),
     TipSpd:+TipSpd.toFixed(1),TipMach:+TipMach.toFixed(4),RPM:+RPM.toFixed(0),
     ChordBl:+ChordBl.toFixed(4),BladeAR:+BladeAR.toFixed(2),Nbld,PmotKW:+PmotKW.toFixed(2),
@@ -1324,6 +1324,91 @@ export default function App(){
                     </ResponsiveContainer>
                   </Panel>
                 </div>
+                {/* ──── Wing Planform SVG ──── */}
+                <Panel title="Wing Planform — Top View">
+                  {(()=>{
+                    const W=680, H=220, margin={l:60,r:60,t:28,b:28};
+                    const b=R.bWing, Cr=R.Cr_, Ct=R.Ct_, sw=R.sweep*Math.PI/180;
+                    const mac=R.MAC, ymac=R.Ymac;
+                    // SVG scale: half-span fits in (W/2-margin.l-margin.r)
+                    const halfW=(W/2-margin.l-4);
+                    const scaleY=halfW/(b/2);        // px per metre (span direction → X in SVG)
+                    const maxChord=Cr*scaleY*1.05;
+                    const scaleX=Math.min((H-margin.t-margin.b)/maxChord, scaleY);
+                    // Actually use uniform scale
+                    const sc=Math.min(halfW/(b/2),(H-margin.t-margin.b)/Cr);
+                    // Wing coords (right half, then mirror): LE swept
+                    const xRoot=0, yRoot=margin.t;                          // root LE (top of SVG = LE)
+                    const xTip=b/2*sc, yTip=yRoot+(b/2)*Math.tan(sw)*sc;   // tip LE
+                    const xTipTe=xTip, yTipTe=yTip+Ct*sc;
+                    const xRootTe=xRoot, yRootTe=yRoot+Cr*sc;
+                    // MAC position
+                    const xMac=ymac*sc, yMacLE=yRoot+ymac*Math.tan(sw)*sc;
+                    const yMacTE=yMacLE+mac*sc;
+                    // QC line
+                    const yRootQC=yRoot+0.25*Cr*sc, yTipQC=yTip+0.25*Ct*sc;
+                    // Center offset so both halves fit
+                    const cx=W/2;
+                    const pt=(x,y)=>`${(cx+x).toFixed(1)},${y.toFixed(1)}`;
+                    const ptL=(x,y)=>`${(cx-x).toFixed(1)},${y.toFixed(1)}`;
+                    return(
+                    <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} style={{fontFamily:"'DM Mono',monospace",overflow:"visible"}}>
+                      {/* grid lines */}
+                      {[0.25,0.5,0.75,1.0].map(f=>{
+                        const xg=f*b/2*sc;
+                        return <line key={f} x1={cx+xg} y1={margin.t-8} x2={cx+xg} y2={H-margin.b+5}
+                          stroke="#1e2a3a" strokeWidth={1} strokeDasharray="3 3"/>;
+                      })}
+                      {/* Right half */}
+                      <polygon points={`${pt(xRoot,yRoot)} ${pt(xTip,yTip)} ${pt(xTipTe,yTipTe)} ${pt(xRootTe,yRootTe)}`}
+                        fill="#1e3a5f" stroke="#3b82f6" strokeWidth={1.5} opacity={0.85}/>
+                      {/* Left half */}
+                      <polygon points={`${ptL(xRoot,yRoot)} ${ptL(xTip,yTip)} ${ptL(xTipTe,yTipTe)} ${ptL(xRootTe,yRootTe)}`}
+                        fill="#1e3a5f" stroke="#3b82f6" strokeWidth={1.5} opacity={0.85}/>
+                      {/* Root chord */}
+                      <line x1={cx} y1={yRoot} x2={cx} y2={yRootTe} stroke="#94a3b8" strokeWidth={1} strokeDasharray="4 2"/>
+                      {/* QC sweep line */}
+                      <line x1={cx+xRoot} y1={yRootQC} x2={cx+xTip} y2={yTipQC} stroke="#f59e0b" strokeWidth={1.5} strokeDasharray="5 3"/>
+                      <line x1={cx-xRoot} y1={yRootQC} x2={cx-xTip} y2={yTipQC} stroke="#f59e0b" strokeWidth={1.5} strokeDasharray="5 3"/>
+                      {/* MAC bar right */}
+                      <rect x={cx+xMac-2} y={yMacLE} width={4} height={mac*sc} fill="#22c55e" opacity={0.9} rx={2}/>
+                      <line x1={cx+xMac-12} y1={yMacLE} x2={cx+xMac+12} y2={yMacLE} stroke="#22c55e" strokeWidth={1}/>
+                      <line x1={cx+xMac-12} y1={yMacTE} x2={cx+xMac+12} y2={yMacTE} stroke="#22c55e" strokeWidth={1}/>
+                      {/* MAC bar left */}
+                      <rect x={cx-xMac-2} y={yMacLE} width={4} height={mac*sc} fill="#22c55e" opacity={0.9} rx={2}/>
+                      {/* Span arrow */}
+                      <line x1={cx-xTip} y1={H-margin.b+14} x2={cx+xTip} y2={H-margin.b+14} stroke="#64748b" strokeWidth={1} markerEnd="url(#arr)" markerStart="url(#arrl)"/>
+                      <text x={cx} y={H-margin.b+22} textAnchor="middle" fill="#94a3b8" fontSize={9}>b = {b} m</text>
+                      {/* Root chord label */}
+                      <text x={cx+6} y={(yRoot+yRootTe)/2+3} fill="#94a3b8" fontSize={8}>Cr={Cr}m</text>
+                      {/* Tip chord label */}
+                      <text x={cx+xTip+4} y={(yTip+yTipTe)/2+3} fill="#94a3b8" fontSize={8}>Ct={Ct}m</text>
+                      {/* MAC label */}
+                      <text x={cx+xMac+6} y={yMacLE+mac*sc/2+3} fill="#22c55e" fontSize={8}>MAC={mac}m</text>
+                      {/* Sweep annotation */}
+                      <text x={cx+12} y={yRootQC-4} fill="#f59e0b" fontSize={8}>Λ¼={R.sweep}°</text>
+                      {/* LE label */}
+                      <text x={cx-xTip-4} y={yTip-4} textAnchor="end" fill="#3b82f6" fontSize={8}>LE</text>
+                      <text x={cx-xTipTe-4} y={yTipTe+4} textAnchor="end" fill="#3b82f6" fontSize={8}>TE</text>
+                      {/* Span fraction ticks */}
+                      {[0.25,0.5,0.75].map(f=>(
+                        <text key={f} x={cx+f*b/2*sc} y={margin.t-10} textAnchor="middle" fill="#334155" fontSize={7}>{Math.round(f*100)}%</text>
+                      ))}
+                      <text x={cx+b/2*sc} y={margin.t-10} textAnchor="middle" fill="#334155" fontSize={7}>tip</text>
+                      <text x={cx} y={margin.t-10} textAnchor="middle" fill="#334155" fontSize={7}>CL</text>
+                      {/* AR / taper info */}
+                      <text x={8} y={16} fill="#475569" fontSize={8}>AR={p.AR}  λ={p.taper}  t/c={p.tc}  Sw={R.Swing}m²</text>
+                      <defs>
+                        <marker id="arr" markerWidth={6} markerHeight={6} refX={3} refY={3} orient="auto">
+                          <path d="M0,0 L6,3 L0,6 Z" fill="#64748b"/>
+                        </marker>
+                        <marker id="arrl" markerWidth={6} markerHeight={6} refX={3} refY={3} orient="auto-start-reverse">
+                          <path d="M0,0 L6,3 L0,6 Z" fill="#64748b"/>
+                        </marker>
+                      </defs>
+                    </svg>);
+                  })()}
+                </Panel>
               </div>
             )}
 
@@ -1539,6 +1624,85 @@ export default function App(){
                     </ResponsiveContainer>
                   </Panel>
                 </div>
+                {/* CG Travel Range */}
+                <Panel title="CG Travel Range — OEW → MTOW (loading envelope)">
+                  {(()=>{
+                    // Build CG sweep: from OEW (no payload, no battery) → MTOW
+                    // Intermediate: add battery first, then payload (worst-case forward/aft)
+                    const xCGbat=p.fusLen*0.38, xCGpay=p.fusLen*0.40;
+                    const pts=Array.from({length:51},(_,i)=>{
+                      const frac=i/50;
+                      // Linear blend: OEW → full battery → full payload
+                      const Wb=R.Wbat*frac, Wp=p.payload*frac;
+                      const W=R.Wempty+Wb+Wp;
+                      const cg=(R.Wempty*R.xCGempty+Wb*xCGbat+Wp*xCGpay)/W;
+                      return{mass:+W.toFixed(1),cg:+cg.toFixed(4),sm:+((R.xNP-cg)/R.MAC*100).toFixed(2)};
+                    });
+                    return(
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+                      {/* CG vs Mass chart */}
+                      <div>
+                        <div style={{fontSize:8,color:"#64748b",fontFamily:"'DM Mono',monospace",marginBottom:4}}>
+                          CG position (m from nose) vs Aircraft Mass (kg)
+                        </div>
+                        <ResponsiveContainer width="100%" height={175}>
+                          <LineChart data={pts} margin={{top:4,right:12,left:-15,bottom:14}}>
+                            <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
+                            <XAxis dataKey="mass" tick={{fontSize:10,fill:"#94a3b8"}}
+                              label={{value:"Mass (kg)",position:"insideBottom",offset:-6,fontSize:10,fill:"#94a3b8"}}/>
+                            <YAxis domain={["auto","auto"]} tick={{fontSize:10,fill:"#94a3b8"}}
+                              label={{value:"xCG (m)",angle:-90,position:"insideLeft",offset:12,fontSize:10,fill:"#94a3b8"}}/>
+                            <Tooltip {...TTP} formatter={(v,n)=>[`${v} m`,n]}/>
+                            <ReferenceLine y={R.xNP} stroke={C.blue} strokeDasharray="4 2"
+                              label={{value:"NP",fill:C.blue,fontSize:9,position:"right"}}/>
+                            <ReferenceLine y={R.xCGempty} stroke="#64748b" strokeDasharray="3 2"
+                              label={{value:"OEW",fill:"#64748b",fontSize:9,position:"right"}}/>
+                            <ReferenceLine y={R.xCGtotal} stroke={C.amber} strokeDasharray="3 2"
+                              label={{value:"MTOW",fill:C.amber,fontSize:9,position:"right"}}/>
+                            <Line type="monotone" dataKey="cg" stroke={C.green} strokeWidth={2} dot={false} name="xCG"/>
+                          </LineChart>
+                        </ResponsiveContainer>
+                      </div>
+                      {/* SM vs Mass chart */}
+                      <div>
+                        <div style={{fontSize:8,color:"#64748b",fontFamily:"'DM Mono',monospace",marginBottom:4}}>
+                          Static Margin (% MAC) vs Aircraft Mass — must stay 5–25%
+                        </div>
+                        <ResponsiveContainer width="100%" height={175}>
+                          <AreaChart data={pts} margin={{top:4,right:12,left:-12,bottom:14}}>
+                            <defs>
+                              <linearGradient id="smg" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%" stopColor={C.green} stopOpacity={0.3}/>
+                                <stop offset="95%" stopColor={C.green} stopOpacity={0}/>
+                              </linearGradient>
+                            </defs>
+                            <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
+                            <XAxis dataKey="mass" tick={{fontSize:10,fill:"#94a3b8"}}
+                              label={{value:"Mass (kg)",position:"insideBottom",offset:-6,fontSize:10,fill:"#94a3b8"}}/>
+                            <YAxis tick={{fontSize:10,fill:"#94a3b8"}}
+                              label={{value:"SM (%)",angle:-90,position:"insideLeft",offset:15,fontSize:10,fill:"#94a3b8"}}/>
+                            <Tooltip {...TTP} formatter={(v,n)=>[`${v}%`,n]}/>
+                            <ReferenceLine y={5} stroke={C.red} strokeDasharray="3 2"
+                              label={{value:"5% min",fill:C.red,fontSize:9,position:"right"}}/>
+                            <ReferenceLine y={25} stroke={C.red} strokeDasharray="3 2"
+                              label={{value:"25% max",fill:C.red,fontSize:9,position:"right"}}/>
+                            <Area type="monotone" dataKey="sm" stroke={C.green} strokeWidth={2} fill="url(#smg)" dot={false} name="SM %"/>
+                          </AreaChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>);
+                  })()}
+                  <div style={{display:"flex",gap:18,marginTop:8,padding:"5px 8px",background:"#0a0d14",borderRadius:4}}>
+                    {[["OEW CG",`${R.xCGempty} m`,"#64748b"],["MTOW CG",`${R.xCGtotal} m`,C.amber],
+                      ["NP",`${R.xNP} m`,C.blue],["ΔCG travel",`${Math.abs(R.xCGtotal-R.xCGempty).toFixed(3)} m`,C.green]
+                    ].map(([l,v,col])=>(
+                      <div key={l} style={{display:"flex",flexDirection:"column",gap:2}}>
+                        <span style={{fontSize:8,color:"#64748b",fontFamily:"'DM Mono',monospace"}}>{l}</span>
+                        <span style={{fontSize:11,color:col,fontFamily:"'DM Mono',monospace",fontWeight:700}}>{v}</span>
+                      </div>
+                    ))}
+                  </div>
+                </Panel>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
                   <Panel title="MTOW Composition" h={235}>
                     <ResponsiveContainer width="100%" height={190}>
@@ -1775,6 +1939,131 @@ export default function App(){
                     </div>
                   </div>
                 </div>
+                {/* ──── Ruddervator Deflection Angle Plots ──── */}
+                <Panel title="Ruddervator Deflection Analysis">
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
+                    {/* Plot 1: Pitch trim δ_rv vs Γ */}
+                    <div>
+                      <div style={{fontSize:8,color:"#64748b",fontFamily:"'DM Mono',monospace",marginBottom:4}}>
+                        Pitch trim δ_rv vs dihedral Γ (symmetric)
+                      </div>
+                      <ResponsiveContainer width="100%" height={180}>
+                        <LineChart
+                          data={Array.from({length:71},(_,i)=>{
+                            const gd=15+i, gr=gd*Math.PI/180;
+                            const Sh_eff_g=R.Svt_panel*Math.cos(gr)**2;
+                            if(Sh_eff_g<0.01) return{gamma:gd,delta:null};
+                            const CM_ac=R.selAF?.CM||(-0.02);
+                            const de=-(CM_ac*R.Swing*R.MAC)/(0.90*Sh_eff_g*R.lv);
+                            const drv=de/Math.cos(gr)*180/Math.PI;
+                            return{gamma:gd,delta:+Math.min(Math.max(drv,-35),35).toFixed(2)};
+                          })}
+                          margin={{top:4,right:8,left:2,bottom:20}}>
+                          <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
+                          <XAxis dataKey="gamma" tick={{fontSize:10,fill:"#94a3b8"}}
+                            label={{value:"Γ (°)",position:"insideBottom",offset:-8,fontSize:10,fill:"#94a3b8"}}/>
+                          <YAxis tick={{fontSize:10,fill:"#94a3b8"}}
+                            label={{value:"δ (°)",angle:-90,position:"insideLeft",offset:10,fontSize:10,fill:"#94a3b8"}}/>
+                          <Tooltip {...TTP} formatter={(v)=>[`${v}°`,"δ_rv pitch"]}/>
+                          <ReferenceLine y={20} stroke={C.red} strokeDasharray="3 2"
+                            label={{value:"20° lim",fill:C.red,fontSize:9,position:"right"}}/>
+                          <ReferenceLine y={-20} stroke={C.red} strokeDasharray="3 2"/>
+                          <ReferenceLine x={p.vtGamma} stroke={C.amber} strokeDasharray="3 2"
+                            label={{value:`Γ=${p.vtGamma}°`,fill:C.amber,fontSize:9,position:"top"}}/>
+                          <ReferenceLine y={R.delta_rv_deg} stroke={C.green} strokeDasharray="3 2"
+                            label={{value:`${R.delta_rv_deg}°`,fill:C.green,fontSize:9,position:"right"}}/>
+                          <Line type="monotone" dataKey="delta" stroke={C.blue} strokeWidth={2} dot={false}
+                            name="δ_rv pitch" connectNulls={false}/>
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                    {/* Plot 2: Yaw trim δ_rv vs sideslip β */}
+                    <div>
+                      <div style={{fontSize:8,color:"#64748b",fontFamily:"'DM Mono',monospace",marginBottom:4}}>
+                        Yaw trim δ_rv vs sideslip β (differential)
+                      </div>
+                      <ResponsiveContainer width="100%" height={180}>
+                        <LineChart
+                          data={Array.from({length:41},(_,i)=>{
+                            const beta_deg=-10+i*0.5;
+                            const beta_rad=beta_deg*Math.PI/180;
+                            const CY_beta=-0.30;
+                            const dyaw=(CY_beta*beta_rad*R.Swing)/(2*R.Sv_eff/R.lv)*180/Math.PI*(-1);
+                            return{beta:+beta_deg.toFixed(1),delta:+Math.min(Math.max(dyaw,-30),30).toFixed(2)};
+                          })}
+                          margin={{top:4,right:8,left:2,bottom:20}}>
+                          <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
+                          <XAxis dataKey="beta" tick={{fontSize:10,fill:"#94a3b8"}}
+                            label={{value:"β (°)",position:"insideBottom",offset:-8,fontSize:10,fill:"#94a3b8"}}/>
+                          <YAxis tick={{fontSize:10,fill:"#94a3b8"}}
+                            label={{value:"δ (°)",angle:-90,position:"insideLeft",offset:10,fontSize:10,fill:"#94a3b8"}}/>
+                          <Tooltip {...TTP} formatter={(v)=>[`${v}°`,"δ_rv yaw"]}/>
+                          <ReferenceLine y={20} stroke={C.red} strokeDasharray="3 2"
+                            label={{value:"20° lim",fill:C.red,fontSize:9,position:"right"}}/>
+                          <ReferenceLine y={-20} stroke={C.red} strokeDasharray="3 2"/>
+                          <ReferenceLine x={0} stroke="#334155" strokeWidth={1}/>
+                          <ReferenceLine x={2} stroke={C.amber} strokeDasharray="3 2"
+                            label={{value:"β=2°",fill:C.amber,fontSize:9,position:"top"}}/>
+                          <ReferenceLine y={R.delta_yaw_rv_deg} stroke={C.green} strokeDasharray="3 2"
+                            label={{value:`${R.delta_yaw_rv_deg}°`,fill:C.green,fontSize:9,position:"right"}}/>
+                          <Line type="monotone" dataKey="delta" stroke={C.teal} strokeWidth={2} dot={false} name="δ_rv yaw"/>
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                    {/* Plot 3: Combined deflection vs SM */}
+                    <div>
+                      <div style={{fontSize:8,color:"#64748b",fontFamily:"'DM Mono',monospace",marginBottom:4}}>
+                        Pitch trim δ_rv vs Static Margin (% MAC)
+                      </div>
+                      <ResponsiveContainer width="100%" height={180}>
+                        <LineChart
+                          data={Array.from({length:51},(_,i)=>{
+                            const sm_pct=-5+i*0.6; // SM from -5% to +25%
+                            const sm=sm_pct/100;
+                            const xCG_g=R.xNP-sm*R.MAC;
+                            // Pitch moment about AC: CM_ac from airfoil + CL * (xCG-xAC)/MAC
+                            const CL_cr=R.Swing>0?2*R.MTOW*9.81/(1.225*p.vCruise**2*R.Swing):1;
+                            const CM_ac=R.selAF?.CM||(-0.02);
+                            const CM_net=CM_ac+CL_cr*sm;  // net pitch moment
+                            const Sh_eff_cur=R.Sh_eff||0.1;
+                            const de=-CM_net*R.Swing*R.MAC/(0.90*Sh_eff_cur*R.lv);
+                            const drv=de/Math.cos(p.vtGamma*Math.PI/180)*180/Math.PI;
+                            return{sm:+sm_pct.toFixed(1),delta:+Math.min(Math.max(drv,-35),35).toFixed(2)};
+                          })}
+                          margin={{top:4,right:8,left:2,bottom:20}}>
+                          <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
+                          <XAxis dataKey="sm" tick={{fontSize:10,fill:"#94a3b8"}}
+                            label={{value:"SM (%)",position:"insideBottom",offset:-8,fontSize:10,fill:"#94a3b8"}}/>
+                          <YAxis tick={{fontSize:10,fill:"#94a3b8"}}
+                            label={{value:"δ (°)",angle:-90,position:"insideLeft",offset:10,fontSize:10,fill:"#94a3b8"}}/>
+                          <Tooltip {...TTP} formatter={(v)=>[`${v}°`,"δ_rv"]}/>
+                          <ReferenceLine y={20} stroke={C.red} strokeDasharray="3 2"
+                            label={{value:"20° lim",fill:C.red,fontSize:9,position:"right"}}/>
+                          <ReferenceLine y={-20} stroke={C.red} strokeDasharray="3 2"/>
+                          <ReferenceLine y={0} stroke="#334155" strokeWidth={1}/>
+                          <ReferenceLine x={R.SM_vt*100} stroke={C.amber} strokeDasharray="3 2"
+                            label={{value:`SM=${(R.SM_vt*100).toFixed(1)}%`,fill:C.amber,fontSize:9,position:"top"}}/>
+                          <Line type="monotone" dataKey="delta" stroke={C.green} strokeWidth={2} dot={false} name="δ_rv vs SM"/>
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+                  <div style={{display:"flex",gap:18,marginTop:8,padding:"5px 8px",background:"#0a0d14",borderRadius:4,flexWrap:"wrap"}}>
+                    {[
+                      ["Pitch trim δ_rv",`${R.delta_rv_deg}°`,C.blue,"symmetric, cruise"],
+                      ["Yaw trim δ_rv",`${R.delta_yaw_rv_deg}°`,C.teal,"differential, β=2°"],
+                      ["Authority limit","±20°","#64748b","CS-23 / FAR 23"],
+                      ["Pitch OK",Math.abs(R.delta_rv_deg)<=20?"✅ Within limits":"❌ Exceeds",Math.abs(R.delta_rv_deg)<=20?C.green:C.red,""],
+                      ["Yaw OK",Math.abs(R.delta_yaw_rv_deg)<=20?"✅ Within limits":"❌ Exceeds",Math.abs(R.delta_yaw_rv_deg)<=20?C.green:C.red,""],
+                    ].map(([l,v,col,sub])=>(
+                      <div key={l} style={{display:"flex",flexDirection:"column",gap:1}}>
+                        <span style={{fontSize:8,color:"#64748b",fontFamily:"'DM Mono',monospace"}}>{l}</span>
+                        <span style={{fontSize:11,color:col,fontFamily:"'DM Mono',monospace",fontWeight:700}}>{v}</span>
+                        {sub&&<span style={{fontSize:8,color:"#4b5563",fontFamily:"'DM Mono',monospace"}}>{sub}</span>}
+                      </div>
+                    ))}
+                  </div>
+                </Panel>
               </div>
             )}
             {/* ──── TAB 8: CONVERGENCE ──── */}
