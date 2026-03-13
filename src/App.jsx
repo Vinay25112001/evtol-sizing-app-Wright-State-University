@@ -1243,7 +1243,7 @@ export default function App(){
           LD:14,AR:9,eOsw:0.85,clDesign:0.55,taper:0.45,tc:0.15,nPropHover:6,propDiam:3.0,
           etaHov:0.70,etaSys:0.80,rateOfClimb:5.08,climbAngle:5,sedCell:300,etaBat:0.90,socMin:0.2,ewf:0.50,
           fusLen:7.2,fusDiam:1.65,
-          vtGamma:45,vtCh:0.28,vtCv:0.032,vtAR:2.5})}
+          vtGamma:45,vtCh:0.45,vtCv:0.032,vtAR:2.5})}
           style={{marginLeft:"auto",padding:"5px 12px",background:"transparent",border:`1px solid ${C.border}`,
             borderRadius:4,color:C.muted,fontSize:9,cursor:"pointer",fontFamily:"'DM Mono',monospace"}}>↺ RESET</button>
         {R&&<button onClick={()=>{
