@@ -1175,7 +1175,7 @@ export default function App(){
     fusLen:7.2,fusDiam:1.65,
     // ── V-tail (NASA NDARC UAM values for FBW lift+cruise eVTOL) ──────────
     vtGamma:45,
-    vtCh:0.28,            // Ch reduced from 0.40: FBW+DEP reduces required pitch authority
+    vtCh:0.45,            // Ch=0.45 → SM_vt ≈ +6.6% MAC (stable, FBW eVTOL target 5–25%)
     vtCv:0.032,           // Cv reduced from 0.05: same rationale; gives tail/wing ~37%
     vtAR:2.5,
   });
