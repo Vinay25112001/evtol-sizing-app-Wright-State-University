@@ -545,6 +545,7 @@ function generateReport(p, R) {
     <table class="cover-meta">
       <tr><td>Institution</td><td>Wright State University</td></tr>
       <tr><td>Advisor</td><td>Dr. Darryl K. Ahner</td></tr>
+      <tr><td>Graduate Student</td><td>Vinay Kumar Reddy Sirigireddy</td></tr>
       <tr><td>Framework</td><td>MATLAB-MBSE Integrated Sizing Framework</td></tr>
       <tr><td>Algorithm</td><td>eVTOL_Full_Analysis_v2.m — JavaScript Port</td></tr>
       <tr><td>Report Generated</td><td>${now}</td></tr>
@@ -758,6 +759,231 @@ function generateReport(p, R) {
   </tbody></table>
   `);
 
+  // ══════════════════════════════════════════════════════════════════════
+  //  DETAILED CALCULATION SECTIONS  (D1–D9)
+  // ══════════════════════════════════════════════════════════════════════
+
+  // ── Intermediate values recomputed for display ─────────────────────
+  const g0d=9.81,T0d=288.15,L_d=0.0065,Rgasd=287,rhoSLd=1.225;
+  const Tcrd=T0d-L_d*p.cruiseAlt;
+  const rhoCrd=rhoSLd*Math.pow(Tcrd/T0d,(-g0d/(-L_d*Rgasd))-1);
+  const muSLd=1.789e-5;
+  const muCrd=muSLd*Math.pow(Tcrd/T0d,0.75);
+  const RoCd=p.rateOfClimb, clAngd=p.climbAngle;
+  const Vcld=RoCd/Math.sin(clAngd*Math.PI/180);
+  const LDcld=p.LD*(1-0.13);
+  const desAngd=Math.atan(1/p.LD)*180/Math.PI;
+  const Vdcd=RoCd/Math.sin(desAngd*Math.PI/180);
+  const Vresd=0.7*p.vCruise;
+  const hvtold=p.hoverHeight;
+  const ClimbRd=(p.cruiseAlt-hvtold)/Math.tan(clAngd*Math.PI/180);
+  const DescRd=(p.cruiseAlt-hvtold)/Math.tan(desAngd*Math.PI/180);
+  const CruiseRanged=p.range*1000-ClimbRd-DescRd-p.reserveRange*1000;
+  const bfd=(g0d*p.range*1000)/(p.LD*p.etaSys*p.sedCell*3600);
+  const lambdaFd=p.fusLen/p.fusDiam;
+  const Swwd=2*R.Swing*(1+0.25*p.tc*(1+p.taper*0.25));
+  const SwfWetd=Math.PI*p.fusDiam*p.fusLen*Math.pow(1-2/lambdaFd,2/3)*(1+1/lambdaFd**2);
+  const Swhs_d=2*R.Swing*0.18, Swvs_d=2*R.Swing*0.12;
+  const Swn_d=p.nPropHover*Math.PI*0.2*0.35;
+  const Refusd=rhoCrd*p.vCruise*p.fusLen/muCrd;
+  const Cfwd=0.455/Math.log10(R.Re_)**2.58/(1+0.144*R.Mach**2)**0.65;
+  const Cffd=0.455/Math.log10(Refusd)**2.58/(1+0.144*R.Mach**2)**0.65;
+  const FFwd=(1+0.6/0.3*p.tc+100*p.tc**4)*1.05;
+  const FFfd=1+60/lambdaFd**3+lambdaFd/400;
+  const Ttotd=R.MTOW*g0d, Trotord=Ttotd/p.nPropHover;
+  const PrWd=R.Phov*1000/p.nPropHover;
+  const Adiskd=Trotord**3/(2*rhoSLd*(PrWd*p.etaHov)**2);
+  const Rrotord=Math.sqrt(Adiskd/Math.PI);
+  const TipSpdd=Math.sqrt(2*PrWd*p.etaHov/(rhoSLd*Adiskd));
+  const PmotKWd=PrWd/1000*1.15, PpeakKWd=PmotKWd*1.50;
+  const Torqued=PmotKWd*1000/(R.RPM*Math.PI/30);
+  const Vcelld=3.6,Ahcelld=5.0,Vpackd=800;
+  const Nseriesd=Math.round(Vpackd/Vcelld);
+  const PackAhReqd=R.Etot*1000/Vpackd;
+  const Npard=Math.ceil(PackAhReqd/Ahcelld);
+  const PackVd=Nseriesd*Vcelld, PackAhd=Npard*Ahcelld;
+  const Rintd=0.030*Nseriesd/Npard;
+  const Pheatd=(R.Phov*1000/PackVd)**2*Rintd;
+  const xCGfusd=p.fusLen*0.42;
+  const Xacd=R.Cr_-(R.MAC-0.25*R.MAC);
+  const xCGwingd=p.fusLen*0.2589+Xacd;
+  const xCGbatd=p.fusLen*0.38, xCGpayd=p.fusLen*0.40;
+  const Wfuscd=R.Wempty*0.35,Wwingcd=R.Wempty*0.18;
+  const Wmotcd=R.Wempty*0.22,Wavcd=R.Wempty*0.04,Wothcd=R.Wempty*0.21;
+  const xCGemptyd=(Wfuscd*xCGfusd+Wwingcd*xCGwingd+Wmotcd*xCGfusd+Wavcd*0.8+Wothcd*xCGfusd)/R.Wempty;
+  const xACwingd=p.fusLen*0.2589+Xacd;
+  const lhd=p.fusLen-xACwingd;
+  const CLaWd=2*Math.PI*(1+0.77*p.tc);
+  const dwd=2*CLaWd/(Math.PI*p.AR);
+  const Shd=R.Swing*0.18;
+  const DLd=R.MTOW*g0d/(Math.PI*Math.pow(p.propDiam/2,2)*p.nPropHover);
+
+  // ── D1. ROUND 1 — INITIAL MTOW ──────────────────────────────────────
+  const sd1 = sec("iter1","D1. Round 1 — Initial MTOW Estimate (Simplified Range-Energy Method)",`
+  <p>Round 1 computes a first-pass MTOW using a simplified battery mass fraction derived purely from range. Starting guess MTOW<sub>0</sub> = 2177 kg, iterated to convergence (&lt; 10<sup>−6</sup> kg).</p>
+  ${eq("f_{bat} = \\frac{g_0 \\cdot R}{(L/D)\\,\\eta_{sys}\\,\\text{SED}_{cell}\\times 3600} = \\frac{9.81 \\times "+p.range+" \\times 1000}{"+p.LD+" \\times "+p.etaSys+" \\times "+p.sedCell+" \\times 3600} = "+n(bfd,5),"Simplified battery mass fraction (range-energy method)")}
+  ${eq("W_{empty} = f_{EW} \\cdot \\text{MTOW} = "+p.ewf+" \\cdot \\text{MTOW}","Empty weight from structural mass fraction EWF = "+p.ewf)}
+  ${eq("W_{bat,1} = f_{bat} \\cdot \\text{MTOW} = "+n(bfd,5)+" \\cdot \\text{MTOW}","Battery mass (Round 1 approximation)")}
+  ${eq("\\text{MTOW}_{1} = \\frac{m_{pay}}{1 - f_{EW} - f_{bat}} = \\frac{"+p.payload+"}{1 - "+p.ewf+" - "+n(bfd,5)+"} = "+n(R.MTOW1,2)+"\\text{ kg}","Analytical solution of weight closure")}
+  ${table(["Quantity","Formula / Value","Result","Unit"],[
+    row("Battery fraction","g₀·R / [(L/D)·η_sys·SED·3600]",n(bfd,5),""),
+    row("Empty weight (R1)","f_EW × MTOW₁",n(p.ewf*R.MTOW1,1),"kg"),
+    row("Battery mass (R1)","f_bat × MTOW₁",n(bfd*R.MTOW1,1),"kg"),
+    row("Payload","given",p.payload,"kg"),
+    row("MTOW Round 1","m_pay + W_e + W_bat",n(R.MTOW1,2),"kg"),
+  ])}
+  `);
+
+  // ── D2. ROUND 2 — COUPLED MTOW + ENERGY CONVERGENCE ─────────────────
+  const sd2 = sec("iter2","D2. Round 2 — Coupled MTOW + Energy Convergence",`
+  <p>Round 2 couples weight closure to full mission energy. For each MTOW trial, all phase powers, times, and energies are computed; W<sub>bat</sub> is re-derived from E<sub>total</sub>; MTOW is updated until |MTOW<sub>new</sub> − MTOW<sub>old</sub>| &lt; 10<sup>−6</sup> kg. Starts from MTOW<sub>1</sub> = ${n(R.MTOW1,2)} kg.</p>
+  <p><strong>Phase geometry (fixed, computed once):</strong></p>
+  ${eq("V_{cl} = \\frac{\\dot{h}}{\\sin\\gamma_{cl}} = \\frac{"+RoCd+"}{\\sin("+clAngd+"^\\circ)} = "+n(Vcld,2)+"\\text{ m/s}","Climb speed from RoC and climb angle")}
+  ${eq("(L/D)_{cl} = (L/D)_{cr}\\times 0.87 = "+p.LD+"\\times 0.87 = "+n(LDcld,3),"Climb L/D — 13% reduction for induced drag increase")}
+  ${eq("\\gamma_{dc} = \\arctan\\!\\left(\\frac{1}{(L/D)}\\right) = "+n(desAngd,3)+"^\\circ, \\quad V_{dc} = \\frac{\\dot{h}}{\\sin\\gamma_{dc}} = "+n(Vdcd,2)+"\\text{ m/s}","Descent angle and speed")}
+  ${eq("V_{res} = 0.7\\,V_{cr} = 0.7\\times "+p.vCruise+" = "+n(Vresd,2)+"\\text{ m/s}","Reserve loiter speed")}
+  ${eq("d_{cl} = \\frac{h_{cr}-h_{hov}}{\\tan\\gamma_{cl}} = "+n(ClimbRd,1)+"\\text{ m}, \\quad d_{dc} = \\frac{h_{cr}-h_{hov}}{\\tan\\gamma_{dc}} = "+n(DescRd,1)+"\\text{ m}","Climb and descent ground tracks")}
+  ${eq("d_{cr} = R - d_{cl} - d_{dc} - R_{res} = "+p.range*1000+" - "+n(ClimbRd,1)+" - "+n(DescRd,1)+" - "+p.reserveRange*1000+" = "+n(CruiseRanged,1)+"\\text{ m}","Net cruise distance")}
+  <p><strong>Final converged iteration (MTOW = ${n(R.MTOW,2)} kg):</strong></p>
+  ${eq("DL = \\frac{\\text{MTOW}\\cdot g_0}{N_{rot}\\cdot A_{disk}} = \\frac{"+n(R.MTOW,2)+"\\times 9.81}{"+p.nPropHover+"\\times\\pi("+n(p.propDiam/2,3)+")^2} = "+n(DLd,2)+"\\text{ N/m}^2","Disk loading")}
+  ${eq("P_{hov} = \\frac{W}{\\eta_{hov}}\\sqrt{\\frac{DL}{2\\rho_{SL}}} \\div 1000 = \\frac{"+n(R.MTOW*g0d,1)+"}{"+p.etaHov+"}\\sqrt{\\frac{"+n(DLd,2)+"}{2.45}} \\div 1000 = "+n(R.Phov,2)+"\\text{ kW}","Hover power")}
+  ${eq("P_{cl} = \\frac{W}{\\eta_{sys}}\\!\\left(\\dot{h}+\\frac{V_{cl}}{(L/D)_{cl}}\\right)\\!\\div 1000 = \\frac{"+n(R.MTOW*g0d,1)+"}{"+p.etaSys+"}\\!\\left("+RoCd+"+\\frac{"+n(Vcld,2)+"}{"+n(LDcld,3)+"}\\right)\\!\\div 1000 = "+n(R.Pcl,2)+"\\text{ kW}","Climb power")}
+  ${eq("P_{cr} = \\frac{W\\,V_{cr}}{\\eta_{sys}\\,(L/D)} = \\frac{"+n(R.MTOW*g0d,1)+"\\times "+p.vCruise+"}{"+p.etaSys+"\\times "+p.LD+"} \\div 1000 = "+n(R.Pcr,2)+"\\text{ kW}","Cruise power")}
+  ${eq("P_{dc} = \\frac{W}{\\eta_{sys}}\\!\\left(-\\dot{h}+\\frac{V_{dc}}{(L/D)_{cl}}\\right)\\!\\div 1000 = "+n(R.Pdc,2)+"\\text{ kW}","Descent power")}
+  ${eq("P_{res} = \\frac{W\\,V_{res}}{\\eta_{sys}\\,(L/D)} \\div 1000 = "+n(R.Pres,2)+"\\text{ kW}","Reserve power")}
+  ${eq("W_{bat} = \\frac{E_{total}\\times 1000\\,(1+\\text{SoC}_{min})}{\\text{SED}_{cell}\\,\\eta_{bat}} = \\frac{"+n(R.Etot,3)+"\\times 1000\\times(1+"+p.socMin+")}{"+p.sedCell+"\\times "+p.etaBat+"} = "+n(R.Wbat,2)+"\\text{ kg}","Battery mass from total energy")}
+  ${eq("\\text{MTOW} = "+p.payload+" + "+n(R.Wempty,2)+" + "+n(R.Wbat,2)+" = "+n(R.MTOW,2)+"\\text{ kg} \\quad \\checkmark\\text{ Converged}","Final weight closure")}
+  `);
+
+  // ── D3. MISSION PHASE TIMING ─────────────────────────────────────────
+  const sd3 = sec("timing","D3. Mission Phase Timing & Distance Analysis",`
+  ${eq("t_{TO} = \\frac{h_{hov}}{0.5} = \\frac{"+hvtold+"}{0.5} = "+n(R.tto,0)+"\\text{ s}","Takeoff hover time — average vertical speed = 0.5 m/s")}
+  ${eq("t_{cl} = \\frac{d_{cl}}{V_{cl}} = \\frac{"+n(ClimbRd,1)+"}{"+n(Vcld,2)+"} = "+n(R.tcl,0)+"\\text{ s}","Climb duration")}
+  ${eq("t_{cr} = \\frac{d_{cr}}{V_{cr}} = \\frac{"+n(CruiseRanged,1)+"}{"+p.vCruise+"} = "+n(R.tcr,0)+"\\text{ s}","Cruise duration")}
+  ${eq("t_{dc} = \\frac{d_{dc}}{V_{dc}} = \\frac{"+n(DescRd,1)+"}{"+n(Vdcd,2)+"} = "+n(R.tdc,0)+"\\text{ s}","Descent duration")}
+  ${eq("t_{ld} = \\frac{h_{hov}}{0.5} = "+n(R.tld,0)+"\\text{ s}","Landing hover time")}
+  ${eq("t_{res} = \\frac{R_{res}}{V_{res}} = \\frac{"+p.reserveRange*1000+"}{"+n(Vresd,2)+"} = "+n(R.tres,0)+"\\text{ s}","Reserve duration")}
+  ${eq("T_{mission} = "+n(R.tto,0)+"+"+n(R.tcl,0)+"+"+n(R.tcr,0)+"+"+n(R.tdc,0)+"+"+n(R.tld,0)+"+"+n(R.tres,0)+" = "+n(R.Tend,0)+"\\text{ s} = "+n(R.Tend/60,1)+"\\text{ min}","Total mission time")}
+  ${table(["Phase","Distance (m)","Speed (m/s)","Duration (s)","Duration (min)"],[
+    row("Takeoff (hover)","Vertical "+hvtold+" m","0.5",n(R.tto,0),n(R.tto/60,1)),
+    row("Climb",n(ClimbRd,1),n(Vcld,2),n(R.tcl,0),n(R.tcl/60,1)),
+    row("Cruise",n(CruiseRanged,1),p.vCruise,n(R.tcr,0),n(R.tcr/60,1)),
+    row("Descent",n(DescRd,1),n(Vdcd,2),n(R.tdc,0),n(R.tdc/60,1)),
+    row("Landing (hover)","Vertical "+hvtold+" m","0.5",n(R.tld,0),n(R.tld/60,1)),
+    row("Reserve",n(p.reserveRange*1000,0),n(Vresd,2),n(R.tres,0),n(R.tres/60,1)),
+    row("<b>Total</b>","<b>"+n(p.range*1000,0)+" m</b>","—","<b>"+n(R.Tend,0)+"</b>","<b>"+n(R.Tend/60,1)+"</b>"),
+  ])}
+  `);
+
+  // ── D4. PHASE POWER & ENERGY ─────────────────────────────────────────
+  const sd4 = sec("phasecalc","D4. Phase Power & Energy — Detailed Calculations",`
+  <p>Energy per phase: E<sub>phase</sub> = P<sub>phase</sub> × t<sub>phase</sub> / 3600. Cumulative column tracks battery draw throughout the mission.</p>
+  ${eq("E_{TO} = P_{hov}\\times\\frac{t_{TO}}{3600} = "+n(R.Phov,2)+"\\times\\frac{"+n(R.tto,0)+"}{3600} = "+n(R.Eto,4)+"\\text{ kWh}","Takeoff energy")}
+  ${eq("E_{cl} = P_{cl}\\times\\frac{t_{cl}}{3600} = "+n(R.Pcl,2)+"\\times\\frac{"+n(R.tcl,0)+"}{3600} = "+n(R.Ecl,4)+"\\text{ kWh}","Climb energy")}
+  ${eq("E_{cr} = P_{cr}\\times\\frac{t_{cr}}{3600} = "+n(R.Pcr,2)+"\\times\\frac{"+n(R.tcr,0)+"}{3600} = "+n(R.Ecr,4)+"\\text{ kWh}","Cruise energy")}
+  ${eq("E_{dc} = |P_{dc}|\\times\\frac{t_{dc}}{3600} = "+n(R.Pdc,2)+"\\times\\frac{"+n(R.tdc,0)+"}{3600} = "+n(R.Edc,4)+"\\text{ kWh}","Descent energy")}
+  ${eq("E_{ld} = P_{hov}\\times\\frac{t_{ld}}{3600} = "+n(R.Phov,2)+"\\times\\frac{"+n(R.tld,0)+"}{3600} = "+n(R.Eld,4)+"\\text{ kWh}","Landing energy")}
+  ${eq("E_{res} = P_{res}\\times\\frac{t_{res}}{3600} = "+n(R.Pres,2)+"\\times\\frac{"+n(R.tres,0)+"}{3600} = "+n(R.Eres,4)+"\\text{ kWh}","Reserve energy")}
+  ${eq("E_{total} = "+n(R.Eto,4)+"+"+n(R.Ecl,4)+"+"+n(R.Ecr,4)+"+"+n(R.Edc,4)+"+"+n(R.Eld,4)+"+"+n(R.Eres,4)+" = "+n(R.Etot,3)+"\\text{ kWh}","Total mission energy")}
+  ${table(["Phase","Power (kW)","Time (s)","Energy (kWh)","Cumulative (kWh)","% Total"],[
+    `<tr><td>Takeoff</td><td>${n(R.Phov,2)}</td><td>${n(R.tto,0)}</td><td>${n(R.Eto,4)}</td><td>${n(R.Eto,4)}</td><td>${n(R.Eto/R.Etot*100,1)}%</td></tr>`,
+    `<tr><td>Climb</td><td>${n(R.Pcl,2)}</td><td>${n(R.tcl,0)}</td><td>${n(R.Ecl,4)}</td><td>${n(R.Eto+R.Ecl,4)}</td><td>${n(R.Ecl/R.Etot*100,1)}%</td></tr>`,
+    `<tr><td>Cruise</td><td>${n(R.Pcr,2)}</td><td>${n(R.tcr,0)}</td><td>${n(R.Ecr,4)}</td><td>${n(R.Eto+R.Ecl+R.Ecr,4)}</td><td>${n(R.Ecr/R.Etot*100,1)}%</td></tr>`,
+    `<tr><td>Descent</td><td>${n(R.Pdc,2)}</td><td>${n(R.tdc,0)}</td><td>${n(R.Edc,4)}</td><td>${n(R.Eto+R.Ecl+R.Ecr+R.Edc,4)}</td><td>${n(R.Edc/R.Etot*100,1)}%</td></tr>`,
+    `<tr><td>Landing</td><td>${n(R.Phov,2)}</td><td>${n(R.tld,0)}</td><td>${n(R.Eld,4)}</td><td>${n(R.Eto+R.Ecl+R.Ecr+R.Edc+R.Eld,4)}</td><td>${n(R.Eld/R.Etot*100,1)}%</td></tr>`,
+    `<tr><td>Reserve</td><td>${n(R.Pres,2)}</td><td>${n(R.tres,0)}</td><td>${n(R.Eres,4)}</td><td>${n(R.Etot,3)}</td><td>${n(R.Eres/R.Etot*100,1)}%</td></tr>`,
+    `<tr style="font-weight:700"><td>Total</td><td>—</td><td>${n(R.Tend,0)}</td><td>${n(R.Etot,3)}</td><td>${n(R.Etot,3)}</td><td>100%</td></tr>`,
+  ])}
+  `);
+
+  // ── D5. WING SIZING DETAILED ──────────────────────────────────────────
+  const sd5 = sec("wingdetail","D5. Wing Sizing — Detailed Calculations",`
+  ${eq("S_w = \\frac{2\\,L_{req}}{\\rho_{cr}\\,V_{cr}^2\\,C_{L,des}} = \\frac{2\\times "+n(R.MTOW*g0d,1)+"}{"+n(rhoCrd,4)+"\\times "+p.vCruise+"^2\\times "+p.clDesign+"} = "+n(R.Swing,2)+"\\text{ m}^2","Wing area from lift balance at cruise")}
+  ${eq("W/S = "+n(R.WL,1)+"\\text{ N/m}^2","Wing loading")}
+  ${eq("b_w = \\sqrt{AR\\cdot S_w} = \\sqrt{"+p.AR+"\\times "+n(R.Swing,2)+"} = "+n(R.bWing,2)+"\\text{ m}","Wing span")}
+  ${eq("C_r = \\frac{2S_w}{b_w(1+\\lambda)} = \\frac{2\\times "+n(R.Swing,2)+"}{"+n(R.bWing,2)+"\\times(1+"+p.taper+")} = "+n(R.Cr_,3)+"\\text{ m}","Root chord")}
+  ${eq("C_t = \\lambda\\,C_r = "+p.taper+"\\times "+n(R.Cr_,3)+" = "+n(R.Ct_,3)+"\\text{ m}","Tip chord")}
+  ${eq("\\bar{c} = \\frac{2}{3}\\,C_r\\,\\frac{1+\\lambda+\\lambda^2}{1+\\lambda} = "+n(R.MAC,3)+"\\text{ m}","Mean aerodynamic chord")}
+  ${eq("\\bar{y}_{MAC} = \\frac{b_w}{6}\\,\\frac{1+2\\lambda}{1+\\lambda} = "+n(R.Ymac,3)+"\\text{ m}","Spanwise MAC position")}
+  ${eq("\\Lambda_{LE} = \\arctan\\!\\left(\\frac{C_r-C_t}{b_w/2}\\right) = \\arctan\\!\\left(\\frac{"+n(R.Cr_,3)+"-"+n(R.Ct_,3)+"}{"+n(R.bWing/2,3)+"}\\right) = "+n(R.sweep,2)+"^\\circ","Leading edge sweep")}
+  ${eq("Re_w = \\frac{\\rho_{cr}\\,V_{cr}\\,\\bar{c}}{\\mu_{cr}} = \\frac{"+n(rhoCrd,4)+"\\times "+p.vCruise+"\\times "+n(R.MAC,3)+"}{"+n(muCrd,7)+"} = "+n(R.Re_,0),"Wing chord Reynolds number")}
+  ${eq("M = \\frac{V_{cr}}{a_{cr}} = \\frac{"+p.vCruise+"}{"+n(Math.sqrt(1.4*287*Tcrd),2)+"} = "+n(R.Mach,4),"Cruise Mach number")}
+  ${eq("V_{stall} = \\sqrt{\\frac{2(W/S)}{\\rho_{cr}\\,C_{L,max}}} = \\sqrt{\\frac{2\\times "+n(R.WL,1)+"}{"+n(rhoCrd,4)+"\\times "+(R.selAF&&R.selAF.CLmax?n(R.selAF.CLmax,2):"1.60")+"}} = "+n(R.Vstall,2)+"\\text{ m/s}","Stall speed")}
+  `);
+
+  // ── D6. FUSELAGE SIZING & DRAG BUILDUP ───────────────────────────────
+  const sd6 = sec("dragbuildup","D6. Fuselage Sizing & Drag Component Buildup (Raymer)",`
+  <p>Zero-lift drag uses Raymer component buildup: C<sub>D0,k</sub> = C<sub>f,k</sub> · FF<sub>k</sub> · S<sub>wet,k</sub> / S<sub>ref</sub>.</p>
+  ${eq("\\lambda_f = \\frac{L_{fus}}{D_{fus}} = \\frac{"+p.fusLen+"}{"+p.fusDiam+"} = "+n(lambdaFd,2),"Fuselage fineness ratio")}
+  ${eq("S_{wet,f} = \\pi D_f L_f\\left(1-\\frac{2}{\\lambda_f}\\right)^{2/3}\\!\\left(1+\\frac{1}{\\lambda_f^2}\\right) = "+n(SwfWetd,3)+"\\text{ m}^2","Fuselage wetted area (Raymer Eq. 12.31)")}
+  ${eq("S_{wet,w} = 2S_w\\left(1+0.25\\,\\frac{t}{c}(1+\\lambda\\cdot 0.25)\\right) = "+n(Swwd,3)+"\\text{ m}^2","Wing wetted area")}
+  ${eq("Re_{fus} = \\frac{\\rho_{cr}\\,V_{cr}\\,L_{fus}}{\\mu_{cr}} = \\frac{"+n(rhoCrd,4)+"\\times "+p.vCruise+"\\times "+p.fusLen+"}{"+n(muCrd,7)+"} = "+n(Refusd,0),"Fuselage Reynolds number")}
+  ${eq("C_{f,w} = \\frac{0.455}{(\\log_{10}"+n(R.Re_,0)+")^{2.58}(1+0.144\\times "+n(R.Mach,4)+"^2)^{0.65}} = "+n(Cfwd,6),"Wing skin friction coefficient")}
+  ${eq("C_{f,f} = \\frac{0.455}{(\\log_{10}"+n(Refusd,0)+")^{2.58}(1+0.144\\times "+n(R.Mach,4)+"^2)^{0.65}} = "+n(Cffd,6),"Fuselage skin friction coefficient")}
+  ${eq("FF_w = \\left(1+2\\times "+p.tc+"+100\\times "+n(p.tc**4,6)+"\\right)\\times 1.05 = "+n(FFwd,4),"Wing form factor")}
+  ${eq("FF_f = 1+\\frac{60}{"+n(lambdaFd,2)+"^3}+\\frac{"+n(lambdaFd,2)+"}{400} = "+n(FFfd,4),"Fuselage form factor")}
+  ${table(["Component","C<sub>f</sub>","FF","S<sub>wet</sub> (m²)","S<sub>wet</sub>/S<sub>w</sub>","C<sub>D0</sub>"],[
+    `<tr><td>Wing</td><td>${n(Cfwd,6)}</td><td>${n(FFwd,4)}</td><td>${n(Swwd,3)}</td><td>${n(Swwd/R.Swing,4)}</td><td>${n(R.dragComp&&R.dragComp.find(d=>d.name==="Wing")?R.dragComp.find(d=>d.name==="Wing").val:0,5)}</td></tr>`,
+    `<tr><td>Fuselage</td><td>${n(Cffd,6)}</td><td>${n(FFfd,4)}</td><td>${n(SwfWetd,3)}</td><td>${n(SwfWetd/R.Swing,4)}</td><td>${n(R.dragComp&&R.dragComp.find(d=>d.name==="Fuselage")?R.dragComp.find(d=>d.name==="Fuselage").val:0,5)}</td></tr>`,
+    `<tr><td>H-Stab equiv.</td><td>${n(Cfwd,6)}</td><td>1.05</td><td>${n(Swhs_d,3)}</td><td>${n(Swhs_d/R.Swing,4)}</td><td>${n(R.dragComp&&R.dragComp.find(d=>d.name==="H-Stab")?R.dragComp.find(d=>d.name==="H-Stab").val:0,5)}</td></tr>`,
+    `<tr><td>V-Stab equiv.</td><td>${n(Cfwd,6)}</td><td>1.05</td><td>${n(Swvs_d,3)}</td><td>${n(Swvs_d/R.Swing,4)}</td><td>${n(R.dragComp&&R.dragComp.find(d=>d.name==="V-Stab")?R.dragComp.find(d=>d.name==="V-Stab").val:0,5)}</td></tr>`,
+    `<tr><td>Nacelles (×${p.nPropHover})</td><td>${n(Cfwd,6)}</td><td>1.30</td><td>${n(Swn_d,3)}</td><td>${n(Swn_d/R.Swing,4)}</td><td>${n(R.dragComp&&R.dragComp.find(d=>d.name==="Nacelles")?R.dragComp.find(d=>d.name==="Nacelles").val:0,5)}</td></tr>`,
+    `<tr><td>Landing Gear</td><td colspan="4">Fixed interference estimate</td><td>0.01500</td></tr>`,
+    `<tr><td>Miscellaneous</td><td colspan="4">Gaps, protuberances</td><td>0.00200</td></tr>`,
+    `<tr style="font-weight:700"><td>Total C<sub>D0</sub></td><td colspan="4"></td><td>${n(R.CD0tot,5)}</td></tr>`,
+  ])}
+  ${eq("C_{D_i} = \\frac{C_{L,des}^2}{\\pi\\,AR\\,e} = \\frac{"+p.clDesign+"^2}{\\pi\\times "+p.AR+"\\times "+p.eOsw+"} = "+n(R.CDi,5),"Induced drag")}
+  ${eq("C_{D,total} = "+n(R.CD0tot,5)+"+"+n(R.CDi,5)+" = "+n(R.CDtot,5)+", \\quad (L/D)_{act} = "+n(R.LDact,2),"Total drag and actual L/D")}
+  `);
+
+  // ── D7. ROTOR & MOTOR SIZING ──────────────────────────────────────────
+  const sd7 = sec("rotcalc","D7. Rotor & Motor Sizing — Actuator Disk Theory",`
+  ${eq("T_{total} = \\text{MTOW}\\times g_0 = "+n(R.MTOW,2)+"\\times 9.81 = "+n(Ttotd,1)+"\\text{ N}","Total hover thrust")}
+  ${eq("T_{rotor} = T_{total}/N_{rot} = "+n(Trotord,1)+"\\text{ N}, \\quad P_{rotor} = P_{hov}\\times 1000/N_{rot} = "+n(PrWd,1)+"\\text{ W}","Thrust and power per rotor")}
+  ${eq("A_{disk} = \\frac{T_{rotor}^3}{2\\,\\rho_{SL}\\,(P_{rotor}\\,\\eta_{hov})^2} = \\frac{"+n(Trotord,1)+"^3}{2\\times 1.225\\times("+n(PrWd,1)+"\\times "+p.etaHov+")^2} = "+n(Adiskd,4)+"\\text{ m}^2","Disk area from actuator disk theory")}
+  ${eq("D_{rot} = 2\\sqrt{A_{disk}/\\pi} = 2\\sqrt{"+n(Adiskd,4)+"/\\pi} = "+n(R.Drotor,3)+"\\text{ m}","Rotor diameter")}
+  ${eq("DL = T_{rotor}/A_{disk} = "+n(R.DLrotor,1)+"\\text{ N/m}^2, \\quad PL = T_{rotor}/(P_{rotor}/1000) = "+n(R.PLrotor,1)+"\\text{ N/W}","Disk loading and power loading")}
+  ${eq("V_{tip} = \\sqrt{2P_{rotor}\\,\\eta_{hov}/(\\rho_{SL}\\,A_{disk})} = "+n(TipSpdd,2)+"\\text{ m/s}, \\quad M_{tip} = "+n(R.TipMach,4)+"\\;(<0.70\\;\\checkmark)","Tip speed and tip Mach number")}
+  ${eq("N = \\frac{V_{tip}}{R_{rot}}\\times\\frac{60}{2\\pi} = \\frac{"+n(TipSpdd,2)+"}{"+n(Rrotord,4)+"}\\times\\frac{60}{2\\pi} = "+n(R.RPM,0)+"\\text{ rpm}","Rotational speed")}
+  ${eq("c_{blade} = \\sigma\\pi R_{rot}/N_{bl} = 0.10\\times\\pi\\times "+n(Rrotord,4)+"/3 = "+n(R.ChordBl,4)+"\\text{ m}\\;(\\sigma=0.10,\\;N_{bl}=3)","Blade chord")}
+  ${eq("P_{motor,cont} = 1.15\\times P_{rotor} = "+n(PmotKWd,2)+"\\text{ kW}, \\quad P_{peak} = 1.50\\times P_{motor} = "+n(PpeakKWd,2)+"\\text{ kW}","Motor ratings with margins")}
+  ${eq("Q = P_{motor}\\times 1000/\\Omega = "+n(Torqued,1)+"\\text{ N·m}","Motor shaft torque")}
+  `);
+
+  // ── D8. BATTERY PACK ARCHITECTURE ────────────────────────────────────
+  const sd8 = sec("battcalc","D8. Battery Pack Architecture & Sizing",`
+  <p>Cell specs: NMC Li-ion, V<sub>cell</sub> = 3.6 V, Q<sub>cell</sub> = 5.0 Ah. Bus voltage = 800 V DC.</p>
+  ${eq("W_{bat} = \\frac{E_{total}\\times 1000\\,(1+\\text{SoC}_{min})}{\\text{SED}_{cell}\\,\\eta_{bat}} = \\frac{"+n(R.Etot,3)+"\\times 1000\\times(1+"+p.socMin+")}{"+p.sedCell+"\\times "+p.etaBat+"} = "+n(R.Wbat,2)+"\\text{ kg}","Battery mass")}
+  ${eq("\\text{SED}_{pack} = E_{total}\\times 1000/W_{bat} = "+n(R.SEDpack,1)+"\\text{ Wh/kg}","Pack energy density")}
+  ${eq("N_s = \\text{round}(800/3.6) = "+Nseriesd+", \\quad Q_{req} = E_{total}\\times 1000/800 = "+n(PackAhReqd,2)+"\\text{ Ah}","Series cells and required capacity")}
+  ${eq("N_p = \\lceil "+n(PackAhReqd,2)+"/5.0 \\rceil = "+Npard+", \\quad N_{cells} = "+Nseriesd+"\\times "+Npard+" = "+Nseriesd*Npard,"Parallel strings and total cells")}
+  ${eq("E_{pack} = V_{pack}\\times Q_{pack}/1000 = "+n(PackVd,0)+"\\times "+n(PackAhd,1)+"/1000 = "+n(R.PackkWh,3)+"\\text{ kWh} \\geq "+n(R.Etot,3)+"\\text{ kWh}\\;\\checkmark","Pack energy must exceed mission energy")}
+  ${eq("C_{hov} = \\frac{P_{hov}\\times 1000/V_{pack}}{Q_{pack}} = \\frac{"+n(R.Phov*1000/PackVd,1)+"}{"+n(PackAhd,1)+"} = "+n(R.CrateHov,3)+"\\text{ C}, \\quad C_{cr} = "+n(R.CrateCr,3)+"\\text{ C}","Hover and cruise C-rates")}
+  ${eq("R_{int} = 0.030\\times N_s/N_p = "+n(Rintd,4)+"\\,\\Omega, \\quad P_{heat} = I_{hov}^2\\times R_{int} = "+n(Pheatd,1)+"\\text{ W}","Pack resistance and ohmic heating at hover")}
+  `);
+
+  // ── D9. CG BREAKDOWN & STABILITY ─────────────────────────────────────
+  const sd9 = sec("stabcalc","D9. Centre of Gravity, Neutral Point & Static Margin — Detailed",`
+  <p>All positions from nose. Component CGs are fractions of L<sub>fus</sub> = ${p.fusLen} m.</p>
+  ${table(["Component","Mass (kg)","x<sub>CG</sub> (m)","Moment (kg·m)"],[
+    `<tr><td>Fuselage struct. (35% W<sub>e</sub>)</td><td>${n(Wfuscd,2)}</td><td>${n(xCGfusd,3)}  = 0.42 × L<sub>fus</sub></td><td>${n(Wfuscd*xCGfusd,2)}</td></tr>`,
+    `<tr><td>Wing + attach. (18% W<sub>e</sub>)</td><td>${n(Wwingcd,2)}</td><td>${n(xCGwingd,3)}</td><td>${n(Wwingcd*xCGwingd,2)}</td></tr>`,
+    `<tr><td>Motors (22% W<sub>e</sub>)</td><td>${n(Wmotcd,2)}</td><td>${n(xCGfusd,3)}</td><td>${n(Wmotcd*xCGfusd,2)}</td></tr>`,
+    `<tr><td>Avionics (4% W<sub>e</sub>)</td><td>${n(Wavcd,2)}</td><td>0.800</td><td>${n(Wavcd*0.8,2)}</td></tr>`,
+    `<tr><td>Other (21% W<sub>e</sub>)</td><td>${n(Wothcd,2)}</td><td>${n(xCGfusd,3)}</td><td>${n(Wothcd*xCGfusd,2)}</td></tr>`,
+    `<tr style="font-weight:700"><td>Empty W<sub>e</sub></td><td>${n(R.Wempty,2)}</td><td>${n(xCGemptyd,3)}</td><td>${n(R.Wempty*xCGemptyd,2)}</td></tr>`,
+    `<tr><td>Battery</td><td>${n(R.Wbat,2)}</td><td>${n(xCGbatd,3)}  = 0.38 × L<sub>fus</sub></td><td>${n(R.Wbat*xCGbatd,2)}</td></tr>`,
+    `<tr><td>Payload</td><td>${p.payload}</td><td>${n(xCGpayd,3)}  = 0.40 × L<sub>fus</sub></td><td>${n(p.payload*xCGpayd,2)}</td></tr>`,
+    `<tr style="font-weight:700;background:#dbeafe"><td>Total (MTOW)</td><td>${n(R.MTOW,2)}</td><td><b>${n(R.xCGtotal,3)}</b></td><td>${n(R.MTOW*R.xCGtotal,2)}</td></tr>`,
+  ])}
+  ${eq("x_{CG} = \\frac{W_e\\,x_{CG,e}+W_{bat}\\,x_{CG,bat}+m_{pay}\\,x_{CG,pay}}{\\text{MTOW}} = \\frac{"+n(R.Wempty*xCGemptyd,1)+"+"+n(R.Wbat*xCGbatd,1)+"+"+n(p.payload*xCGpayd,1)+"}{"+n(R.MTOW,2)+"} = "+n(R.xCGtotal,3)+"\\text{ m}","Total CG from nose")}
+  ${eq("x_{AC,wing} = L_{fus}\\times 0.2589+X_{ac} = "+n(p.fusLen*0.2589,3)+"+"+n(Xacd,3)+" = "+n(xACwingd,3)+"\\text{ m}","Wing aerodynamic centre")}
+  ${eq("C_{L_\\alpha,w} = 2\\pi(1+0.77\\times "+p.tc+") = "+n(CLaWd,4)+"\\text{ rad}^{-1}, \\quad \\frac{d\\varepsilon}{d\\alpha} = \\frac{2C_{L_\\alpha,w}}{\\pi AR} = "+n(dwd,4),"Lift-curve slope and downwash gradient")}
+  ${eq("l_h = L_{fus}-x_{AC,wing} = "+p.fusLen+"-"+n(xACwingd,3)+" = "+n(lhd,3)+"\\text{ m}","Tail moment arm")}
+  ${eq("x_{NP} = x_{AC,wing}+\\frac{S_h}{S_w}\\eta_h(1-\\frac{d\\varepsilon}{d\\alpha})l_h = "+n(xACwingd,3)+"+\\frac{"+n(Shd,3)+"}{"+n(R.Swing,2)+"}\\times 0.9\\times(1-"+n(dwd,4)+")\\times "+n(lhd,3)+" = "+n(R.xNP,3)+"\\text{ m}","Neutral point")}
+  ${eq("SM = \\frac{x_{NP}-x_{CG}}{\\bar{c}} = \\frac{"+n(R.xNP,3)+"-"+n(R.xCGtotal,3)+"}{"+n(R.MAC,3)+"} = "+n(R.SM*100,2)+"\\%\\;\\text{MAC}","Static margin (target 5–25% MAC)")}
+  `);
+
   // ── FULL HTML PAGE ───────────────────────────────────────────────────
   return `<!DOCTYPE html>
 <html lang="en">
@@ -827,7 +1053,7 @@ function generateReport(p, R) {
 </head>
 <body>
 ${cover}
-${s1}${s2}${s3}${s4}${s5}${s6}${s7}${s8}${s9}${s10}
+${s1}${s2}${sd1}${sd2}${s3}${sd3}${sd4}${s4}${sd5}${s5}${sd6}${s6}${sd7}${s7}${sd8}${s8}${sd9}${s9}${s10}
 <section style="background:#0f172a;color:#94a3b8;text-align:center;padding:24px;font-size:8pt">
   Generated by eVTOL Sizer v2.0 — Wright State University — ${now}<br>
   All calculations based on Raymer (Aircraft Design: A Conceptual Approach) and MATLAB eVTOL_Full_Analysis_v2.m
