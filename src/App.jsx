@@ -149,36 +149,34 @@ function runSizing(p) {
 
   // ── Correct V-tail aerodynamics (Ruscheweyh / Raymer §6.3) ──────────────
   // A V-tail panel inclined at dihedral Γ generates a force NORMAL to its surface.
-  // When resolved into pitch (vertical) and yaw (lateral) moments:
-  //   Pitch contribution: F_pitch = L·cosΓ, moment arm projects as lh·cosΓ → ∝ cos²(Γ)
-  //   Yaw  contribution: F_yaw  = L·sinΓ, moment arm projects as lv·sinΓ → ∝ sin²(Γ)
+  // With TWO panels (left + right), combined pitch and yaw stiffness:
+  //   Pitch: 2 × S_panel × cos²Γ × lv = Sh_req × lv  → S_panel = Sh_req / (2·cos²Γ)
+  //   Yaw:   2 × S_panel × sin²Γ × lv = Sv_req × lv  → S_panel = Sv_req / (2·sin²Γ)
   //
-  // So the correct effectiveness equations are:
-  //   Sh_eff = S_panel × cos²(Γ)   (NOT cosΓ)
-  //   Sv_eff = S_panel × sin²(Γ)   (NOT sinΓ)
+  // Panel sizing: size to the harder constraint at the chosen Γ:
+  //   S_panel = max(Sh_req/(2cos²Γ), Sv_req/(2sin²Γ))
+  //   Svt_total = 2 × S_panel = max(Sh_req/cos²Γ, Sv_req/sin²Γ)
   //
-  // Panel sizing: must satisfy BOTH constraints simultaneously:
-  //   S_panel ≥ Sh_req / cos²(Γ)   [pitch governs]
-  //   S_panel ≥ Sv_req / sin²(Γ)   [yaw governs]
-  //   → S_panel = max of the two (size to the harder constraint at chosen Γ)
+  // Sh_eff (total pitch-effective area from both panels) = 2 × S_panel × cos²Γ
+  // Sv_eff (total yaw-effective  area from both panels) = 2 × S_panel × sin²Γ
   //
-  // Minimum-area optimal angle: set Sh_req/cos²Γ = Sv_req/sin²Γ
-  //   → tan²(Γ) = Sv_req/Sh_req  → Γ_opt = arctan(√(Sv_req/Sh_req))  (NOT arctan(Sv/Sh))
+  // Minimum-area optimal angle: Sh_req/(2cos²Γ) = Sv_req/(2sin²Γ)
+  //   → tan²Γ = Sv_req/Sh_req  → Γ_opt = arctan(√(Sv_req/Sh_req))
   // ─────────────────────────────────────────────────────────────────────
   const cos2=Math.cos(vtGamma)**2, sin2=Math.sin(vtGamma)**2;
 
   // Optimal dihedral — minimises total panel area
   const vtGamma_opt_deg=Math.atan(Math.sqrt(Sv_req/Sh_req))*180/Math.PI;
 
-  // Required panel area at the chosen Γ (size to harder constraint)
-  const Svt_panel_pitch=Sh_req/cos2;   // area needed to satisfy pitch at this Γ
-  const Svt_panel_yaw  =Sv_req/sin2;   // area needed to satisfy yaw   at this Γ
+  // Required panel area at the chosen Γ — divide by 2 (both panels share the load)
+  const Svt_panel_pitch=Sh_req/(2*cos2);   // one panel needed to satisfy pitch
+  const Svt_panel_yaw  =Sv_req/(2*sin2);   // one panel needed to satisfy yaw
   const Svt_panel=Math.max(Svt_panel_pitch, Svt_panel_yaw); // governing constraint
-  const Svt_total=2*Svt_panel;          // both panels combined
+  const Svt_total=2*Svt_panel;             // both panels combined
 
-  // Actual effectiveness delivered (always 100% for governing constraint by construction)
-  const Sh_eff=Svt_panel*cos2;   // pitch moment arm equivalent area
-  const Sv_eff=Svt_panel*sin2;   // yaw  moment arm equivalent area
+  // Actual combined effectiveness from both panels
+  const Sh_eff=2*Svt_panel*cos2;   // total pitch-effective area (= Sh_req for governing constraint)
+  const Sv_eff=2*Svt_panel*sin2;   // total yaw-effective  area
 
   // Ratios vs required (governing = 100%, other may be >100%)
   const pitch_ratio=Sh_eff/Sh_req;
