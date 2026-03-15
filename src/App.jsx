@@ -1,7 +1,7 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
+import { AuthModal, AuthGate, UserHeaderBar, getSession, saveSession, clearSession, addNotif } from "./AuthSystem";
 import {
   AreaChart, Area, LineChart, Line, BarChart, Bar, RadarChart, Radar,
-  ComposedChart,
   PolarGrid, PolarAngleAxis, XAxis, YAxis, CartesianGrid, Tooltip,
   Legend, ResponsiveContainer, ReferenceLine, Cell, PieChart, Pie
 } from "recharts";
@@ -25,37 +25,29 @@ function runSizing(p) {
   const ClimbR=(p.cruiseAlt-hvtol)/Math.tan(clAng*Math.PI/180);
   const DescR=(p.cruiseAlt-hvtol)/Math.tan(desAng*Math.PI/180);
 
-  /* Convergence tolerance — user-controlled exponent, e.g. tolExp=-6 → tol=1e-6 */
-  const tol = Math.pow(10, p.convTolExp || -6);
-
   /* Round 1 */
-  let MTOW1=2177,Wempty1,Wbat1,itersR1=0;
+  let MTOW1=2177,Wempty1,Wbat1;
   for(let i=0;i<5000;i++){
-    itersR1=i+1;
     Wempty1=p.ewf*MTOW1;
     const bf=(g0*p.range*1000)/(p.LD*p.etaSys*p.sedCell*3600);
     Wbat1=bf*MTOW1;
     const mn=p.payload+Wempty1+Wbat1;
-    if(Math.abs(mn-MTOW1)<tol){MTOW1=mn;break;}
+    if(Math.abs(mn-MTOW1)<1e-6){MTOW1=mn;break;}
     MTOW1=mn;
     if(MTOW1>5700)break;
   }
 
   const CruiseRange=p.range*1000-ClimbR-DescR-p.reserveRange*1000;
 
-  /* Round 2 — coupled MTOW+Energy  (T/W ratio applied to hover thrust) */
-  const TW = p.twRatio||1.0;  // installed T/W target (e.g. 1.2 = 20% thrust margin)
+  /* Round 2 — coupled MTOW+Energy */
   let MTOW=MTOW1;
   let Phov,Pcl,Pcr,Pdc,Pres,tto,tcl,tcr,tdc,tld,tres;
   let Eto,Ecl,Ecr,Edc,Eld,Eres,Etot,Wempty,Wbat;
-  const mtowH=[MTOW1],energyH=[],residualH=[];
-  let itersR2=0, r2Converged=false;
-  for(let o=0;o<200;o++){
-    itersR2=o+1;
+  const mtowH=[MTOW1],energyH=[];
+  for(let o=0;o<50;o++){
     const W=MTOW*g0;
-    // Installed hover thrust = TW × weight → higher disk loading → higher power
-    const DL=(W*TW)/(Math.PI*Math.pow(p.propDiam/2,2)*p.nPropHover);
-    Phov=(W*TW/p.etaHov)*Math.sqrt(DL/(2*rhoMSL))/1000;  // scales as TW^1.5
+    const DL=W/(Math.PI*Math.pow(p.propDiam/2,2)*p.nPropHover);
+    Phov=(W/p.etaHov)*Math.sqrt(DL/(2*rhoMSL))/1000;
     Pcl=(W/p.etaSys)*(RoC+Vcl/LDcl)/1000;
     Pcr=(W/p.etaSys)*(p.vCruise/p.LD)/1000;
     Pdc=(W/p.etaSys)*(-RoC+Vdc/LDcl)/1000;
@@ -69,10 +61,8 @@ function runSizing(p) {
     // Original MATLAB formula: W_battery = E_total*1000*(1+SoCmin)/(SED_cell*eta_bat)
     Wbat=Etot*1000*(1+p.socMin)/(p.sedCell*p.etaBat);
     const mn=p.payload+Wempty+Wbat;
-    const residual=Math.abs(mn-MTOW);
     energyH.push(+Etot.toFixed(3)); mtowH.push(+mn.toFixed(2));
-    residualH.push(residual);  // raw, no rounding — needed for tight-tol log plot
-    if(residual<tol){MTOW=mn;r2Converged=true;break;}
+    if(Math.abs(mn-MTOW)<1e-6){MTOW=mn;break;}
     MTOW=mn;
   }
   const Mach=p.vCruise/aCr;
@@ -159,34 +149,36 @@ function runSizing(p) {
 
   // ── Correct V-tail aerodynamics (Ruscheweyh / Raymer §6.3) ──────────────
   // A V-tail panel inclined at dihedral Γ generates a force NORMAL to its surface.
-  // With TWO panels (left + right), combined pitch and yaw stiffness:
-  //   Pitch: 2 × S_panel × cos²Γ × lv = Sh_req × lv  → S_panel = Sh_req / (2·cos²Γ)
-  //   Yaw:   2 × S_panel × sin²Γ × lv = Sv_req × lv  → S_panel = Sv_req / (2·sin²Γ)
+  // When resolved into pitch (vertical) and yaw (lateral) moments:
+  //   Pitch contribution: F_pitch = L·cosΓ, moment arm projects as lh·cosΓ → ∝ cos²(Γ)
+  //   Yaw  contribution: F_yaw  = L·sinΓ, moment arm projects as lv·sinΓ → ∝ sin²(Γ)
   //
-  // Panel sizing: size to the harder constraint at the chosen Γ:
-  //   S_panel = max(Sh_req/(2cos²Γ), Sv_req/(2sin²Γ))
-  //   Svt_total = 2 × S_panel = max(Sh_req/cos²Γ, Sv_req/sin²Γ)
+  // So the correct effectiveness equations are:
+  //   Sh_eff = S_panel × cos²(Γ)   (NOT cosΓ)
+  //   Sv_eff = S_panel × sin²(Γ)   (NOT sinΓ)
   //
-  // Sh_eff (total pitch-effective area from both panels) = 2 × S_panel × cos²Γ
-  // Sv_eff (total yaw-effective  area from both panels) = 2 × S_panel × sin²Γ
+  // Panel sizing: must satisfy BOTH constraints simultaneously:
+  //   S_panel ≥ Sh_req / cos²(Γ)   [pitch governs]
+  //   S_panel ≥ Sv_req / sin²(Γ)   [yaw governs]
+  //   → S_panel = max of the two (size to the harder constraint at chosen Γ)
   //
-  // Minimum-area optimal angle: Sh_req/(2cos²Γ) = Sv_req/(2sin²Γ)
-  //   → tan²Γ = Sv_req/Sh_req  → Γ_opt = arctan(√(Sv_req/Sh_req))
+  // Minimum-area optimal angle: set Sh_req/cos²Γ = Sv_req/sin²Γ
+  //   → tan²(Γ) = Sv_req/Sh_req  → Γ_opt = arctan(√(Sv_req/Sh_req))  (NOT arctan(Sv/Sh))
   // ─────────────────────────────────────────────────────────────────────
   const cos2=Math.cos(vtGamma)**2, sin2=Math.sin(vtGamma)**2;
 
   // Optimal dihedral — minimises total panel area
   const vtGamma_opt_deg=Math.atan(Math.sqrt(Sv_req/Sh_req))*180/Math.PI;
 
-  // Required panel area at the chosen Γ — divide by 2 (both panels share the load)
-  const Svt_panel_pitch=Sh_req/(2*cos2);   // one panel needed to satisfy pitch
-  const Svt_panel_yaw  =Sv_req/(2*sin2);   // one panel needed to satisfy yaw
+  // Required panel area at the chosen Γ (size to harder constraint)
+  const Svt_panel_pitch=Sh_req/cos2;   // area needed to satisfy pitch at this Γ
+  const Svt_panel_yaw  =Sv_req/sin2;   // area needed to satisfy yaw   at this Γ
   const Svt_panel=Math.max(Svt_panel_pitch, Svt_panel_yaw); // governing constraint
-  const Svt_total=2*Svt_panel;             // both panels combined
+  const Svt_total=2*Svt_panel;          // both panels combined
 
-  // Actual combined effectiveness from both panels
-  const Sh_eff=2*Svt_panel*cos2;   // total pitch-effective area (= Sh_req for governing constraint)
-  const Sv_eff=2*Svt_panel*sin2;   // total yaw-effective  area
+  // Actual effectiveness delivered (always 100% for governing constraint by construction)
+  const Sh_eff=Svt_panel*cos2;   // pitch moment arm equivalent area
+  const Sv_eff=Svt_panel*sin2;   // yaw  moment arm equivalent area
 
   // Ratios vs required (governing = 100%, other may be >100%)
   const pitch_ratio=Sh_eff/Sh_req;
@@ -239,9 +231,7 @@ function runSizing(p) {
   const delta_yaw_rv_deg=(CY_beta*beta_trim*Swing)/(2*Sv_eff/lv)*180/Math.PI*(-1);
 
   /* Propulsion */
-  const Ttot=MTOW*g0*TW,Trotor=Ttot/p.nPropHover,Protor_W=Phov*1000/p.nPropHover;
-  const TW_hover=TW;
-  const TW_cruise=(Pcr*p.etaSys*1000)/(p.vCruise*MTOW*g0);  // ≈ 1/(L/D)
+  const Ttot=MTOW*g0,Trotor=Ttot/p.nPropHover,Protor_W=Phov*1000/p.nPropHover;
   const Adisk=Trotor**3/(2*rhoMSL*(Protor_W*p.etaHov)**2);
   const Rrotor=Math.sqrt(Adisk/Math.PI),Drotor=2*Rrotor;
   const DLrotor=Trotor/Adisk,PLrotor=Trotor/(Protor_W/1000);
@@ -290,7 +280,7 @@ function runSizing(p) {
   const Tend=tPhases[6],phPow=[Phov,Pcl,Pcr,Math.abs(Pdc),Phov,Pres];
   const phV=[0.5,Vcl,p.vCruise,Vdc,0.5,Vres];
   const Ecum_ph=[0,Eto,Eto+Ecl,Eto+Ecl+Ecr,Eto+Ecl+Ecr+Edc,Eto+Ecl+Ecr+Edc+Eld,Etot];
-  const N=200,powerSteps=[],socSteps=[],velSteps=[],energySteps=[];
+  const N=200,powerSteps=[],socSteps=[],velSteps=[];
   for(let i=0;i<=N;i++){
     const t=Tend*i/N;
     let ph=5; for(let j=0;j<6;j++)if(t>=tPhases[j]&&t<tPhases[j+1]){ph=j;break;}
@@ -300,69 +290,10 @@ function runSizing(p) {
     powerSteps.push({t:+t.toFixed(0),P:+phPow[ph].toFixed(1),ph:["TO","Climb","Cruise","Desc","Land","Res"][ph]});
     socSteps.push({t:+t.toFixed(0),SoC:+soc.toFixed(2)});
     velSteps.push({t:+t.toFixed(0),V:+phV[ph].toFixed(1)});
-    energySteps.push({t:+t.toFixed(0),E:+Ec.toFixed(3),P:+phPow[ph].toFixed(1),ph:["TO","Climb","Cruise","Desc","Land","Res"][ph]});
   }
 
-  /* Convergence chart data — includes per-iteration residual for log plot */
-  const convData=mtowH.map((m,i)=>({
-    iter:i,
-    MTOW:+m.toFixed(1),
-    Energy:energyH[i]||null,
-    residual: residualH[i]!=null ? residualH[i] : null,
-    logResidual: (residualH[i]!=null && residualH[i]>0) ? +Math.log10(residualH[i]).toFixed(4) : null,
-  }));
-
-  /* Tolerance sweep — how many R1 and R2 iterations does each tol need? */
-  const tolSweepData=[-1,-2,-3,-4,-5,-6,-7,-8,-9,-10].map(exp=>{
-    const t=Math.pow(10,exp);
-    // R1 iters
-    let m1=2177,n1=0;
-    for(let i=0;i<5000;i++){
-      n1=i+1;
-      const bf=(g0*p.range*1000)/(p.LD*p.etaSys*p.sedCell*3600);
-      const mn=p.payload+p.ewf*m1+bf*m1;
-      if(Math.abs(mn-m1)<t){m1=mn;break;}
-      m1=mn; if(m1>5700)break;
-    }
-    // R2 iters
-    let m2=m1,n2=0;
-    for(let o=0;o<200;o++){
-      n2=o+1;
-      const W2=m2*g0;
-      const DL2=(W2*TW)/(Math.PI*Math.pow(p.propDiam/2,2)*p.nPropHover);
-      const Ph2=(W2*TW/p.etaHov)*Math.sqrt(DL2/(2*rhoMSL))/1000;
-      const Pc2=(W2/p.etaSys)*(RoC+Vcl/LDcl)/1000;
-      const Pcr2=(W2/p.etaSys)*(p.vCruise/p.LD)/1000;
-      const Pd2=(W2/p.etaSys)*(-RoC+Vdc/LDcl)/1000;
-      const Pr2=(W2/p.etaSys)*(Vres/p.LD)/1000;
-      const Et2=Ph2*tto/3600+Pc2*tcl/3600+Pcr2*tcr/3600+Math.abs(Pd2)*tdc/3600+Ph2*tld/3600+Pr2*tres/3600;
-      const Wb2=Et2*1000*(1+p.socMin)/(p.sedCell*p.etaBat);
-      const mn=p.payload+p.ewf*m2+Wb2;
-      if(Math.abs(mn-m2)<t){m2=mn;break;}
-      m2=mn;
-    }
-    return{exp,tol:`1e${exp}`,tolVal:t,R1iters:n1,R2iters:n2,totalIters:n1+n2,R2MTOW:+m2.toFixed(2)};
-  });
-
-  /* T/W trade sweep — R1 is flat (energy-only, no hover power), R2 scales as TW^1.5 */
-  const twSweepData=[1.0,1.05,1.1,1.15,1.2,1.25,1.3,1.4,1.5].map(tw=>{
-    let m=MTOW1;
-    for(let i=0;i<60;i++){
-      const W=m*g0;
-      const DLtw=(W*tw)/(Math.PI*Math.pow(p.propDiam/2,2)*p.nPropHover);
-      const Phov_tw=(W*tw/p.etaHov)*Math.sqrt(DLtw/(2*rhoMSL))/1000;
-      const Pcl_tw=(W/p.etaSys)*(RoC+Vcl/LDcl)/1000;
-      const Pcr_tw=(W/p.etaSys)*(p.vCruise/p.LD)/1000;
-      const Pdc_tw=(W/p.etaSys)*(-RoC+Vdc/LDcl)/1000;
-      const Pres_tw=(W/p.etaSys)*(Vres/p.LD)/1000;
-      const Etot_tw=Phov_tw*tto/3600+Pcl_tw*tcl/3600+Pcr_tw*tcr/3600+Math.abs(Pdc_tw)*tdc/3600+Phov_tw*tld/3600+Pres_tw*tres/3600;
-      const Wbat_tw=Etot_tw*1000*(1+p.socMin)/(p.sedCell*p.etaBat);
-      const mn=p.payload+p.ewf*m+Wbat_tw;
-      if(Math.abs(mn-m)<1e-4){m=mn;break;}
-      m=mn;
-    }
-    return{tw:+tw.toFixed(2),R1:+MTOW1.toFixed(1),R2:+m.toFixed(1)};
-  });
+  /* Convergence chart data */
+  const convData=mtowH.map((m,i)=>({iter:i,MTOW:+m.toFixed(1),Energy:energyH[i]||null}));
 
   /* Weight breakdown (Roskam) */
   const ewFracs=[0.18,0.28,0.05,0.04,0.04,0.22,0.04,0.02,0.08,0.05];
@@ -390,7 +321,6 @@ function runSizing(p) {
     {label:"Mach < 0.45",ok:Mach<0.45,val:`M${Mach.toFixed(3)}`},
     {label:"Tail/Wing area 25–50%",ok:(Svt_total/Swing)>=0.20&&(Svt_total/Swing)<=0.55,val:`${(Svt_total/Swing*100).toFixed(1)}%`},
     {label:"Fus/Span 0.50–0.72",ok:(fL/bWing)>=0.50&&(fL/bWing)<=0.72,val:`${(fL/bWing).toFixed(3)}`},
-    {label:`Hover T/W ≥ ${TW.toFixed(2)}`,ok:TW>=1.0,val:`${TW.toFixed(2)} (Phov = ${Phov.toFixed(1)} kW)`},
   ];
 
   return {
@@ -410,10 +340,8 @@ function runSizing(p) {
     SEDpack:+SEDpack.toFixed(1),Nseries,Npar,Ncells,PackV:+PackV.toFixed(0),PackAh:+PackAh.toFixed(1),
     PackkWh:+PackkWh.toFixed(3),CrateHov:+CrateHov.toFixed(2),CrateCr:+CrateCr.toFixed(2),Pheat:+Pheat.toFixed(1),
     Vstall:+Vstall.toFixed(2),VA:+VA.toFixed(2),VD:+VD.toFixed(2),
-    vnData,rpData,polarData,powerSteps,socSteps,velSteps,energySteps,convData,twSweepData,tolSweepData,weightBreak,dragComp,tPhases,
+    vnData,rpData,polarData,powerSteps,socSteps,velSteps,convData,weightBreak,dragComp,tPhases,
     checks,feasible:checks.every(c=>c.ok),
-    TW_hover:+TW_hover.toFixed(3),TW_cruise:+TW_cruise.toFixed(3),
-    itersR1,itersR2,tol,r2Converged,
     vtGamma_opt:+vtGamma_opt_deg.toFixed(1),Svt_total:+Svt_total.toFixed(3),Svt_panel:+Svt_panel.toFixed(3),governs_pitch:Svt_panel_pitch>=Svt_panel_yaw,ruddervator_combined_auth:+ruddervator_combined_auth.toFixed(3),delta_yaw_rv_deg:+delta_yaw_rv_deg.toFixed(2),
     Sh_req:+Sh_req.toFixed(3),Sv_req:+Sv_req.toFixed(3),Sh_eff:+Sh_eff.toFixed(3),Sv_eff:+Sv_eff.toFixed(3),
     pitch_ratio:+pitch_ratio.toFixed(3),yaw_ratio:+yaw_ratio.toFixed(3),
@@ -616,7 +544,6 @@ function generateReport(p, R) {
     <table class="cover-meta">
       <tr><td>Institution</td><td>Wright State University</td></tr>
       <tr><td>Advisor</td><td>Dr. Darryl K. Ahner</td></tr>
-      <tr><td>Graduate Student</td><td>Vinay Kumar Reddy Sirigireddy</td></tr>
       <tr><td>Framework</td><td>MATLAB-MBSE Integrated Sizing Framework</td></tr>
       <tr><td>Algorithm</td><td>eVTOL_Full_Analysis_v2.m — JavaScript Port</td></tr>
       <tr><td>Report Generated</td><td>${now}</td></tr>
@@ -830,231 +757,6 @@ function generateReport(p, R) {
   </tbody></table>
   `);
 
-  // ══════════════════════════════════════════════════════════════════════
-  //  DETAILED CALCULATION SECTIONS  (D1–D9)
-  // ══════════════════════════════════════════════════════════════════════
-
-  // ── Intermediate values recomputed for display ─────────────────────
-  const g0d=9.81,T0d=288.15,L_d=0.0065,Rgasd=287,rhoSLd=1.225;
-  const Tcrd=T0d-L_d*p.cruiseAlt;
-  const rhoCrd=rhoSLd*Math.pow(Tcrd/T0d,(-g0d/(-L_d*Rgasd))-1);
-  const muSLd=1.789e-5;
-  const muCrd=muSLd*Math.pow(Tcrd/T0d,0.75);
-  const RoCd=p.rateOfClimb, clAngd=p.climbAngle;
-  const Vcld=RoCd/Math.sin(clAngd*Math.PI/180);
-  const LDcld=p.LD*(1-0.13);
-  const desAngd=Math.atan(1/p.LD)*180/Math.PI;
-  const Vdcd=RoCd/Math.sin(desAngd*Math.PI/180);
-  const Vresd=0.7*p.vCruise;
-  const hvtold=p.hoverHeight;
-  const ClimbRd=(p.cruiseAlt-hvtold)/Math.tan(clAngd*Math.PI/180);
-  const DescRd=(p.cruiseAlt-hvtold)/Math.tan(desAngd*Math.PI/180);
-  const CruiseRanged=p.range*1000-ClimbRd-DescRd-p.reserveRange*1000;
-  const bfd=(g0d*p.range*1000)/(p.LD*p.etaSys*p.sedCell*3600);
-  const lambdaFd=p.fusLen/p.fusDiam;
-  const Swwd=2*R.Swing*(1+0.25*p.tc*(1+p.taper*0.25));
-  const SwfWetd=Math.PI*p.fusDiam*p.fusLen*Math.pow(1-2/lambdaFd,2/3)*(1+1/lambdaFd**2);
-  const Swhs_d=2*R.Swing*0.18, Swvs_d=2*R.Swing*0.12;
-  const Swn_d=p.nPropHover*Math.PI*0.2*0.35;
-  const Refusd=rhoCrd*p.vCruise*p.fusLen/muCrd;
-  const Cfwd=0.455/Math.log10(R.Re_)**2.58/(1+0.144*R.Mach**2)**0.65;
-  const Cffd=0.455/Math.log10(Refusd)**2.58/(1+0.144*R.Mach**2)**0.65;
-  const FFwd=(1+0.6/0.3*p.tc+100*p.tc**4)*1.05;
-  const FFfd=1+60/lambdaFd**3+lambdaFd/400;
-  const Ttotd=R.MTOW*g0d, Trotord=Ttotd/p.nPropHover;
-  const PrWd=R.Phov*1000/p.nPropHover;
-  const Adiskd=Trotord**3/(2*rhoSLd*(PrWd*p.etaHov)**2);
-  const Rrotord=Math.sqrt(Adiskd/Math.PI);
-  const TipSpdd=Math.sqrt(2*PrWd*p.etaHov/(rhoSLd*Adiskd));
-  const PmotKWd=PrWd/1000*1.15, PpeakKWd=PmotKWd*1.50;
-  const Torqued=PmotKWd*1000/(R.RPM*Math.PI/30);
-  const Vcelld=3.6,Ahcelld=5.0,Vpackd=800;
-  const Nseriesd=Math.round(Vpackd/Vcelld);
-  const PackAhReqd=R.Etot*1000/Vpackd;
-  const Npard=Math.ceil(PackAhReqd/Ahcelld);
-  const PackVd=Nseriesd*Vcelld, PackAhd=Npard*Ahcelld;
-  const Rintd=0.030*Nseriesd/Npard;
-  const Pheatd=(R.Phov*1000/PackVd)**2*Rintd;
-  const xCGfusd=p.fusLen*0.42;
-  const Xacd=R.Cr_-(R.MAC-0.25*R.MAC);
-  const xCGwingd=p.fusLen*0.2589+Xacd;
-  const xCGbatd=p.fusLen*0.38, xCGpayd=p.fusLen*0.40;
-  const Wfuscd=R.Wempty*0.35,Wwingcd=R.Wempty*0.18;
-  const Wmotcd=R.Wempty*0.22,Wavcd=R.Wempty*0.04,Wothcd=R.Wempty*0.21;
-  const xCGemptyd=(Wfuscd*xCGfusd+Wwingcd*xCGwingd+Wmotcd*xCGfusd+Wavcd*0.8+Wothcd*xCGfusd)/R.Wempty;
-  const xACwingd=p.fusLen*0.2589+Xacd;
-  const lhd=p.fusLen-xACwingd;
-  const CLaWd=2*Math.PI*(1+0.77*p.tc);
-  const dwd=2*CLaWd/(Math.PI*p.AR);
-  const Shd=R.Swing*0.18;
-  const DLd=R.MTOW*g0d/(Math.PI*Math.pow(p.propDiam/2,2)*p.nPropHover);
-
-  // ── D1. ROUND 1 — INITIAL MTOW ──────────────────────────────────────
-  const sd1 = sec("iter1","D1. Round 1 — Initial MTOW Estimate (Simplified Range-Energy Method)",`
-  <p>Round 1 computes a first-pass MTOW using a simplified battery mass fraction derived purely from range. Starting guess MTOW<sub>0</sub> = 2177 kg, iterated to convergence (&lt; 10<sup>−6</sup> kg).</p>
-  ${eq("f_{bat} = \\frac{g_0 \\cdot R}{(L/D)\\,\\eta_{sys}\\,\\text{SED}_{cell}\\times 3600} = \\frac{9.81 \\times "+p.range+" \\times 1000}{"+p.LD+" \\times "+p.etaSys+" \\times "+p.sedCell+" \\times 3600} = "+n(bfd,5),"Simplified battery mass fraction (range-energy method)")}
-  ${eq("W_{empty} = f_{EW} \\cdot \\text{MTOW} = "+p.ewf+" \\cdot \\text{MTOW}","Empty weight from structural mass fraction EWF = "+p.ewf)}
-  ${eq("W_{bat,1} = f_{bat} \\cdot \\text{MTOW} = "+n(bfd,5)+" \\cdot \\text{MTOW}","Battery mass (Round 1 approximation)")}
-  ${eq("\\text{MTOW}_{1} = \\frac{m_{pay}}{1 - f_{EW} - f_{bat}} = \\frac{"+p.payload+"}{1 - "+p.ewf+" - "+n(bfd,5)+"} = "+n(R.MTOW1,2)+"\\text{ kg}","Analytical solution of weight closure")}
-  ${table(["Quantity","Formula / Value","Result","Unit"],[
-    row("Battery fraction","g₀·R / [(L/D)·η_sys·SED·3600]",n(bfd,5),""),
-    row("Empty weight (R1)","f_EW × MTOW₁",n(p.ewf*R.MTOW1,1),"kg"),
-    row("Battery mass (R1)","f_bat × MTOW₁",n(bfd*R.MTOW1,1),"kg"),
-    row("Payload","given",p.payload,"kg"),
-    row("MTOW Round 1","m_pay + W_e + W_bat",n(R.MTOW1,2),"kg"),
-  ])}
-  `);
-
-  // ── D2. ROUND 2 — COUPLED MTOW + ENERGY CONVERGENCE ─────────────────
-  const sd2 = sec("iter2","D2. Round 2 — Coupled MTOW + Energy Convergence",`
-  <p>Round 2 couples weight closure to full mission energy. For each MTOW trial, all phase powers, times, and energies are computed; W<sub>bat</sub> is re-derived from E<sub>total</sub>; MTOW is updated until |MTOW<sub>new</sub> − MTOW<sub>old</sub>| &lt; 10<sup>−6</sup> kg. Starts from MTOW<sub>1</sub> = ${n(R.MTOW1,2)} kg.</p>
-  <p><strong>Phase geometry (fixed, computed once):</strong></p>
-  ${eq("V_{cl} = \\frac{\\dot{h}}{\\sin\\gamma_{cl}} = \\frac{"+RoCd+"}{\\sin("+clAngd+"^\\circ)} = "+n(Vcld,2)+"\\text{ m/s}","Climb speed from RoC and climb angle")}
-  ${eq("(L/D)_{cl} = (L/D)_{cr}\\times 0.87 = "+p.LD+"\\times 0.87 = "+n(LDcld,3),"Climb L/D — 13% reduction for induced drag increase")}
-  ${eq("\\gamma_{dc} = \\arctan\\!\\left(\\frac{1}{(L/D)}\\right) = "+n(desAngd,3)+"^\\circ, \\quad V_{dc} = \\frac{\\dot{h}}{\\sin\\gamma_{dc}} = "+n(Vdcd,2)+"\\text{ m/s}","Descent angle and speed")}
-  ${eq("V_{res} = 0.7\\,V_{cr} = 0.7\\times "+p.vCruise+" = "+n(Vresd,2)+"\\text{ m/s}","Reserve loiter speed")}
-  ${eq("d_{cl} = \\frac{h_{cr}-h_{hov}}{\\tan\\gamma_{cl}} = "+n(ClimbRd,1)+"\\text{ m}, \\quad d_{dc} = \\frac{h_{cr}-h_{hov}}{\\tan\\gamma_{dc}} = "+n(DescRd,1)+"\\text{ m}","Climb and descent ground tracks")}
-  ${eq("d_{cr} = R - d_{cl} - d_{dc} - R_{res} = "+p.range*1000+" - "+n(ClimbRd,1)+" - "+n(DescRd,1)+" - "+p.reserveRange*1000+" = "+n(CruiseRanged,1)+"\\text{ m}","Net cruise distance")}
-  <p><strong>Final converged iteration (MTOW = ${n(R.MTOW,2)} kg):</strong></p>
-  ${eq("DL = \\frac{\\text{MTOW}\\cdot g_0}{N_{rot}\\cdot A_{disk}} = \\frac{"+n(R.MTOW,2)+"\\times 9.81}{"+p.nPropHover+"\\times\\pi("+n(p.propDiam/2,3)+")^2} = "+n(DLd,2)+"\\text{ N/m}^2","Disk loading")}
-  ${eq("P_{hov} = \\frac{W}{\\eta_{hov}}\\sqrt{\\frac{DL}{2\\rho_{SL}}} \\div 1000 = \\frac{"+n(R.MTOW*g0d,1)+"}{"+p.etaHov+"}\\sqrt{\\frac{"+n(DLd,2)+"}{2.45}} \\div 1000 = "+n(R.Phov,2)+"\\text{ kW}","Hover power")}
-  ${eq("P_{cl} = \\frac{W}{\\eta_{sys}}\\!\\left(\\dot{h}+\\frac{V_{cl}}{(L/D)_{cl}}\\right)\\!\\div 1000 = \\frac{"+n(R.MTOW*g0d,1)+"}{"+p.etaSys+"}\\!\\left("+RoCd+"+\\frac{"+n(Vcld,2)+"}{"+n(LDcld,3)+"}\\right)\\!\\div 1000 = "+n(R.Pcl,2)+"\\text{ kW}","Climb power")}
-  ${eq("P_{cr} = \\frac{W\\,V_{cr}}{\\eta_{sys}\\,(L/D)} = \\frac{"+n(R.MTOW*g0d,1)+"\\times "+p.vCruise+"}{"+p.etaSys+"\\times "+p.LD+"} \\div 1000 = "+n(R.Pcr,2)+"\\text{ kW}","Cruise power")}
-  ${eq("P_{dc} = \\frac{W}{\\eta_{sys}}\\!\\left(-\\dot{h}+\\frac{V_{dc}}{(L/D)_{cl}}\\right)\\!\\div 1000 = "+n(R.Pdc,2)+"\\text{ kW}","Descent power")}
-  ${eq("P_{res} = \\frac{W\\,V_{res}}{\\eta_{sys}\\,(L/D)} \\div 1000 = "+n(R.Pres,2)+"\\text{ kW}","Reserve power")}
-  ${eq("W_{bat} = \\frac{E_{total}\\times 1000\\,(1+\\text{SoC}_{min})}{\\text{SED}_{cell}\\,\\eta_{bat}} = \\frac{"+n(R.Etot,3)+"\\times 1000\\times(1+"+p.socMin+")}{"+p.sedCell+"\\times "+p.etaBat+"} = "+n(R.Wbat,2)+"\\text{ kg}","Battery mass from total energy")}
-  ${eq("\\text{MTOW} = "+p.payload+" + "+n(R.Wempty,2)+" + "+n(R.Wbat,2)+" = "+n(R.MTOW,2)+"\\text{ kg} \\quad \\checkmark\\text{ Converged}","Final weight closure")}
-  `);
-
-  // ── D3. MISSION PHASE TIMING ─────────────────────────────────────────
-  const sd3 = sec("timing","D3. Mission Phase Timing & Distance Analysis",`
-  ${eq("t_{TO} = \\frac{h_{hov}}{0.5} = \\frac{"+hvtold+"}{0.5} = "+n(R.tto,0)+"\\text{ s}","Takeoff hover time — average vertical speed = 0.5 m/s")}
-  ${eq("t_{cl} = \\frac{d_{cl}}{V_{cl}} = \\frac{"+n(ClimbRd,1)+"}{"+n(Vcld,2)+"} = "+n(R.tcl,0)+"\\text{ s}","Climb duration")}
-  ${eq("t_{cr} = \\frac{d_{cr}}{V_{cr}} = \\frac{"+n(CruiseRanged,1)+"}{"+p.vCruise+"} = "+n(R.tcr,0)+"\\text{ s}","Cruise duration")}
-  ${eq("t_{dc} = \\frac{d_{dc}}{V_{dc}} = \\frac{"+n(DescRd,1)+"}{"+n(Vdcd,2)+"} = "+n(R.tdc,0)+"\\text{ s}","Descent duration")}
-  ${eq("t_{ld} = \\frac{h_{hov}}{0.5} = "+n(R.tld,0)+"\\text{ s}","Landing hover time")}
-  ${eq("t_{res} = \\frac{R_{res}}{V_{res}} = \\frac{"+p.reserveRange*1000+"}{"+n(Vresd,2)+"} = "+n(R.tres,0)+"\\text{ s}","Reserve duration")}
-  ${eq("T_{mission} = "+n(R.tto,0)+"+"+n(R.tcl,0)+"+"+n(R.tcr,0)+"+"+n(R.tdc,0)+"+"+n(R.tld,0)+"+"+n(R.tres,0)+" = "+n(R.Tend,0)+"\\text{ s} = "+n(R.Tend/60,1)+"\\text{ min}","Total mission time")}
-  ${table(["Phase","Distance (m)","Speed (m/s)","Duration (s)","Duration (min)"],[
-    row("Takeoff (hover)","Vertical "+hvtold+" m","0.5",n(R.tto,0),n(R.tto/60,1)),
-    row("Climb",n(ClimbRd,1),n(Vcld,2),n(R.tcl,0),n(R.tcl/60,1)),
-    row("Cruise",n(CruiseRanged,1),p.vCruise,n(R.tcr,0),n(R.tcr/60,1)),
-    row("Descent",n(DescRd,1),n(Vdcd,2),n(R.tdc,0),n(R.tdc/60,1)),
-    row("Landing (hover)","Vertical "+hvtold+" m","0.5",n(R.tld,0),n(R.tld/60,1)),
-    row("Reserve",n(p.reserveRange*1000,0),n(Vresd,2),n(R.tres,0),n(R.tres/60,1)),
-    row("<b>Total</b>","<b>"+n(p.range*1000,0)+" m</b>","—","<b>"+n(R.Tend,0)+"</b>","<b>"+n(R.Tend/60,1)+"</b>"),
-  ])}
-  `);
-
-  // ── D4. PHASE POWER & ENERGY ─────────────────────────────────────────
-  const sd4 = sec("phasecalc","D4. Phase Power & Energy — Detailed Calculations",`
-  <p>Energy per phase: E<sub>phase</sub> = P<sub>phase</sub> × t<sub>phase</sub> / 3600. Cumulative column tracks battery draw throughout the mission.</p>
-  ${eq("E_{TO} = P_{hov}\\times\\frac{t_{TO}}{3600} = "+n(R.Phov,2)+"\\times\\frac{"+n(R.tto,0)+"}{3600} = "+n(R.Eto,4)+"\\text{ kWh}","Takeoff energy")}
-  ${eq("E_{cl} = P_{cl}\\times\\frac{t_{cl}}{3600} = "+n(R.Pcl,2)+"\\times\\frac{"+n(R.tcl,0)+"}{3600} = "+n(R.Ecl,4)+"\\text{ kWh}","Climb energy")}
-  ${eq("E_{cr} = P_{cr}\\times\\frac{t_{cr}}{3600} = "+n(R.Pcr,2)+"\\times\\frac{"+n(R.tcr,0)+"}{3600} = "+n(R.Ecr,4)+"\\text{ kWh}","Cruise energy")}
-  ${eq("E_{dc} = |P_{dc}|\\times\\frac{t_{dc}}{3600} = "+n(R.Pdc,2)+"\\times\\frac{"+n(R.tdc,0)+"}{3600} = "+n(R.Edc,4)+"\\text{ kWh}","Descent energy")}
-  ${eq("E_{ld} = P_{hov}\\times\\frac{t_{ld}}{3600} = "+n(R.Phov,2)+"\\times\\frac{"+n(R.tld,0)+"}{3600} = "+n(R.Eld,4)+"\\text{ kWh}","Landing energy")}
-  ${eq("E_{res} = P_{res}\\times\\frac{t_{res}}{3600} = "+n(R.Pres,2)+"\\times\\frac{"+n(R.tres,0)+"}{3600} = "+n(R.Eres,4)+"\\text{ kWh}","Reserve energy")}
-  ${eq("E_{total} = "+n(R.Eto,4)+"+"+n(R.Ecl,4)+"+"+n(R.Ecr,4)+"+"+n(R.Edc,4)+"+"+n(R.Eld,4)+"+"+n(R.Eres,4)+" = "+n(R.Etot,3)+"\\text{ kWh}","Total mission energy")}
-  ${table(["Phase","Power (kW)","Time (s)","Energy (kWh)","Cumulative (kWh)","% Total"],[
-    `<tr><td>Takeoff</td><td>${n(R.Phov,2)}</td><td>${n(R.tto,0)}</td><td>${n(R.Eto,4)}</td><td>${n(R.Eto,4)}</td><td>${n(R.Eto/R.Etot*100,1)}%</td></tr>`,
-    `<tr><td>Climb</td><td>${n(R.Pcl,2)}</td><td>${n(R.tcl,0)}</td><td>${n(R.Ecl,4)}</td><td>${n(R.Eto+R.Ecl,4)}</td><td>${n(R.Ecl/R.Etot*100,1)}%</td></tr>`,
-    `<tr><td>Cruise</td><td>${n(R.Pcr,2)}</td><td>${n(R.tcr,0)}</td><td>${n(R.Ecr,4)}</td><td>${n(R.Eto+R.Ecl+R.Ecr,4)}</td><td>${n(R.Ecr/R.Etot*100,1)}%</td></tr>`,
-    `<tr><td>Descent</td><td>${n(R.Pdc,2)}</td><td>${n(R.tdc,0)}</td><td>${n(R.Edc,4)}</td><td>${n(R.Eto+R.Ecl+R.Ecr+R.Edc,4)}</td><td>${n(R.Edc/R.Etot*100,1)}%</td></tr>`,
-    `<tr><td>Landing</td><td>${n(R.Phov,2)}</td><td>${n(R.tld,0)}</td><td>${n(R.Eld,4)}</td><td>${n(R.Eto+R.Ecl+R.Ecr+R.Edc+R.Eld,4)}</td><td>${n(R.Eld/R.Etot*100,1)}%</td></tr>`,
-    `<tr><td>Reserve</td><td>${n(R.Pres,2)}</td><td>${n(R.tres,0)}</td><td>${n(R.Eres,4)}</td><td>${n(R.Etot,3)}</td><td>${n(R.Eres/R.Etot*100,1)}%</td></tr>`,
-    `<tr style="font-weight:700"><td>Total</td><td>—</td><td>${n(R.Tend,0)}</td><td>${n(R.Etot,3)}</td><td>${n(R.Etot,3)}</td><td>100%</td></tr>`,
-  ])}
-  `);
-
-  // ── D5. WING SIZING DETAILED ──────────────────────────────────────────
-  const sd5 = sec("wingdetail","D5. Wing Sizing — Detailed Calculations",`
-  ${eq("S_w = \\frac{2\\,L_{req}}{\\rho_{cr}\\,V_{cr}^2\\,C_{L,des}} = \\frac{2\\times "+n(R.MTOW*g0d,1)+"}{"+n(rhoCrd,4)+"\\times "+p.vCruise+"^2\\times "+p.clDesign+"} = "+n(R.Swing,2)+"\\text{ m}^2","Wing area from lift balance at cruise")}
-  ${eq("W/S = "+n(R.WL,1)+"\\text{ N/m}^2","Wing loading")}
-  ${eq("b_w = \\sqrt{AR\\cdot S_w} = \\sqrt{"+p.AR+"\\times "+n(R.Swing,2)+"} = "+n(R.bWing,2)+"\\text{ m}","Wing span")}
-  ${eq("C_r = \\frac{2S_w}{b_w(1+\\lambda)} = \\frac{2\\times "+n(R.Swing,2)+"}{"+n(R.bWing,2)+"\\times(1+"+p.taper+")} = "+n(R.Cr_,3)+"\\text{ m}","Root chord")}
-  ${eq("C_t = \\lambda\\,C_r = "+p.taper+"\\times "+n(R.Cr_,3)+" = "+n(R.Ct_,3)+"\\text{ m}","Tip chord")}
-  ${eq("\\bar{c} = \\frac{2}{3}\\,C_r\\,\\frac{1+\\lambda+\\lambda^2}{1+\\lambda} = "+n(R.MAC,3)+"\\text{ m}","Mean aerodynamic chord")}
-  ${eq("\\bar{y}_{MAC} = \\frac{b_w}{6}\\,\\frac{1+2\\lambda}{1+\\lambda} = "+n(R.Ymac,3)+"\\text{ m}","Spanwise MAC position")}
-  ${eq("\\Lambda_{LE} = \\arctan\\!\\left(\\frac{C_r-C_t}{b_w/2}\\right) = \\arctan\\!\\left(\\frac{"+n(R.Cr_,3)+"-"+n(R.Ct_,3)+"}{"+n(R.bWing/2,3)+"}\\right) = "+n(R.sweep,2)+"^\\circ","Leading edge sweep")}
-  ${eq("Re_w = \\frac{\\rho_{cr}\\,V_{cr}\\,\\bar{c}}{\\mu_{cr}} = \\frac{"+n(rhoCrd,4)+"\\times "+p.vCruise+"\\times "+n(R.MAC,3)+"}{"+n(muCrd,7)+"} = "+n(R.Re_,0),"Wing chord Reynolds number")}
-  ${eq("M = \\frac{V_{cr}}{a_{cr}} = \\frac{"+p.vCruise+"}{"+n(Math.sqrt(1.4*287*Tcrd),2)+"} = "+n(R.Mach,4),"Cruise Mach number")}
-  ${eq("V_{stall} = \\sqrt{\\frac{2(W/S)}{\\rho_{cr}\\,C_{L,max}}} = \\sqrt{\\frac{2\\times "+n(R.WL,1)+"}{"+n(rhoCrd,4)+"\\times "+(R.selAF&&R.selAF.CLmax?n(R.selAF.CLmax,2):"1.60")+"}} = "+n(R.Vstall,2)+"\\text{ m/s}","Stall speed")}
-  `);
-
-  // ── D6. FUSELAGE SIZING & DRAG BUILDUP ───────────────────────────────
-  const sd6 = sec("dragbuildup","D6. Fuselage Sizing & Drag Component Buildup (Raymer)",`
-  <p>Zero-lift drag uses Raymer component buildup: C<sub>D0,k</sub> = C<sub>f,k</sub> · FF<sub>k</sub> · S<sub>wet,k</sub> / S<sub>ref</sub>.</p>
-  ${eq("\\lambda_f = \\frac{L_{fus}}{D_{fus}} = \\frac{"+p.fusLen+"}{"+p.fusDiam+"} = "+n(lambdaFd,2),"Fuselage fineness ratio")}
-  ${eq("S_{wet,f} = \\pi D_f L_f\\left(1-\\frac{2}{\\lambda_f}\\right)^{2/3}\\!\\left(1+\\frac{1}{\\lambda_f^2}\\right) = "+n(SwfWetd,3)+"\\text{ m}^2","Fuselage wetted area (Raymer Eq. 12.31)")}
-  ${eq("S_{wet,w} = 2S_w\\left(1+0.25\\,\\frac{t}{c}(1+\\lambda\\cdot 0.25)\\right) = "+n(Swwd,3)+"\\text{ m}^2","Wing wetted area")}
-  ${eq("Re_{fus} = \\frac{\\rho_{cr}\\,V_{cr}\\,L_{fus}}{\\mu_{cr}} = \\frac{"+n(rhoCrd,4)+"\\times "+p.vCruise+"\\times "+p.fusLen+"}{"+n(muCrd,7)+"} = "+n(Refusd,0),"Fuselage Reynolds number")}
-  ${eq("C_{f,w} = \\frac{0.455}{(\\log_{10}"+n(R.Re_,0)+")^{2.58}(1+0.144\\times "+n(R.Mach,4)+"^2)^{0.65}} = "+n(Cfwd,6),"Wing skin friction coefficient")}
-  ${eq("C_{f,f} = \\frac{0.455}{(\\log_{10}"+n(Refusd,0)+")^{2.58}(1+0.144\\times "+n(R.Mach,4)+"^2)^{0.65}} = "+n(Cffd,6),"Fuselage skin friction coefficient")}
-  ${eq("FF_w = \\left(1+2\\times "+p.tc+"+100\\times "+n(p.tc**4,6)+"\\right)\\times 1.05 = "+n(FFwd,4),"Wing form factor")}
-  ${eq("FF_f = 1+\\frac{60}{"+n(lambdaFd,2)+"^3}+\\frac{"+n(lambdaFd,2)+"}{400} = "+n(FFfd,4),"Fuselage form factor")}
-  ${table(["Component","C<sub>f</sub>","FF","S<sub>wet</sub> (m²)","S<sub>wet</sub>/S<sub>w</sub>","C<sub>D0</sub>"],[
-    `<tr><td>Wing</td><td>${n(Cfwd,6)}</td><td>${n(FFwd,4)}</td><td>${n(Swwd,3)}</td><td>${n(Swwd/R.Swing,4)}</td><td>${n(R.dragComp&&R.dragComp.find(d=>d.name==="Wing")?R.dragComp.find(d=>d.name==="Wing").val:0,5)}</td></tr>`,
-    `<tr><td>Fuselage</td><td>${n(Cffd,6)}</td><td>${n(FFfd,4)}</td><td>${n(SwfWetd,3)}</td><td>${n(SwfWetd/R.Swing,4)}</td><td>${n(R.dragComp&&R.dragComp.find(d=>d.name==="Fuselage")?R.dragComp.find(d=>d.name==="Fuselage").val:0,5)}</td></tr>`,
-    `<tr><td>H-Stab equiv.</td><td>${n(Cfwd,6)}</td><td>1.05</td><td>${n(Swhs_d,3)}</td><td>${n(Swhs_d/R.Swing,4)}</td><td>${n(R.dragComp&&R.dragComp.find(d=>d.name==="H-Stab")?R.dragComp.find(d=>d.name==="H-Stab").val:0,5)}</td></tr>`,
-    `<tr><td>V-Stab equiv.</td><td>${n(Cfwd,6)}</td><td>1.05</td><td>${n(Swvs_d,3)}</td><td>${n(Swvs_d/R.Swing,4)}</td><td>${n(R.dragComp&&R.dragComp.find(d=>d.name==="V-Stab")?R.dragComp.find(d=>d.name==="V-Stab").val:0,5)}</td></tr>`,
-    `<tr><td>Nacelles (×${p.nPropHover})</td><td>${n(Cfwd,6)}</td><td>1.30</td><td>${n(Swn_d,3)}</td><td>${n(Swn_d/R.Swing,4)}</td><td>${n(R.dragComp&&R.dragComp.find(d=>d.name==="Nacelles")?R.dragComp.find(d=>d.name==="Nacelles").val:0,5)}</td></tr>`,
-    `<tr><td>Landing Gear</td><td colspan="4">Fixed interference estimate</td><td>0.01500</td></tr>`,
-    `<tr><td>Miscellaneous</td><td colspan="4">Gaps, protuberances</td><td>0.00200</td></tr>`,
-    `<tr style="font-weight:700"><td>Total C<sub>D0</sub></td><td colspan="4"></td><td>${n(R.CD0tot,5)}</td></tr>`,
-  ])}
-  ${eq("C_{D_i} = \\frac{C_{L,des}^2}{\\pi\\,AR\\,e} = \\frac{"+p.clDesign+"^2}{\\pi\\times "+p.AR+"\\times "+p.eOsw+"} = "+n(R.CDi,5),"Induced drag")}
-  ${eq("C_{D,total} = "+n(R.CD0tot,5)+"+"+n(R.CDi,5)+" = "+n(R.CDtot,5)+", \\quad (L/D)_{act} = "+n(R.LDact,2),"Total drag and actual L/D")}
-  `);
-
-  // ── D7. ROTOR & MOTOR SIZING ──────────────────────────────────────────
-  const sd7 = sec("rotcalc","D7. Rotor & Motor Sizing — Actuator Disk Theory",`
-  ${eq("T_{total} = \\text{MTOW}\\times g_0 = "+n(R.MTOW,2)+"\\times 9.81 = "+n(Ttotd,1)+"\\text{ N}","Total hover thrust")}
-  ${eq("T_{rotor} = T_{total}/N_{rot} = "+n(Trotord,1)+"\\text{ N}, \\quad P_{rotor} = P_{hov}\\times 1000/N_{rot} = "+n(PrWd,1)+"\\text{ W}","Thrust and power per rotor")}
-  ${eq("A_{disk} = \\frac{T_{rotor}^3}{2\\,\\rho_{SL}\\,(P_{rotor}\\,\\eta_{hov})^2} = \\frac{"+n(Trotord,1)+"^3}{2\\times 1.225\\times("+n(PrWd,1)+"\\times "+p.etaHov+")^2} = "+n(Adiskd,4)+"\\text{ m}^2","Disk area from actuator disk theory")}
-  ${eq("D_{rot} = 2\\sqrt{A_{disk}/\\pi} = 2\\sqrt{"+n(Adiskd,4)+"/\\pi} = "+n(R.Drotor,3)+"\\text{ m}","Rotor diameter")}
-  ${eq("DL = T_{rotor}/A_{disk} = "+n(R.DLrotor,1)+"\\text{ N/m}^2, \\quad PL = T_{rotor}/(P_{rotor}/1000) = "+n(R.PLrotor,1)+"\\text{ N/W}","Disk loading and power loading")}
-  ${eq("V_{tip} = \\sqrt{2P_{rotor}\\,\\eta_{hov}/(\\rho_{SL}\\,A_{disk})} = "+n(TipSpdd,2)+"\\text{ m/s}, \\quad M_{tip} = "+n(R.TipMach,4)+"\\;(<0.70\\;\\checkmark)","Tip speed and tip Mach number")}
-  ${eq("N = \\frac{V_{tip}}{R_{rot}}\\times\\frac{60}{2\\pi} = \\frac{"+n(TipSpdd,2)+"}{"+n(Rrotord,4)+"}\\times\\frac{60}{2\\pi} = "+n(R.RPM,0)+"\\text{ rpm}","Rotational speed")}
-  ${eq("c_{blade} = \\sigma\\pi R_{rot}/N_{bl} = 0.10\\times\\pi\\times "+n(Rrotord,4)+"/3 = "+n(R.ChordBl,4)+"\\text{ m}\\;(\\sigma=0.10,\\;N_{bl}=3)","Blade chord")}
-  ${eq("P_{motor,cont} = 1.15\\times P_{rotor} = "+n(PmotKWd,2)+"\\text{ kW}, \\quad P_{peak} = 1.50\\times P_{motor} = "+n(PpeakKWd,2)+"\\text{ kW}","Motor ratings with margins")}
-  ${eq("Q = P_{motor}\\times 1000/\\Omega = "+n(Torqued,1)+"\\text{ N·m}","Motor shaft torque")}
-  `);
-
-  // ── D8. BATTERY PACK ARCHITECTURE ────────────────────────────────────
-  const sd8 = sec("battcalc","D8. Battery Pack Architecture & Sizing",`
-  <p>Cell specs: NMC Li-ion, V<sub>cell</sub> = 3.6 V, Q<sub>cell</sub> = 5.0 Ah. Bus voltage = 800 V DC.</p>
-  ${eq("W_{bat} = \\frac{E_{total}\\times 1000\\,(1+\\text{SoC}_{min})}{\\text{SED}_{cell}\\,\\eta_{bat}} = \\frac{"+n(R.Etot,3)+"\\times 1000\\times(1+"+p.socMin+")}{"+p.sedCell+"\\times "+p.etaBat+"} = "+n(R.Wbat,2)+"\\text{ kg}","Battery mass")}
-  ${eq("\\text{SED}_{pack} = E_{total}\\times 1000/W_{bat} = "+n(R.SEDpack,1)+"\\text{ Wh/kg}","Pack energy density")}
-  ${eq("N_s = \\text{round}(800/3.6) = "+Nseriesd+", \\quad Q_{req} = E_{total}\\times 1000/800 = "+n(PackAhReqd,2)+"\\text{ Ah}","Series cells and required capacity")}
-  ${eq("N_p = \\lceil "+n(PackAhReqd,2)+"/5.0 \\rceil = "+Npard+", \\quad N_{cells} = "+Nseriesd+"\\times "+Npard+" = "+Nseriesd*Npard,"Parallel strings and total cells")}
-  ${eq("E_{pack} = V_{pack}\\times Q_{pack}/1000 = "+n(PackVd,0)+"\\times "+n(PackAhd,1)+"/1000 = "+n(R.PackkWh,3)+"\\text{ kWh} \\geq "+n(R.Etot,3)+"\\text{ kWh}\\;\\checkmark","Pack energy must exceed mission energy")}
-  ${eq("C_{hov} = \\frac{P_{hov}\\times 1000/V_{pack}}{Q_{pack}} = \\frac{"+n(R.Phov*1000/PackVd,1)+"}{"+n(PackAhd,1)+"} = "+n(R.CrateHov,3)+"\\text{ C}, \\quad C_{cr} = "+n(R.CrateCr,3)+"\\text{ C}","Hover and cruise C-rates")}
-  ${eq("R_{int} = 0.030\\times N_s/N_p = "+n(Rintd,4)+"\\,\\Omega, \\quad P_{heat} = I_{hov}^2\\times R_{int} = "+n(Pheatd,1)+"\\text{ W}","Pack resistance and ohmic heating at hover")}
-  `);
-
-  // ── D9. CG BREAKDOWN & STABILITY ─────────────────────────────────────
-  const sd9 = sec("stabcalc","D9. Centre of Gravity, Neutral Point & Static Margin — Detailed",`
-  <p>All positions from nose. Component CGs are fractions of L<sub>fus</sub> = ${p.fusLen} m.</p>
-  ${table(["Component","Mass (kg)","x<sub>CG</sub> (m)","Moment (kg·m)"],[
-    `<tr><td>Fuselage struct. (35% W<sub>e</sub>)</td><td>${n(Wfuscd,2)}</td><td>${n(xCGfusd,3)}  = 0.42 × L<sub>fus</sub></td><td>${n(Wfuscd*xCGfusd,2)}</td></tr>`,
-    `<tr><td>Wing + attach. (18% W<sub>e</sub>)</td><td>${n(Wwingcd,2)}</td><td>${n(xCGwingd,3)}</td><td>${n(Wwingcd*xCGwingd,2)}</td></tr>`,
-    `<tr><td>Motors (22% W<sub>e</sub>)</td><td>${n(Wmotcd,2)}</td><td>${n(xCGfusd,3)}</td><td>${n(Wmotcd*xCGfusd,2)}</td></tr>`,
-    `<tr><td>Avionics (4% W<sub>e</sub>)</td><td>${n(Wavcd,2)}</td><td>0.800</td><td>${n(Wavcd*0.8,2)}</td></tr>`,
-    `<tr><td>Other (21% W<sub>e</sub>)</td><td>${n(Wothcd,2)}</td><td>${n(xCGfusd,3)}</td><td>${n(Wothcd*xCGfusd,2)}</td></tr>`,
-    `<tr style="font-weight:700"><td>Empty W<sub>e</sub></td><td>${n(R.Wempty,2)}</td><td>${n(xCGemptyd,3)}</td><td>${n(R.Wempty*xCGemptyd,2)}</td></tr>`,
-    `<tr><td>Battery</td><td>${n(R.Wbat,2)}</td><td>${n(xCGbatd,3)}  = 0.38 × L<sub>fus</sub></td><td>${n(R.Wbat*xCGbatd,2)}</td></tr>`,
-    `<tr><td>Payload</td><td>${p.payload}</td><td>${n(xCGpayd,3)}  = 0.40 × L<sub>fus</sub></td><td>${n(p.payload*xCGpayd,2)}</td></tr>`,
-    `<tr style="font-weight:700;background:#dbeafe"><td>Total (MTOW)</td><td>${n(R.MTOW,2)}</td><td><b>${n(R.xCGtotal,3)}</b></td><td>${n(R.MTOW*R.xCGtotal,2)}</td></tr>`,
-  ])}
-  ${eq("x_{CG} = \\frac{W_e\\,x_{CG,e}+W_{bat}\\,x_{CG,bat}+m_{pay}\\,x_{CG,pay}}{\\text{MTOW}} = \\frac{"+n(R.Wempty*xCGemptyd,1)+"+"+n(R.Wbat*xCGbatd,1)+"+"+n(p.payload*xCGpayd,1)+"}{"+n(R.MTOW,2)+"} = "+n(R.xCGtotal,3)+"\\text{ m}","Total CG from nose")}
-  ${eq("x_{AC,wing} = L_{fus}\\times 0.2589+X_{ac} = "+n(p.fusLen*0.2589,3)+"+"+n(Xacd,3)+" = "+n(xACwingd,3)+"\\text{ m}","Wing aerodynamic centre")}
-  ${eq("C_{L_\\alpha,w} = 2\\pi(1+0.77\\times "+p.tc+") = "+n(CLaWd,4)+"\\text{ rad}^{-1}, \\quad \\frac{d\\varepsilon}{d\\alpha} = \\frac{2C_{L_\\alpha,w}}{\\pi AR} = "+n(dwd,4),"Lift-curve slope and downwash gradient")}
-  ${eq("l_h = L_{fus}-x_{AC,wing} = "+p.fusLen+"-"+n(xACwingd,3)+" = "+n(lhd,3)+"\\text{ m}","Tail moment arm")}
-  ${eq("x_{NP} = x_{AC,wing}+\\frac{S_h}{S_w}\\eta_h(1-\\frac{d\\varepsilon}{d\\alpha})l_h = "+n(xACwingd,3)+"+\\frac{"+n(Shd,3)+"}{"+n(R.Swing,2)+"}\\times 0.9\\times(1-"+n(dwd,4)+")\\times "+n(lhd,3)+" = "+n(R.xNP,3)+"\\text{ m}","Neutral point")}
-  ${eq("SM = \\frac{x_{NP}-x_{CG}}{\\bar{c}} = \\frac{"+n(R.xNP,3)+"-"+n(R.xCGtotal,3)+"}{"+n(R.MAC,3)+"} = "+n(R.SM*100,2)+"\\%\\;\\text{MAC}","Static margin (target 5–25% MAC)")}
-  `);
-
   // ── FULL HTML PAGE ───────────────────────────────────────────────────
   return `<!DOCTYPE html>
 <html lang="en">
@@ -1124,7 +826,7 @@ function generateReport(p, R) {
 </head>
 <body>
 ${cover}
-${s1}${s2}${sd1}${sd2}${s3}${sd3}${sd4}${s4}${sd5}${s5}${sd6}${s6}${sd7}${s7}${sd8}${s8}${sd9}${s9}${s10}
+${s1}${s2}${s3}${s4}${s5}${s6}${s7}${s8}${s9}${s10}
 <section style="background:#0f172a;color:#94a3b8;text-align:center;padding:24px;font-size:8pt">
   Generated by eVTOL Sizer v2.0 — Wright State University — ${now}<br>
   All calculations based on Raymer (Aircraft Design: A Conceptual Approach) and MATLAB eVTOL_Full_Analysis_v2.m
@@ -1228,6 +930,19 @@ const TTP={contentStyle:{background:"#131c2e",border:"1px solid #2a3a5c",borderR
    ═══════════════════════════════════ */
 export default function App(){
   const[tab,setTab]=useState(0);
+  const[user,setUser]=useState(()=>getSession());
+  const[showAuthModal,setShowAuthModal]=useState(false);
+
+  const handleAuth=(session)=>{
+    saveSession(session);
+    setUser(session);
+    setShowAuthModal(false);
+  };
+  const handleSignOut=()=>{
+    clearSession();
+    setUser(null);
+  };
+
   const[p,setP]=useState({
     // ── Mission ──────────────────────────────────────────────────────────
     payload:455,range:250,vCruise:67,cruiseAlt:1000,reserveRange:60,hoverHeight:15.24,
@@ -1235,8 +950,6 @@ export default function App(){
     LD:14,AR:9,eOsw:0.85,clDesign:0.55,taper:0.45,tc:0.15,
     // ── Propulsion ───────────────────────────────────────────────────────
     nPropHover:6,propDiam:3.0,
-    twRatio:1.2,              // installed T/W hover target (1.2 = 20% thrust margin above hover weight)
-    convTolExp:-6,            // convergence tolerance exponent: tol = 10^convTolExp
     etaHov:0.70,          // FOM 0.70 — achievable with optimised eVTOL hover rotor (was 0.63)
     etaSys:0.80,          // drivetrain η — modern PMSM motors + inverter ~93%×93% (was 0.765)
     rateOfClimb:5.08,climbAngle:5,
@@ -1248,7 +961,7 @@ export default function App(){
     fusLen:7.2,fusDiam:1.65,
     // ── V-tail (NASA NDARC UAM values for FBW lift+cruise eVTOL) ──────────
     vtGamma:45,
-    vtCh:0.45,            // Ch=0.45 → SM_vt ≈ +6.6% MAC (stable, FBW eVTOL target 5–25%)
+    vtCh:0.28,            // Ch reduced from 0.40: FBW+DEP reduces required pitch authority
     vtCv:0.032,           // Cv reduced from 0.05: same rationale; gives tail/wing ~37%
     vtAR:2.5,
   });
@@ -1313,22 +1026,31 @@ export default function App(){
           </div>
         )}
         <button onClick={()=>setP({payload:455,range:250,vCruise:67,cruiseAlt:1000,reserveRange:60,hoverHeight:15.24,
-          LD:14,AR:9,eOsw:0.85,clDesign:0.55,taper:0.45,tc:0.15,nPropHover:6,propDiam:3.0,twRatio:1.2,convTolExp:-6,
+          LD:14,AR:9,eOsw:0.85,clDesign:0.55,taper:0.45,tc:0.15,nPropHover:6,propDiam:3.0,
           etaHov:0.70,etaSys:0.80,rateOfClimb:5.08,climbAngle:5,sedCell:300,etaBat:0.90,socMin:0.2,ewf:0.50,
           fusLen:7.2,fusDiam:1.65,
-          vtGamma:45,vtCh:0.45,vtCv:0.032,vtAR:2.5})}
-          style={{marginLeft:"auto",padding:"5px 12px",background:"transparent",border:`1px solid ${C.border}`,
+          vtGamma:45,vtCh:0.28,vtCv:0.032,vtAR:2.5})}
+          style={{padding:"5px 12px",background:"transparent",border:`1px solid ${C.border}`,
             borderRadius:4,color:C.muted,fontSize:9,cursor:"pointer",fontFamily:"'DM Mono',monospace"}}>↺ RESET</button>
-        {R&&<button onClick={()=>{
-            const html=generateReport(p,R);
-            const w=window.open("","_blank");
-            w.document.write(html);
-            w.document.close();
-          }}
-          style={{padding:"5px 14px",background:"linear-gradient(135deg,#1e3a5f,#1e40af)",
-            border:"1px solid #3b82f6",borderRadius:4,color:"#93c5fd",fontSize:9,cursor:"pointer",
-            fontFamily:"'DM Mono',monospace",fontWeight:700,letterSpacing:"0.05em",
-            boxShadow:"0 0 12px #3b82f620"}}>⬇ PDF REPORT</button>}
+        {R&&(
+          <AuthGate user={user} onAuth={handleAuth}>
+            <button onClick={()=>{
+                const html=generateReport(p,R);
+                const w=window.open("","_blank");
+                w.document.write(html);
+                w.document.close();
+                if(user) addNotif(user.id,{title:"PDF Report Generated",body:`Design report for MTOW=${R.MTOW} kg exported successfully.`,type:"success"});
+              }}
+              style={{padding:"5px 14px",background:"linear-gradient(135deg,#1e3a5f,#1e40af)",
+                border:"1px solid #3b82f6",borderRadius:4,color:"#93c5fd",fontSize:9,cursor:"pointer",
+                fontFamily:"'DM Mono',monospace",fontWeight:700,letterSpacing:"0.05em",
+                boxShadow:"0 0 12px #3b82f620",display:"flex",alignItems:"center",gap:5}}>
+              {!user&&<span title="Sign in required" style={{fontSize:10}}>🔒</span>}⬇ PDF REPORT
+            </button>
+          </AuthGate>
+        )}
+        <UserHeaderBar user={user} onSignOut={handleSignOut} onSignIn={()=>setShowAuthModal(true)}/>
+        {showAuthModal&&<AuthModal onClose={()=>setShowAuthModal(false)} onAuth={handleAuth}/>}
       </div>
 
       <div style={{display:"flex",flex:1,overflow:"hidden"}}>
@@ -1354,7 +1076,6 @@ export default function App(){
           <Acc title="Propulsion" icon="🔧">
             <Slider label="Hover Rotors n" unit="" value={p.nPropHover} min={2} max={10} step={2} onChange={set("nPropHover")}/>
             <Slider label="Rotor Diameter" unit="m" value={p.propDiam} min={1.0} max={5.0} step={0.1} onChange={set("propDiam")} note={R?`AD = ${R.Drotor} m`:""}/>
-            <Slider label="Installed T/W" unit="" value={p.twRatio} min={1.0} max={1.6} step={0.05} onChange={set("twRatio")} note="1.2 = 20% thrust margin above hover weight"/>
             <Slider label="Hover FOM η" unit="" value={p.etaHov} min={0.4} max={0.85} step={0.01} onChange={set("etaHov")} note="Optimised eVTOL rotor: 0.65–0.75"/>
             <Slider label="System η" unit="" value={p.etaSys} min={0.5} max={0.95} step={0.01} onChange={set("etaSys")} note="Motor+inverter chain: 0.78–0.85"/>
             <Slider label="Rate of Climb" unit="m/s" value={p.rateOfClimb} min={1} max={12} step={0.1} onChange={set("rateOfClimb")}/>
@@ -1423,7 +1144,7 @@ export default function App(){
                 <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
                   <KPI label="Wing Area" value={R.Swing} unit="m²" sub={`Span ${R.bWing} m`}/>
                   <KPI label="Hover Power" value={R.Phov} unit="kW" color={C.blue} sub={`Cruise ${R.Pcr} kW`}/>
-                  <KPI label="Installed T/W" value={p.twRatio.toFixed(2)} unit="" color={p.twRatio>=1.0&&p.twRatio<=1.4?C.green:C.amber} sub={`Hover: ${R.TW_hover.toFixed(2)} | Cruise: ${R.TW_cruise.toFixed(3)}`}/>
+                  <KPI label="Static Margin" value={(R.SM*100).toFixed(1)} unit="% MAC" color={R.SM>0.05&&R.SM<0.25?C.green:C.red}/>
                   <KPI label="Mach" value={R.Mach} unit="" color={R.Mach<0.35?C.green:C.amber} sub={`Re ${(R.Re_/1e6).toFixed(2)}×10⁶`}/>
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
@@ -1514,52 +1235,6 @@ export default function App(){
                       <Area type="stepAfter" dataKey="V" stroke={C.teal} strokeWidth={2} fill="url(#vg)" dot={false} name="Speed (m/s)"/>
                       <ReferenceLine y={p.vCruise} stroke={C.blue} strokeDasharray="4 3" label={{value:"Vcr",fill:C.blue,fontSize:11}}/>
                     </AreaChart>
-                  </ResponsiveContainer>
-                </Panel>
-
-                {/* ── Energy vs Mission Time ── */}
-                <Panel title="Energy vs Mission Time" h={270}>
-                  <ResponsiveContainer width="100%" height={220}>
-                    <AreaChart data={R.energySteps} margin={{top:5,right:10,left:-10,bottom:0}}>
-                      <defs><linearGradient id="eg" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor={C.green} stopOpacity={0.4}/><stop offset="95%" stopColor={C.green} stopOpacity={0.02}/>
-                      </linearGradient></defs>
-                      <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
-                      <XAxis dataKey="t" tick={{fontSize:11,fill:"#94a3b8"}} label={{value:"Time (s)",position:"insideBottom",fontSize:12,fill:"#94a3b8"}}/>
-                      <YAxis tick={{fontSize:11,fill:"#94a3b8"}} label={{value:"kWh",angle:-90,position:"insideLeft",fontSize:12,fill:"#94a3b8"}}/>
-                      <Tooltip {...TTP} formatter={(v)=>[`${v} kWh`,"Cumulative Energy"]}/>
-                      <ReferenceLine y={R.Etot} stroke={C.amber} strokeDasharray="4 3" strokeWidth={1.5}
-                        label={{value:`Total ${R.Etot} kWh`,position:"insideTopRight",fontSize:11,fill:C.amber}}/>
-                      <Area type="monotone" dataKey="E" stroke={C.green} strokeWidth={2} fill="url(#eg)" dot={false} name="Energy (kWh)"/>
-                      {R.tPhases.slice(1,-1).map((tp,i)=><ReferenceLine key={i} x={Math.round(tp)} stroke={PHC[i]} strokeDasharray="4 3" strokeWidth={1}/>)}
-                    </AreaChart>
-                  </ResponsiveContainer>
-                </Panel>
-
-                {/* ── Power & Energy vs Mission Time (dual-axis) ── */}
-                <Panel title="Power & Energy vs Mission Time" h={290}>
-                  <ResponsiveContainer width="100%" height={240}>
-                    <ComposedChart data={R.energySteps} margin={{top:5,right:50,left:-10,bottom:0}}>
-                      <defs><linearGradient id="pg2" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor={C.amber} stopOpacity={0.35}/><stop offset="95%" stopColor={C.amber} stopOpacity={0.02}/>
-                      </linearGradient></defs>
-                      <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
-                      <XAxis dataKey="t" tick={{fontSize:11,fill:"#94a3b8"}} label={{value:"Time (s)",position:"insideBottom",fontSize:12,fill:"#94a3b8"}}/>
-                      <YAxis yAxisId="pwr" orientation="left"
-                        tick={{fontSize:11,fill:C.amber}}
-                        label={{value:"Power (kW)",angle:-90,position:"insideLeft",fontSize:12,fill:C.amber}}/>
-                      <YAxis yAxisId="eng" orientation="right"
-                        tick={{fontSize:11,fill:C.green}}
-                        label={{value:"Energy (kWh)",angle:90,position:"insideRight",fontSize:12,fill:C.green}}/>
-                      <Tooltip {...TTP} formatter={(v,n)=>n==="Power (kW)"?[`${v} kW`,n]:[`${v} kWh`,n]}/>
-                      <Legend iconSize={9} wrapperStyle={{fontSize:12,color:"#94a3b8"}}/>
-                      {R.tPhases.slice(1,-1).map((tp,i)=>
-                        <ReferenceLine key={i} yAxisId="pwr" x={Math.round(tp)} stroke={PHC[i]} strokeDasharray="4 3" strokeWidth={1}/>)}
-                      <Area yAxisId="pwr" type="stepAfter" dataKey="P" stroke={C.amber} strokeWidth={2}
-                        fill="url(#pg2)" dot={false} name="Power (kW)"/>
-                      <Line yAxisId="eng" type="monotone" dataKey="E" stroke={C.green} strokeWidth={2}
-                        dot={false} name="Energy (kWh)"/>
-                    </ComposedChart>
                   </ResponsiveContainer>
                 </Panel>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
@@ -1764,25 +1439,15 @@ export default function App(){
             {tab===3&&(
               <div style={{display:"flex",flexDirection:"column",gap:12}}>
                 <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
-                  <KPI label="Installed T/W" value={p.twRatio.toFixed(2)} unit="" color={p.twRatio>=1.0&&p.twRatio<=1.4?C.green:C.amber} sub={`Thrust = ${(p.twRatio*R.MTOW*9.81/1000).toFixed(1)} kN`}/>
-                  <KPI label="Hover Power" value={R.Phov} unit="kW" color={C.blue} sub={`T/W scales Phov as ${p.twRatio}^1.5`}/>
-                  <KPI label="Disk Loading" value={R.DLrotor} unit="N/m²" sub={`×T/W = ${(R.DLrotor).toFixed(0)} N/m²`}/>
-                  <KPI label="Tip Mach" value={R.TipMach} unit="" color={R.TipMach<0.7?C.green:C.red} sub={`Tip spd ${R.TipSpd} m/s`}/>
-                </div>
-                <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
                   <KPI label="Rotor Diam (AD)" value={R.Drotor} unit="m" color={C.amber}/>
+                  <KPI label="Disk Loading" value={R.DLrotor} unit="N/m²"/>
+                  <KPI label="Tip Speed" value={R.TipSpd} unit="m/s" color={R.TipMach<0.7?C.green:C.red} sub={`Tip Mach ${R.TipMach}`}/>
                   <KPI label="RPM" value={R.RPM} unit="rpm"/>
-                  <KPI label="T/W Hover" value={R.TW_hover.toFixed(3)} unit="" color={C.green} sub="installed hover ratio"/>
-                  <KPI label="T/W Cruise" value={R.TW_cruise.toFixed(3)} unit="" color={C.teal} sub="≈ 1/(L/D)·η_sys"/>
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-                  <Panel title="Actuator Disk + Motor Sizing" h={420}>
-                    <div style={{overflowY:"auto",maxHeight:360}}>
-                    {[["Installed T/W",p.twRatio.toFixed(2)],["T/W hover (computed)",R.TW_hover.toFixed(3)],
-                      ["T/W cruise (computed)",R.TW_cruise.toFixed(3)],
-                      ["Total hover thrust",`${(p.twRatio*R.MTOW*9.81/1000).toFixed(2)} kN`],
-                      ["Thrust per rotor",`${(p.twRatio*R.MTOW*9.81/p.nPropHover).toFixed(1)} N`],
-                      ["No. rotors (hover)",p.nPropHover],["Design diameter",`${p.propDiam} m`],
+                  <Panel title="Actuator Disk + Motor Sizing" h={380}>
+                    <div style={{overflowY:"auto",maxHeight:320}}>
+                    {[["No. rotors (hover)",p.nPropHover],["Design diameter",`${p.propDiam} m`],
                       ["AD-derived diameter",`${R.Drotor} m`],["Disk loading",`${R.DLrotor} N/m²`],
                       ["Power loading",`${R.PLrotor} N/kW`],["Tip speed",`${R.TipSpd} m/s`],
                       ["Tip Mach",R.TipMach],["Operating RPM",`${R.RPM} rpm`],
@@ -1793,8 +1458,8 @@ export default function App(){
                       ["Total motor mass",`${(R.MotMass*p.nPropHover).toFixed(1)} kg`],
                     ].map(([k,v],i)=>(
                       <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 0",borderBottom:`1px solid #0f131a`}}>
-                        <span style={{fontSize:10,color:i<4?"#e2e8f0":"#94a3b8"}}>{k}</span>
-                        <span style={{fontSize:10,color:i<4?C.amber:C.amber,fontFamily:"'DM Mono',monospace",fontWeight:i<4?700:600}}>{v}</span>
+                        <span style={{fontSize:10,color:"#94a3b8"}}>{k}</span>
+                        <span style={{fontSize:10,color:C.amber,fontFamily:"'DM Mono',monospace",fontWeight:600}}>{v}</span>
                       </div>
                     ))}
                     </div>
@@ -2427,71 +2092,20 @@ export default function App(){
             {/* ──── TAB 8: CONVERGENCE ──── */}
             {tab===8&&(
               <div style={{display:"flex",flexDirection:"column",gap:12}}>
-                <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>
                   <KPI label="Round 1 MTOW" value={R.MTOW1} unit="kg" color={C.muted}/>
                   <KPI label="Converged MTOW" value={R.MTOW} unit="kg" color={C.green}/>
-                  <KPI label={`R2 Iters @ ε=10^${p.convTolExp}`} value={R.itersR2} unit="" color={R.r2Converged?C.green:C.red} sub={R.r2Converged?"✓ converged":"✗ hit 200-iter cap"}/>
-                  <KPI label="Installed T/W" value={p.twRatio.toFixed(2)} unit="" color={p.twRatio>=1.0&&p.twRatio<=1.4?C.green:C.amber} sub={`Phov = ${R.Phov} kW`}/>
+                  <KPI label="Iterations" value={R.convData.length} unit="" color={C.teal}/>
                 </div>
-
-                {/* Clarification notice */}
-                {!R.r2Converged&&(
-                  <div style={{background:`${C.red}18`,border:`1px solid ${C.red}55`,borderRadius:6,padding:"10px 14px",fontSize:11,color:C.red}}>
-                    ⚠ R2 loop hit the 200-iteration cap at ε = 10<sup>{p.convTolExp}</sup> without fully converging. The MTOW history chart shows all 200 iterations. The sweep table uses the same 200-iteration cap so counts will now match.
-                  </div>
-                )}
-
-                {/* T/W insight banner */}
-                <div style={{background:"linear-gradient(135deg,#0d1117,#0f172a)",border:`1px solid ${C.border}`,borderRadius:8,padding:"12px 16px",display:"flex",gap:16,flexWrap:"wrap",alignItems:"center"}}>
-                  <div>
-                    <div style={{fontSize:9,color:C.muted,fontFamily:"'DM Mono',monospace",letterSpacing:"0.12em",marginBottom:3}}>THRUST-TO-WEIGHT ANALYSIS</div>
-                    <div style={{fontSize:11,color:C.text,lineHeight:1.6}}>
-                      At T/W = <span style={{color:C.amber,fontWeight:700}}>{p.twRatio.toFixed(2)}</span>, installed hover thrust = <span style={{color:C.blue,fontWeight:700}}>{(p.twRatio*R.MTOW*9.81/1000).toFixed(1)} kN</span> → hover power = <span style={{color:C.blue,fontWeight:700}}>{R.Phov} kW</span>. 
-                      Round 1 (energy-only) gives <span style={{color:C.muted,fontWeight:700}}>{R.MTOW1} kg</span>. Dual-constraint converges to <span style={{color:C.green,fontWeight:700}}>{R.MTOW} kg</span> — a <span style={{color:C.amber,fontWeight:700}}>{((R.MTOW/R.MTOW1-1)*100).toFixed(1)}%</span> increase driven by peak hover power sizing.
-                    </div>
-                  </div>
-                </div>
-
-                {/* Tolerance control banner */}
-                <div style={{background:"linear-gradient(135deg,#0f172a,#0d1b2a)",border:`1px solid ${"#22d3ee"}44`,borderRadius:8,padding:"14px 18px"}}>
-                  <div style={{fontSize:9,color:C.muted,fontFamily:"'DM Mono',monospace",letterSpacing:"0.12em",marginBottom:8}}>CONVERGENCE TOLERANCE CONTROL</div>
-                  <div style={{display:"flex",alignItems:"center",gap:20,flexWrap:"wrap"}}>
-                    <div style={{flex:1,minWidth:220}}>
-                      <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
-                        <span style={{fontSize:11,color:C.text}}>Tolerance ε = 10<sup>{p.convTolExp}</sup> = <span style={{color:"#22d3ee",fontWeight:700,fontFamily:"'DM Mono',monospace"}}>{R.tol.toExponential(0)}</span></span>
-                        <span style={{fontSize:10,color:C.muted,fontFamily:"'DM Mono',monospace"}}>Range: 10⁻¹ → 10⁻¹⁰</span>
-                      </div>
-                      <input type="range" min={-10} max={-1} step={1} value={p.convTolExp}
-                        onChange={e=>set("convTolExp")(+e.target.value)}
-                        style={{width:"100%",accentColor:"#22d3ee",cursor:"pointer"}}/>
-                      <div style={{display:"flex",justifyContent:"space-between",fontSize:9,color:C.muted,marginTop:2}}>
-                        <span>10⁻¹⁰ (tightest)</span><span>10⁻¹ (loosest)</span>
-                      </div>
-                    </div>
-                    <div style={{display:"flex",gap:12}}>
-                      {[["R1 Iters",R.itersR1,"#22d3ee"],["R2 Iters",R.itersR2,R.r2Converged?C.amber:C.red],["Total",R.itersR1+R.itersR2,R.r2Converged?C.green:C.red]].map(([l,v,c])=>(
-                        <div key={l} style={{textAlign:"center",minWidth:60}}>
-                          <div style={{fontSize:22,fontWeight:800,color:c,fontFamily:"'DM Mono',monospace",lineHeight:1}}>{v}</div>
-                          <div style={{fontSize:9,color:C.muted,marginTop:2}}>{l}</div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                  <div style={{marginTop:10,fontSize:10,color:C.muted,borderTop:`1px solid ${C.border}`,paddingTop:8}}>
-                    ℹ The <span style={{color:C.amber}}>MTOW history chart below</span> shows the actual run at the current ε above. The <span style={{color:"#22d3ee"}}>sweep table</span> independently re-runs at all 10 tolerance levels — so the current-ε row in the sweep table should match the chart's iteration count.
-                  </div>
-                </div>
-
-                <Panel title={`MTOW Convergence History — Actual Run at ε = 10^${p.convTolExp} (${R.itersR2} R2 iters${R.r2Converged?"":", cap hit"})`} h={280}>
+                <Panel title="MTOW Convergence History (Outer Coupled Loop)" h={280}>
                   <ResponsiveContainer width="100%" height={230}>
                     <LineChart data={R.convData} margin={{top:5,right:20,left:-10,bottom:0}}>
                       <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
                       <XAxis dataKey="iter" tick={{fontSize:11,fill:"#94a3b8"}} label={{value:"Iteration",position:"insideBottom",fontSize:12,fill:"#94a3b8"}}/>
                       <YAxis tick={{fontSize:11,fill:"#94a3b8"}} label={{value:"MTOW (kg)",angle:-90,position:"insideLeft",fontSize:12,fill:"#94a3b8"}}/>
                       <Tooltip {...TTP}/>
-                      <ReferenceLine y={R.MTOW1} stroke={C.muted} strokeDasharray="4 3" label={{value:`R1: ${R.MTOW1} kg`,fill:C.muted,fontSize:10,position:"insideTopLeft"}}/>
                       <Line type="monotone" dataKey="MTOW" stroke={C.amber} strokeWidth={2} dot={{r:3,fill:C.amber}} name="MTOW (kg)"/>
-                      <ReferenceLine y={R.MTOW} stroke={C.green} strokeDasharray="4 3" label={{value:`Converged: ${R.MTOW} kg`,fill:C.green,fontSize:11}}/>
+                      <ReferenceLine y={R.MTOW} stroke={C.green} strokeDasharray="4 3" label={{value:"Converged",fill:C.green,fontSize:11}}/>
                     </LineChart>
                   </ResponsiveContainer>
                 </Panel>
@@ -2507,169 +2121,6 @@ export default function App(){
                     </LineChart>
                   </ResponsiveContainer>
                 </Panel>
-
-                {/* Residual convergence — log₁₀(|ΔW₀|) per iteration */}
-                <Panel title={`Residual Convergence — log₁₀(|ΔW₀|) per Iteration  [ε = ${R.tol.toExponential(0)} → log₁₀(ε) = ${p.convTolExp}]`} h={270}>
-                  <div style={{fontSize:10,color:C.muted,marginBottom:4,paddingLeft:4}}>
-                    Each bar shows log₁₀ of the MTOW change at that iteration. Convergence achieved when bar drops below the <span style={{color:"#22d3ee"}}>ε threshold line</span>. Tighter ε = more iterations but higher numerical precision.
-                  </div>
-                  <ResponsiveContainer width="100%" height={205}>
-                    <ComposedChart data={R.convData.filter(d=>d.logResidual!=null)} margin={{top:5,right:20,left:5,bottom:0}}>
-                      <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
-                      <XAxis dataKey="iter" tick={{fontSize:11,fill:"#94a3b8"}} label={{value:"Iteration",position:"insideBottom",fontSize:12,fill:"#94a3b8"}}/>
-                      <YAxis tick={{fontSize:11,fill:"#94a3b8"}} label={{value:"log₁₀(|ΔW₀| kg)",angle:-90,position:"insideLeft",fontSize:12,fill:"#94a3b8"}}/>
-                      <Tooltip {...TTP} formatter={(v,n)=>[`10^${v.toFixed(2)} kg`,n]}/>
-                      <ReferenceLine y={p.convTolExp} stroke="#22d3ee" strokeWidth={2} strokeDasharray="5 3"
-                        label={{value:`ε = 10^${p.convTolExp}`,fill:"#22d3ee",fontSize:10,position:"insideTopRight"}}/>
-                      <Bar dataKey="logResidual" fill={C.amber} fillOpacity={0.75} name="|ΔW₀| (log₁₀)" radius={[3,3,0,0]}/>
-                      <Line type="monotone" dataKey="logResidual" stroke={C.amber} strokeWidth={1.5} dot={false} name=" trend"/>
-                    </ComposedChart>
-                  </ResponsiveContainer>
-                </Panel>
-
-                {/* Tolerance sweep — iterations vs tol */}
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-                  <Panel title="Iterations to Converge vs Tolerance" h={290}>
-                    <div style={{fontSize:10,color:C.muted,marginBottom:4,paddingLeft:4}}>
-                      R1 (energy-only) converges very fast. R2 (dual-constraint) needs more iterations as ε tightens — the coupled weight-power-energy system requires finer agreement.
-                    </div>
-                    <ResponsiveContainer width="100%" height={220}>
-                      <ComposedChart data={R.tolSweepData} margin={{top:5,right:10,left:-5,bottom:20}}>
-                        <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
-                        <XAxis dataKey="tol" tick={{fontSize:10,fill:"#94a3b8"}}
-                          label={{value:"Tolerance ε",position:"insideBottom",offset:-6,fontSize:11,fill:"#94a3b8"}}/>
-                        <YAxis tick={{fontSize:11,fill:"#94a3b8"}} label={{value:"Iterations",angle:-90,position:"insideLeft",fontSize:11,fill:"#94a3b8"}}/>
-                        <Tooltip {...TTP}/>
-                        <Legend iconSize={8} wrapperStyle={{fontSize:11,color:"#94a3b8",paddingTop:2}}/>
-                        <ReferenceLine x={`1e${p.convTolExp}`} stroke="#22d3ee" strokeWidth={2}
-                          label={{value:"current",fill:"#22d3ee",fontSize:9,position:"insideTopRight"}}/>
-                        <Bar dataKey="R1iters" fill={"#22d3ee"} fillOpacity={0.7} name="Round 1 Iters" stackId="a" radius={[0,0,0,0]}/>
-                        <Bar dataKey="R2iters" fill={C.amber} fillOpacity={0.8} name="Round 2 Iters" stackId="a" radius={[3,3,0,0]}/>
-                      </ComposedChart>
-                    </ResponsiveContainer>
-                  </Panel>
-                  <Panel title="MTOW Accuracy vs Tolerance (Round 2)" h={290}>
-                    <div style={{fontSize:10,color:C.muted,marginBottom:4,paddingLeft:4}}>
-                      MTOW value at each tolerance. Shows when further tightening ε no longer meaningfully changes the design — the <span style={{color:C.green}}>engineering precision plateau</span>.
-                    </div>
-                    <ResponsiveContainer width="100%" height={220}>
-                      <LineChart data={R.tolSweepData} margin={{top:5,right:10,left:-5,bottom:20}}>
-                        <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
-                        <XAxis dataKey="tol" tick={{fontSize:10,fill:"#94a3b8"}}
-                          label={{value:"Tolerance ε",position:"insideBottom",offset:-6,fontSize:11,fill:"#94a3b8"}}/>
-                        <YAxis tick={{fontSize:11,fill:"#94a3b8"}} label={{value:"Converged MTOW (kg)",angle:-90,position:"insideLeft",fontSize:11,fill:"#94a3b8"}} domain={["auto","auto"]}/>
-                        <Tooltip {...TTP} formatter={(v)=>[`${v.toFixed(2)} kg`,"MTOW"]}/>
-                        <ReferenceLine x={`1e${p.convTolExp}`} stroke="#22d3ee" strokeWidth={2}
-                          label={{value:"current",fill:"#22d3ee",fontSize:9,position:"insideTopLeft"}}/>
-                        <Line type="monotone" dataKey="R2MTOW" stroke={C.green} strokeWidth={2.5}
-                          dot={(props)=>{
-                            const{cx,cy,payload}=props;
-                            const isActive=payload.exp===p.convTolExp;
-                            return <circle key={cx} cx={cx} cy={cy} r={isActive?7:3} fill={isActive?"#22d3ee":C.green} stroke={isActive?"#22d3ee":"none"}/>;
-                          }} name="MTOW (kg)"/>
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </Panel>
-                </div>
-
-                {/* Full tolerance sweep table */}
-                <Panel title="Tolerance Sweep Summary Table">
-                  <table style={{width:"100%",borderCollapse:"collapse",fontSize:11,fontFamily:"'DM Mono',monospace"}}>
-                    <thead>
-                      <tr style={{borderBottom:`1px solid ${C.border}`}}>
-                        {["ε (tolerance)","R1 Iters","R2 Iters","Total Iters","Converged MTOW (kg)","ΔMTOW vs 1e-10 (g)"].map(h=>(
-                          <th key={h} style={{padding:"5px 8px",color:C.muted,fontWeight:600,textAlign:"right",fontSize:10}}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {R.tolSweepData.map((d,i)=>{
-                        const isActive=d.exp===p.convTolExp;
-                        const ref=R.tolSweepData[R.tolSweepData.length-1].R2MTOW;
-                        const delta=Math.abs((d.R2MTOW-ref)*1000);
-                        return(
-                          <tr key={i} style={{borderBottom:`1px solid ${C.border}22`,background:isActive?`${"#22d3ee"}18`:"transparent"}}>
-                            <td style={{padding:"5px 8px",color:isActive?"#22d3ee":C.text,fontWeight:isActive?700:400,textAlign:"right"}}>{d.tol}{isActive?" ◄":""}</td>
-                            <td style={{padding:"5px 8px",color:"#22d3ee",textAlign:"right"}}>{d.R1iters}</td>
-                            <td style={{padding:"5px 8px",color:C.amber,textAlign:"right"}}>{d.R2iters}</td>
-                            <td style={{padding:"5px 8px",color:isActive?C.green:C.text,fontWeight:isActive?700:400,textAlign:"right"}}>{d.totalIters}</td>
-                            <td style={{padding:"5px 8px",color:isActive?"#22d3ee":C.green,fontWeight:isActive?700:400,textAlign:"right"}}>{d.R2MTOW.toFixed(2)}</td>
-                            <td style={{padding:"5px 8px",color:delta<1?C.green:delta<100?C.amber:C.red,textAlign:"right"}}>{delta<0.01?"< 0.01":delta.toFixed(2)} g</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                  <div style={{marginTop:8,fontSize:10,color:C.muted,paddingLeft:4}}>
-                    ΔM compared to tightest tolerance (1e-10). Values &lt;1 g indicate the solution is numerically converged — tightening ε further only costs iterations with no engineering benefit.
-                  </div>
-                </Panel>
-
-                {/* T/W vs MTOW Trade Chart */}
-                <Panel title={`T/W Ratio vs MTOW — Round 1 (energy-only) vs Round 2 (dual-constraint) at T/W = ${p.twRatio.toFixed(2)}`} h={320}>
-                  <div style={{fontSize:10,color:C.muted,marginBottom:6,paddingLeft:4}}>
-                    Round 1 is flat (T/W doesn't affect energy-only sizing). Round 2 scales as T/W^1.5 — higher thrust margin → higher hover power → heavier battery → higher MTOW spiral.
-                    Current T/W = <span style={{color:C.amber,fontWeight:700}}>{p.twRatio.toFixed(2)}</span> highlighted.
-                  </div>
-                  <ResponsiveContainer width="100%" height={255}>
-                    <ComposedChart data={R.twSweepData} margin={{top:5,right:20,left:-10,bottom:20}}>
-                      <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
-                      <XAxis dataKey="tw" tick={{fontSize:11,fill:"#94a3b8"}}
-                        label={{value:"Installed T/W Ratio",position:"insideBottom",offset:-8,fontSize:12,fill:"#94a3b8"}}/>
-                      <YAxis tick={{fontSize:11,fill:"#94a3b8"}}
-                        label={{value:"MTOW (kg)",angle:-90,position:"insideLeft",fontSize:12,fill:"#94a3b8"}}
-                        domain={['auto','auto']}/>
-                      <Tooltip {...TTP} formatter={(v,n)=>[`${v.toFixed(0)} kg`,n]}/>
-                      <Legend iconSize={9} wrapperStyle={{fontSize:12,color:"#94a3b8",paddingTop:4}}/>
-                      <ReferenceLine x={+p.twRatio.toFixed(2)} stroke={C.amber} strokeWidth={2}
-                        label={{value:`Current T/W=${p.twRatio.toFixed(2)}`,fill:C.amber,fontSize:10,position:"insideTopRight"}}/>
-                      <Line type="monotone" dataKey="R1" stroke={C.muted} strokeWidth={2} strokeDasharray="6 3"
-                        dot={{r:3,fill:C.muted}} name="Round 1 – Energy Only (MTOW₁)"/>
-                      <Line type="monotone" dataKey="R2" stroke={C.green} strokeWidth={2.5}
-                        dot={(props)=>{
-                          const {cx,cy,payload}=props;
-                          const isActive=Math.abs(payload.tw-p.twRatio)<0.01;
-                          return <circle key={cx} cx={cx} cy={cy} r={isActive?7:3} fill={isActive?C.amber:C.green} stroke={isActive?C.amber:"none"}/>;
-                        }}
-                        name="Round 2 – Dual-Constraint (MTOW)"/>
-                    </ComposedChart>
-                  </ResponsiveContainer>
-                </Panel>
-
-                {/* T/W detailed table */}
-                <Panel title="T/W Sensitivity Table — Round 1 vs Round 2 MTOW">
-                  <table style={{width:"100%",borderCollapse:"collapse",fontSize:11,fontFamily:"'DM Mono',monospace"}}>
-                    <thead>
-                      <tr style={{borderBottom:`1px solid ${C.border}`}}>
-                        {["T/W","R1 MTOW (kg)","R2 MTOW (kg)","ΔM (kg)","Δ% vs R1","Phov at R2 (kW)"].map(h=>(
-                          <th key={h} style={{padding:"5px 8px",color:C.muted,fontWeight:600,textAlign:"right",fontSize:10}}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {R.twSweepData.map((d,i)=>{
-                        const isActive=Math.abs(d.tw-p.twRatio)<0.01;
-                        const delta=d.R2-d.R1;
-                        const pct=((d.R2/d.R1-1)*100);
-                        // Approximate Phov at R2 MTOW for this T/W
-                        const W2=d.R2*9.81;
-                        const DL2=(W2*d.tw)/(Math.PI*Math.pow(p.propDiam/2,2)*p.nPropHover);
-                        const phov2=+(W2*d.tw/p.etaHov*Math.sqrt(DL2/(2*1.225))/1000).toFixed(1);
-                        return(
-                          <tr key={i} style={{borderBottom:`1px solid ${C.border}22`,background:isActive?`${C.amber}18`:"transparent"}}>
-                            <td style={{padding:"5px 8px",color:isActive?C.amber:C.text,fontWeight:isActive?700:400,textAlign:"right"}}>{d.tw.toFixed(2)}{isActive?" ◄ current":""}</td>
-                            <td style={{padding:"5px 8px",color:C.muted,textAlign:"right"}}>{d.R1.toFixed(0)}</td>
-                            <td style={{padding:"5px 8px",color:isActive?C.amber:C.green,fontWeight:isActive?700:400,textAlign:"right"}}>{d.R2.toFixed(0)}</td>
-                            <td style={{padding:"5px 8px",color:C.amber,textAlign:"right"}}>+{delta.toFixed(0)}</td>
-                            <td style={{padding:"5px 8px",color:pct>20?C.red:pct>10?C.amber:C.green,textAlign:"right"}}>+{pct.toFixed(1)}%</td>
-                            <td style={{padding:"5px 8px",color:C.blue,textAlign:"right"}}>{phov2}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </Panel>
-
                 <Panel title="Final Converged Design Summary — All Sections">
                   <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6}}>
                     {[["MTOW",`${R.MTOW} kg`,C.amber],["Empty Wt",`${R.Wempty} kg`,C.amber],
@@ -2681,8 +2132,8 @@ export default function App(){
                       ["Actual L/D",R.LDact,C.green],["Airfoil",R.selAF.name,C.green],
                       ["Vstall",`${R.Vstall} m/s`,"#8b5cf6"],["Va",`${R.VA} m/s`,"#8b5cf6"],
                       ["Rotor Diam",`${R.Drotor} m`,"#f97316"],["Tip Mach",R.TipMach,"#f97316"],
-                      ["T/W hover",p.twRatio.toFixed(2),p.twRatio<=1.3?C.green:C.amber],
                       ["SM",`${(R.SM*100).toFixed(1)}%`,R.SM>0.05&&R.SM<0.25?C.green:C.red],
+                      ["Mach",R.Mach,R.Mach<0.45?C.green:C.amber],
                     ].map(([k,v,col],i)=>(
                       <div key={i} style={{background:C.bg,borderRadius:4,padding:"6px 8px",borderLeft:`2px solid ${col}44`}}>
                         <div style={{fontSize:7,color:C.muted,fontFamily:"'DM Mono',monospace",marginBottom:1}}>{k}</div>
@@ -2709,6 +2160,7 @@ export default function App(){
                     </div>
                   </div>
                   <div style={{marginLeft:"auto",display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+                    <AuthGate user={user} onAuth={handleAuth}>
                     <button
                       onClick={()=>{
                         const xml=generateVSPScript(p,R);
@@ -2717,13 +2169,15 @@ export default function App(){
                         const a=document.createElement("a");
                         a.href=url; a.download="Trail1_eVTOL.vspscript"; a.click();
                         URL.revokeObjectURL(url);
+                        if(user) addNotif(user.id,{title:"VSP Script Downloaded",body:`Trail1_eVTOL.vspscript generated — MTOW=${R.MTOW} kg, b=${R.bWing} m.`,type:"success"});
                       }}
                       style={{padding:"10px 22px",background:`linear-gradient(135deg,${C.amber},#f97316)`,
                         border:"none",borderRadius:6,color:"#07090f",fontSize:13,fontWeight:800,
                         cursor:"pointer",letterSpacing:"0.05em",fontFamily:"'DM Mono',monospace",
-                        boxShadow:`0 0 20px ${C.amber}55`}}>
-                      ⬇  Download .vspscript
+                        boxShadow:`0 0 20px ${C.amber}55`,display:"flex",alignItems:"center",gap:6}}>
+                      {!user&&<span>🔒</span>}⬇  Download .vspscript
                     </button>
+                    </AuthGate>
                   </div>
                 </div>
 
@@ -2878,6 +2332,7 @@ export default function App(){
 
                 {/* Second download button at bottom */}
                 <div style={{display:"flex",justifyContent:"center",paddingTop:4,paddingBottom:8}}>
+                  <AuthGate user={user} onAuth={handleAuth}>
                   <button
                     onClick={()=>{
                       const xml=generateVSPScript(p,R);
@@ -2886,13 +2341,15 @@ export default function App(){
                       const a=document.createElement("a");
                       a.href=url; a.download="Trail1_eVTOL.vspscript"; a.click();
                       URL.revokeObjectURL(url);
+                      if(user) addNotif(user.id,{title:"VSP Script Downloaded",body:`Trail1_eVTOL.vspscript generated — MTOW=${R.MTOW} kg, b=${R.bWing} m.`,type:"success"});
                     }}
                     style={{padding:"12px 40px",background:`linear-gradient(135deg,${C.amber},#f97316)`,
                       border:"none",borderRadius:6,color:"#07090f",fontSize:14,fontWeight:800,
                       cursor:"pointer",letterSpacing:"0.06em",fontFamily:"'DM Mono',monospace",
-                      boxShadow:`0 0 30px ${C.amber}44`}}>
-                    ⬇  Download Trail1_eVTOL.vspscript
+                      boxShadow:`0 0 30px ${C.amber}44`,display:"flex",alignItems:"center",gap:8}}>
+                    {!user&&<span>🔒</span>}⬇  Download Trail1_eVTOL.vspscript
                   </button>
+                  </AuthGate>
                 </div>
               </div>
             )}
