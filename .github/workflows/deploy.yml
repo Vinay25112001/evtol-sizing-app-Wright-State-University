@@ -9,6 +9,10 @@ permissions:
   pages: write
   id-token: write
 
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
@@ -16,22 +20,36 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - name: Install dependencies
-        run: npm install
+
+      - run: npm install
+
+      - name: Check secrets exist
+        run: |
+          if [ -z "$VITE_EMAILJS_SERVICE_ID" ]; then echo "WARNING: VITE_EMAILJS_SERVICE_ID is empty!"; else echo "OK: VITE_EMAILJS_SERVICE_ID is set"; fi
+          if [ -z "$VITE_EMAILJS_TEMPLATE_ID" ]; then echo "WARNING: VITE_EMAILJS_TEMPLATE_ID is empty!"; else echo "OK: VITE_EMAILJS_TEMPLATE_ID is set"; fi
+          if [ -z "$VITE_EMAILJS_PUBLIC_KEY" ]; then echo "WARNING: VITE_EMAILJS_PUBLIC_KEY is empty!"; else echo "OK: VITE_EMAILJS_PUBLIC_KEY is set"; fi
+        env:
+          VITE_EMAILJS_SERVICE_ID: ${{ secrets.VITE_EMAILJS_SERVICE_ID }}
+          VITE_EMAILJS_TEMPLATE_ID: ${{ secrets.VITE_EMAILJS_TEMPLATE_ID }}
+          VITE_EMAILJS_PUBLIC_KEY: ${{ secrets.VITE_EMAILJS_PUBLIC_KEY }}
+
       - name: Build
         run: npm run build
-      - name: Setup Pages
-        uses: actions/configure-pages@v4
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
+        env:
+          VITE_EMAILJS_SERVICE_ID: ${{ secrets.VITE_EMAILJS_SERVICE_ID }}
+          VITE_EMAILJS_TEMPLATE_ID: ${{ secrets.VITE_EMAILJS_TEMPLATE_ID }}
+          VITE_EMAILJS_PUBLIC_KEY: ${{ secrets.VITE_EMAILJS_PUBLIC_KEY }}
+
+      - uses: actions/configure-pages@v4
+
+      - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
-      - name: Deploy to GitHub Pages
-        id: deployment
+
+      - id: deployment
         uses: actions/deploy-pages@v4
