@@ -1783,8 +1783,8 @@ export default function App(){
         const counts=Array(bins).fill(0);
         arr.forEach(val=>{ const b=Math.min(bins-1,Math.floor((val-mn)/w)); counts[b]++; });
         return counts.map((cnt,i)=>({
-          x:+(mn+i*w+w/2).toFixed(1), count:c,
-          pct:+(c/arr.length*100).toFixed(2)
+          x:+(mn+i*w+w/2).toFixed(1), count:cnt,
+          pct:+(cnt/arr.length*100).toFixed(2)
         }));
       };
       // CDF for MTOW
@@ -2094,7 +2094,7 @@ export default function App(){
             {SR&&<>
 
             {/* ──── TAB 0: OVERVIEW ──── */}
-            {tab===0&&(
+            {tab===0&&SR&&(
               <div style={{display:"flex",flexDirection:"column",gap:12}}>
                 <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
                   <KPI label="MTOW" value={SR.MTOW} unit="kg" color={SR.MTOW<4000?SC.green:SR.MTOW<5000?SC.amber:SC.red} sub={`R1: ${SR.MTOW1} kg`}/>
@@ -2443,7 +2443,7 @@ export default function App(){
 
 
             {/* ──── TAB 2: WING & AERO ──── */}
-            {tab===2&&(
+            {tab===2&&SR&&(
               <div style={{display:"flex",flexDirection:"column",gap:12}}>
                 <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
                   <KPI label="Wing Area" value={SR.Swing} unit="m²"/><KPI label="Wing Span" value={SR.bWing} unit="m"/>
@@ -2556,8 +2556,8 @@ export default function App(){
                     <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} style={{fontFamily:"'DM Mono',monospace",overflow:"visible"}}>
                       {/* grid lines */}
                       {[0.25,0.5,0.75,1.0].map(frac=>{
-                        const xg=f*b/2*sc;
-                        return <line key={f} x1={cx+xg} y1={margin.t-8} x2={cx+xg} y2={H-margin.b+5}
+                        const xg=frac*b/2*sc;
+                        return <line key={frac} x1={cx+xg} y1={margin.t-8} x2={cx+xg} y2={H-margin.b+5}
                           stroke="#1e2a3a" strokeWidth={1} strokeDasharray="3 3"/>;
                       })}
                       {/* Right half */}
@@ -2593,7 +2593,7 @@ export default function App(){
                       <text x={cx-xTipTe-4} y={yTipTe+4} textAnchor="end" fill="#3b82f6" fontSize={8}>TE</text>
                       {/* Span fraction ticks */}
                       {[0.25,0.5,0.75].map(frac=>(
-                        <text key={f} x={cx+f*b/2*sc} y={margin.t-10} textAnchor="middle" fill="#334155" fontSize={7}>{Math.round(f*100)}%</text>
+                        <text key={frac} x={cx+frac*b/2*sc} y={margin.t-10} textAnchor="middle" fill="#334155" fontSize={7}>{Math.round(frac*100)}%</text>
                       ))}
                       <text x={cx+b/2*sc} y={margin.t-10} textAnchor="middle" fill="#334155" fontSize={7}>tip</text>
                       <text x={cx} y={margin.t-10} textAnchor="middle" fill="#334155" fontSize={7}>CL</text>
@@ -2614,7 +2614,7 @@ export default function App(){
             )}
 
             {/* ──── TAB 3: PROPULSION ──── */}
-            {tab===3&&(
+            {tab===3&&SR&&(
               <div style={{display:"flex",flexDirection:"column",gap:12}}>
                 <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
                   <KPI label="Rotor Diam (AD)" value={SR.Drotor} unit="m" color={SC.amber}/>
@@ -2659,7 +2659,7 @@ export default function App(){
             )}
 
             {/* ──── TAB 4: BATTERY ──── */}
-            {tab===4&&(
+            {tab===4&&SR&&(
               <div style={{display:"flex",flexDirection:"column",gap:12}}>
                 <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
                   <KPI label="Pack Energy" value={SR.PackkWh} unit="kWh" color={SC.green} sub={`Mission: ${SR.Etot} kWh`}/>
@@ -2718,7 +2718,7 @@ export default function App(){
             )}
 
             {/* ──── TAB 5: PERFORMANCE ──── */}
-            {tab===5&&(
+            {tab===5&&SR&&(
               <div style={{display:"flex",flexDirection:"column",gap:12}}>
                 <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
                   <KPI label="Stall Speed Vs" value={SR.Vstall} unit="m/s"/>
@@ -2768,7 +2768,7 @@ export default function App(){
             )}
 
             {/* ──── TAB 6: STABILITY ──── */}
-            {tab===6&&(
+            {tab===6&&SR&&(
               <div style={{display:"flex",flexDirection:"column",gap:12}}>
                 <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
                   <KPI label="CG (MTOW)" value={SR.xCGtotal} unit="m from nose"/>
@@ -2936,7 +2936,7 @@ export default function App(){
             )}
 
             {/* ──── TAB 7: V-TAIL SIZING ──── */}
-            {tab===7&&(
+            {tab===7&&SR&&(
               <div style={{display:"flex",flexDirection:"column",gap:12}}>
                 {/* KPI row */}
                 <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:10}}>
@@ -3268,7 +3268,7 @@ export default function App(){
               </div>
             )}
             {/* ──── TAB 8: CONVERGENCE ──── */}
-            {tab===8&&(
+            {tab===8&&SR&&(
               <div style={{display:"flex",flexDirection:"column",gap:12}}>
                 <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
                   <KPI label="Round 1 MTOW" value={SR.MTOW1} unit="kg" color={SC.muted}/>
@@ -4419,7 +4419,7 @@ export default function App(){
                     <ResponsiveContainer width="100%" height={260}>
                       <LineChart
                         data={[1,5,10,25,50,100,150,200,300,500].map(dist_r=>({
-                          r, dBA:+(SR.dBA_1m-20*Math.log10(r)).toFixed(1)
+                          r:dist_r, dBA:+(SR.dBA_1m-20*Math.log10(dist_r)).toFixed(1)
                         }))}
                         margin={{top:5,right:20,left:5,bottom:20}}>
                         <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
@@ -4928,7 +4928,7 @@ export default function App(){
                           <span style={{fontSize:16}}>{pt.icon}</span>
                           {/* Label */}
                           <input value={ph.label} onChange={evt=>{
-                              setCustomPhases(prev=>prev.map((ph_item,j)=>j===i?{...ph_item,label:e.target.value}:x));
+                              setCustomPhases(prev=>prev.map((ph_item,j)=>j===i?{...ph_item,label:evt.target.value}:ph_item));
                             }}
                             style={{background:"transparent",border:"none",color:pt.col,fontSize:11,
                               fontWeight:700,fontFamily:"'DM Mono',monospace",outline:"none",width:120}}/>
