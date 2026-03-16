@@ -537,34 +537,34 @@ function runSizing(p) {
    Mirrors the exact confirmed-working API pattern exactly.
    Run in OpenVSP: File -> Run Script -> Execute
    ═══════════════════════════════════════════════════════════════════════ */
-function generateVSPScript(p, R) {
+function generateVSPScript(p, SR) {
   // Safe formatter — NaN/undefined always become 0, never embed "NaN"
   const f = (v, d=4) => { const n=Number(v); return (isFinite(n)?n:0).toFixed(d); };
 
   // Sizing outputs with fallbacks
   const fL      = f(p.fusLen    || 6.5,   2);
   const fDn     = +(p.fusDiam   || 1.65);
-  const bWing   = f(R.bWing     || 12.67, 2);
-  const Swing   = f(R.Swing     || 17.83, 2);
-  const Cr_     = f(R.Cr_       || 1.941, 2);
-  const Ct_     = f(R.Ct_       || 0.874, 2);
-  const sw      = f(R.sweep     || 9.57,  1);   // corrected LE sweep
-  const xACw    = +(R.xACwing   || 2.518);  // corrected (scales with fL)
-  const Cr_n    = +(R.Cr_       || 1.941);
-  const lv_n    = +(R.lv        || 3.315);
-  const MACvt   = +(R.MAC_vt    || 1.752);
-  const bvt     = f(R.bvt_panel || 3.766, 2);  // corrected
-  const Cr_vt   = f(R.Cr_vt     || 2.152, 2);  // corrected
-  const Ct_vt   = f(R.Ct_vt     || 0.861, 2);  // corrected
-  const sw_vt   = f(R.sweep_vt  || 34.44, 1);  // corrected LE sweep
+  const bWing   = f(SR.bWing     || 12.67, 2);
+  const Swing   = f(SR.Swing     || 17.83, 2);
+  const Cr_     = f(SR.Cr_       || 1.941, 2);
+  const Ct_     = f(SR.Ct_       || 0.874, 2);
+  const sw      = f(SR.sweep     || 9.57,  1);   // corrected LE sweep
+  const xACw    = +(SR.xACwing   || 2.518);  // corrected (scales with fL)
+  const Cr_n    = +(SR.Cr_       || 1.941);
+  const lv_n    = +(SR.lv        || 3.315);
+  const MACvt   = +(SR.MAC_vt    || 1.752);
+  const bvt     = f(SR.bvt_panel || 3.766, 2);  // corrected
+  const Cr_vt   = f(SR.Cr_vt     || 2.152, 2);  // corrected
+  const Ct_vt   = f(SR.Ct_vt     || 0.861, 2);  // corrected
+  const sw_vt   = f(SR.sweep_vt  || 34.44, 1);  // corrected LE sweep
   const vtG     = f(p.vtGamma   || 45,    1);
-  const Drot    = f(R.Drotor    || 3.000, 2);
-  const MTOW    = f(R.MTOW      || 2720.9,1);
-  const Wempty  = f(R.Wempty    || 1414,  1);
-  const Wbat    = f(R.Wbat      || 851,   1);
-  const xCG     = f(R.xCGtotal  || 2.225, 3);
-  const xNP_    = f(R.xNP       || 2.556, 3);
-  const SM_     = f((+(R.SM||0.2246))*100, 2);
+  const Drot    = f(SR.Drotor    || 3.000, 2);
+  const MTOW    = f(SR.MTOW      || 2720.9,1);
+  const Wempty  = f(SR.Wempty    || 1414,  1);
+  const Wbat    = f(SR.Wbat      || 851,   1);
+  const xCG     = f(SR.xCGtotal  || 2.225, 3);
+  const xNP_    = f(SR.xNP       || 2.556, 3);
+  const SM_     = f((+(SR.SM||0.2246))*100, 2);
 
   // Fuselage cross-section widths & heights (same "Width"/"Height" parm names as working script)
   const w1 = f(fDn*0.88, 2),  h1 = f(fDn*0.82, 2);   // XSec 1 forward
@@ -581,9 +581,9 @@ function generateVSPScript(p, R) {
 
   // Rotors: evenly spaced across semi-span, same pattern as working script
   const nSide = Math.floor((+(p.nPropHover)||6) / 2);
-  const bHalf = (+(R.bWing)||12.67) / 2;
+  const bHalf = (+(SR.bWing)||12.67) / 2;
   const rotX  = f(xACw + Cr_n*0.20, 2);
-  const rotZ  = f(fDn*0.42 + (+(R.Drotor)||3)*0.18, 2);
+  const rotZ  = f(fDn*0.42 + (+(SR.Drotor)||3)*0.18, 2);
   const yVals = Array.from({length:nSide}, (_,i) => f(bHalf*(i+0.5)/nSide, 2));
 
   return `// ═══════════════════════════════════════════════════════════════════
@@ -685,10 +685,10 @@ ${yVals.map((v,i)=>`    y[${i}] = ${v};`).join('\n')}
    User clicks "Download PDF" → new window opens → browser print dialog
    → "Save as PDF". Native browser PDF engine = perfect quality.
    ═══════════════════════════════════════════════════════════════════════ */
-function generateReport(p, R, branding={}) {
+function generateReport(p, SR, branding={}) {
   const n = (v, d=3) => (typeof v==="number" && isFinite(v)) ? v.toFixed(d) : "—";
   const now = new Date().toLocaleDateString("en-US",{year:"numeric",month:"long",day:"numeric"});
-  const feasBadge = R.feasible
+  const feasBadge = SR.feasible
     ? `<span class="badge green">✓ FEASIBLE</span>`
     : `<span class="badge amber">⚠ CHECK DESIGN</span>`;
 
@@ -736,12 +736,12 @@ function generateReport(p, R, branding={}) {
       <tr><td>Design Status</td><td>${feasBadge}</td></tr>
     </table>
     <div class="cover-kpi-grid">
-      <div class="kpi"><div class="kpi-val">${n(R.MTOW,1)} kg</div><div class="kpi-lbl">MTOW</div></div>
-      <div class="kpi"><div class="kpi-val">${n(R.Etot,2)} kWh</div><div class="kpi-lbl">Total Energy</div></div>
-      <div class="kpi"><div class="kpi-val">${n(R.Phov,1)} kW</div><div class="kpi-lbl">Hover Power</div></div>
-      <div class="kpi"><div class="kpi-val">${n(R.bWing,2)} m</div><div class="kpi-lbl">Wing Span</div></div>
-      <div class="kpi"><div class="kpi-val">${n(R.SM_vt*100,1)}%</div><div class="kpi-lbl">Static Margin</div></div>
-      <div class="kpi"><div class="kpi-val">${n(R.LDact,2)}</div><div class="kpi-lbl">Actual L/D</div></div>
+      <div class="kpi"><div class="kpi-val">${n(SR.MTOW,1)} kg</div><div class="kpi-lbl">MTOW</div></div>
+      <div class="kpi"><div class="kpi-val">${n(SR.Etot,2)} kWh</div><div class="kpi-lbl">Total Energy</div></div>
+      <div class="kpi"><div class="kpi-val">${n(SR.Phov,1)} kW</div><div class="kpi-lbl">Hover Power</div></div>
+      <div class="kpi"><div class="kpi-val">${n(SR.bWing,2)} m</div><div class="kpi-lbl">Wing Span</div></div>
+      <div class="kpi"><div class="kpi-val">${n(SR.SM_vt*100,1)}%</div><div class="kpi-lbl">Static Margin</div></div>
+      <div class="kpi"><div class="kpi-val">${n(SR.LDact,2)}</div><div class="kpi-lbl">Actual L/D</div></div>
     </div>
   </div>`;
 
@@ -750,10 +750,10 @@ function generateReport(p, R, branding={}) {
   <p>The following input parameters define the baseline design for the Trail 1 eVTOL configuration. All sizing calculations are derived directly from these values.</p>
   ${table(["Parameter","Symbol","Value","Unit"],[
     row("Payload","m<sub>pay</sub>",p.payload,"kg"),
-    row("Design Range","R",p.range,"km"),
+    row("Design Range","SR",p.range,"km"),
     row("Cruise Speed","V<sub>cr</sub>",p.vCruise,"m/s ("+n(p.vCruise*3.6,1)+" km/h)"),
     row("Cruise Altitude","h<sub>cr</sub>",p.cruiseAlt,"m"),
-    row("Reserve Range","R<sub>res</sub>",p.reserveRange,"km"),
+    row("Reserve Range","SR<sub>res</sub>",p.reserveRange,"km"),
     row("Hover Height","h<sub>hov</sub>",p.hoverHeight,"m"),
     row("L/D (design)","(L/D)<sub>des</sub>",p.LD,""),
     row("Wing AR","AR",p.AR,""),
@@ -785,161 +785,161 @@ function generateReport(p, R, branding={}) {
   <p>All aerodynamic calculations use the International Standard Atmosphere (ISA) model evaluated at the cruise altitude h = ${p.cruiseAlt} m.</p>
   ${eq("T_{cr} = T_0 - L_{lapse} \\cdot h_{cr} = 288.15 - 0.0065 \\times "+p.cruiseAlt+" = "+n(288.15-0.0065*p.cruiseAlt,2)+"\\text{ K}",
     "Temperature at cruise altitude")}
-  ${eq("\\rho_{cr} = \\rho_{SL}\\left(\\frac{T_{cr}}{T_0}\\right)^{\\left(\\frac{g_0}{L_{lapse}\\,R_{air}}\\right)-1} = "+n(R.MTOW ? 1.225*Math.pow((288.15-0.0065*p.cruiseAlt)/288.15, (-9.81/(-0.0065*287))-1) : 1.112,4)+"\\text{ kg/m}^3",
+  ${eq("\\rho_{cr} = \\rho_{SL}\\left(\\frac{T_{cr}}{T_0}\\right)^{\\left(\\frac{g_0}{L_{lapse}\\,R_{air}}\\right)-1} = "+n(SR.MTOW ? 1.225*Math.pow((288.15-0.0065*p.cruiseAlt)/288.15, (-9.81/(-0.0065*287))-1) : 1.112,4)+"\\text{ kg/m}^3",
     "Density at cruise altitude (ISA troposphere)")}
   ${eq("a_{cr} = \\sqrt{\\gamma R_{air} T_{cr}} = \\sqrt{1.4 \\times 287 \\times "+(288.15-0.0065*p.cruiseAlt).toFixed(2)+"} = "+n(Math.sqrt(1.4*287*(288.15-0.0065*p.cruiseAlt)),2)+"\\text{ m/s}",
     "Speed of sound at cruise altitude")}
-  ${eq("M = \\frac{V_{cr}}{a_{cr}} = \\frac{"+p.vCruise+"}{"+n(Math.sqrt(1.4*287*(288.15-0.0065*p.cruiseAlt)),2)+"} = "+n(R.Mach,4),
+  ${eq("M = \\frac{V_{cr}}{a_{cr}} = \\frac{"+p.vCruise+"}{"+n(Math.sqrt(1.4*287*(288.15-0.0065*p.cruiseAlt)),2)+"} = "+n(SR.Mach,4),
     "Cruise Mach number")}
   `);
 
   // ── 3. WEIGHT SIZING ─────────────────────────────────────────────────
   const s3 = sec("weight","3. Weight & Energy Sizing (Iterative)",`
   <p>The MTOW is found by simultaneously converging the weight and energy fractions using a nested iterative scheme. The battery mass fraction is:</p>
-  ${eq("f_{bat} = \\frac{g_0 \\cdot R}{(L/D)\\,\\eta_{sys}\\,\\text{SED}_{cell}\\times 3600}","Battery mass fraction (range-energy method)")}
+  ${eq("f_{bat} = \\frac{g_0 \\cdot SR}{(L/D)\\,\\eta_{sys}\\,\\text{SED}_{cell}\\times 3600}","Battery mass fraction (range-energy method)")}
   ${eq("W_{bat} = \\frac{E_{total}\\times 1000\\,(1+\\text{SoC}_{min})}{\\text{SED}_{cell}\\,\\eta_{bat}}","Battery mass from total mission energy")}
   ${eq("\\text{MTOW} = m_{pay} + f_{EW}\\cdot\\text{MTOW} + W_{bat}","Weight closure equation (solved iteratively)")}
   ${table(["Quantity","Symbol","Value","Unit"],[
-    row("MTOW (initial)","MTOW<sub>1</sub>",n(R.MTOW1,1),"kg"),
-    row("MTOW (converged)","MTOW",n(R.MTOW,1),"kg"),
-    row("Empty Weight","W<sub>e</sub>",n(R.Wempty,1),"kg"),
-    row("Battery Mass","W<sub>bat</sub>",n(R.Wbat,1),"kg"),
+    row("MTOW (initial)","MTOW<sub>1</sub>",n(SR.MTOW1,1),"kg"),
+    row("MTOW (converged)","MTOW",n(SR.MTOW,1),"kg"),
+    row("Empty Weight","W<sub>e</sub>",n(SR.Wempty,1),"kg"),
+    row("Battery Mass","W<sub>bat</sub>",n(SR.Wbat,1),"kg"),
     row("Payload","m<sub>pay</sub>",p.payload,"kg"),
-    row("Battery Mass Fraction","W<sub>bat</sub>/MTOW",n(R.Wbat/R.MTOW*100,1),"%"),
+    row("Battery Mass Fraction","W<sub>bat</sub>/MTOW",n(SR.Wbat/SR.MTOW*100,1),"%"),
   ])}
   `);
 
   // ── 4. MISSION ENERGY ────────────────────────────────────────────────
   const s4 = sec("energy","4. Mission Energy Breakdown",`
   <p>The mission is divided into six phases: Takeoff (hover), Climb, Cruise, Descent, Landing (hover), and Reserve.</p>
-  ${eq("E_{total} = E_{TO}+E_{cl}+E_{cr}+E_{dc}+E_{ld}+E_{res} = "+n(R.Etot,3)+"\\text{ kWh}","Total mission energy")}
-  ${eq("P_{hov} = \\frac{W\\,g_0}{\\eta_{hov}}\\sqrt{\\frac{W\\,g_0}{2\\,\\rho_{SL}\\,N_{rot}\\,A_{disk}}} = "+n(R.Phov,2)+"\\text{ kW}","Hover power (actuator disk theory)")}
-  ${eq("P_{cr} = \\frac{W\\,g_0\\,V_{cr}}{\\eta_{sys}\\,(L/D)} = "+n(R.Pcr,2)+"\\text{ kW}","Cruise power")}
+  ${eq("E_{total} = E_{TO}+E_{cl}+E_{cr}+E_{dc}+E_{ld}+E_{res} = "+n(SR.Etot,3)+"\\text{ kWh}","Total mission energy")}
+  ${eq("P_{hov} = \\frac{W\\,g_0}{\\eta_{hov}}\\sqrt{\\frac{W\\,g_0}{2\\,\\rho_{SL}\\,N_{rot}\\,A_{disk}}} = "+n(SR.Phov,2)+"\\text{ kW}","Hover power (actuator disk theory)")}
+  ${eq("P_{cr} = \\frac{W\\,g_0\\,V_{cr}}{\\eta_{sys}\\,(L/D)} = "+n(SR.Pcr,2)+"\\text{ kW}","Cruise power")}
   ${table(["Phase","Power (kW)","Time (s)","Energy (kWh)"],[
-    row("Takeoff (Hover)","P<sub>hov</sub> = "+n(R.Phov,2),n(R.tto,0),n(R.Eto,3)),
-    row("Climb","P<sub>cl</sub> = "+n(R.Pcl,2),n(R.tcl,0),n(R.Ecl,3)),
-    row("Cruise","P<sub>cr</sub> = "+n(R.Pcr,2),n(R.tcr,0),n(R.Ecr,3)),
-    row("Descent","P<sub>dc</sub> = "+n(R.Pdc,2),n(R.tdc,0),n(R.Edc,3)),
-    row("Landing (Hover)","P<sub>hov</sub> = "+n(R.Phov,2),n(R.tld,0),n(R.Eld,3)),
-    row("Reserve","P<sub>res</sub> = "+n(R.Pres,2),n(R.tres,0),n(R.Eres,3)),
-    row("<strong>Total</strong>","","<strong>"+n(R.Tend,0)+" s</strong>","<strong>"+n(R.Etot,3)+"</strong>"),
+    row("Takeoff (Hover)","P<sub>hov</sub> = "+n(SR.Phov,2),n(SR.tto,0),n(SR.Eto,3)),
+    row("Climb","P<sub>cl</sub> = "+n(SR.Pcl,2),n(SR.tcl,0),n(SR.Ecl,3)),
+    row("Cruise","P<sub>cr</sub> = "+n(SR.Pcr,2),n(SR.tcr,0),n(SR.Ecr,3)),
+    row("Descent","P<sub>dc</sub> = "+n(SR.Pdc,2),n(SR.tdc,0),n(SR.Edc,3)),
+    row("Landing (Hover)","P<sub>hov</sub> = "+n(SR.Phov,2),n(SR.tld,0),n(SR.Eld,3)),
+    row("Reserve","P<sub>res</sub> = "+n(SR.Pres,2),n(SR.tres,0),n(SR.Eres,3)),
+    row("<strong>Total</strong>","","<strong>"+n(SR.Tend,0)+" s</strong>","<strong>"+n(SR.Etot,3)+"</strong>"),
   ])}
   `);
 
   // ── 5. WING AERODYNAMICS ─────────────────────────────────────────────
   const s5 = sec("wing","5. Wing Design & Aerodynamics",`
   <p>Wing area is sized to provide the required lift at cruise using the design lift coefficient C<sub>L,des</sub> = ${p.clDesign}.</p>
-  ${eq("S_w = \\frac{2\\,L_{req}}{\\rho_{cr}\\,V_{cr}^2\\,C_{L,des}} = \\frac{2\\times"+n(R.MTOW*9.81,1)+"}{"+n(1.225*Math.pow((288.15-0.0065*p.cruiseAlt)/288.15,(-9.81/(-0.0065*287))-1),4)+"\\times"+p.vCruise+"^2\\times"+p.clDesign+"} = "+n(R.Swing,2)+"\\text{ m}^2","Wing reference area")}
-  ${eq("b_w = \\sqrt{AR\\cdot S_w} = \\sqrt{"+p.AR+"\\times"+n(R.Swing,2)+"} = "+n(R.bWing,2)+"\\text{ m}","Wing span")}
-  ${eq("C_r = \\frac{2S_w}{b_w(1+\\lambda)} = "+n(R.Cr_,3)+"\\text{ m}, \\quad C_t = \\lambda\\,C_r = "+n(R.Ct_,3)+"\\text{ m}","Root and tip chord (taper λ = "+p.taper+")")}
-  ${eq("\\bar{c} = \\frac{2}{3}C_r\\frac{1+\\lambda+\\lambda^2}{1+\\lambda} = "+n(R.MAC,3)+"\\text{ m}","Mean aerodynamic chord (MAC)")}
-  ${eq("\\Lambda_{LE} = \\arctan\\!\\left(\\frac{C_r - C_t}{b_w/2}\\right) = \\arctan\\!\\left(\\frac{"+n(R.Cr_,3)+"-"+n(R.Ct_,3)+"}{"+n(R.bWing/2,3)+"}\\right) = "+n(R.sweep,2)+"^\\circ","Leading edge sweep (semi-span denominator)")}
-  ${eq("C_{D_0,total} = "+n(R.CD0tot,5)+", \\quad C_{D_i} = \\frac{C_{L,des}^2}{\\pi\\,AR\\,e} = "+n(R.CDi,5),"Parasitic and induced drag coefficients")}
-  ${eq("(L/D)_{actual} = \\frac{C_{L,des}}{C_{D_0}+C_{D_i}} = "+n(R.LDact,2),"Actual cruise lift-to-drag ratio")}
+  ${eq("S_w = \\frac{2\\,L_{req}}{\\rho_{cr}\\,V_{cr}^2\\,C_{L,des}} = \\frac{2\\times"+n(SR.MTOW*9.81,1)+"}{"+n(1.225*Math.pow((288.15-0.0065*p.cruiseAlt)/288.15,(-9.81/(-0.0065*287))-1),4)+"\\times"+p.vCruise+"^2\\times"+p.clDesign+"} = "+n(SR.Swing,2)+"\\text{ m}^2","Wing reference area")}
+  ${eq("b_w = \\sqrt{AR\\cdot S_w} = \\sqrt{"+p.AR+"\\times"+n(SR.Swing,2)+"} = "+n(SR.bWing,2)+"\\text{ m}","Wing span")}
+  ${eq("C_r = \\frac{2S_w}{b_w(1+\\lambda)} = "+n(SR.Cr_,3)+"\\text{ m}, \\quad C_t = \\lambda\\,C_r = "+n(SR.Ct_,3)+"\\text{ m}","Root and tip chord (taper λ = "+p.taper+")")}
+  ${eq("\\bar{c} = \\frac{2}{3}C_r\\frac{1+\\lambda+\\lambda^2}{1+\\lambda} = "+n(SR.MAC,3)+"\\text{ m}","Mean aerodynamic chord (MAC)")}
+  ${eq("\\Lambda_{LE} = \\arctan\\!\\left(\\frac{C_r - C_t}{b_w/2}\\right) = \\arctan\\!\\left(\\frac{"+n(SR.Cr_,3)+"-"+n(SR.Ct_,3)+"}{"+n(SR.bWing/2,3)+"}\\right) = "+n(SR.sweep,2)+"^\\circ","Leading edge sweep (semi-span denominator)")}
+  ${eq("C_{D_0,total} = "+n(SR.CD0tot,5)+", \\quad C_{D_i} = \\frac{C_{L,des}^2}{\\pi\\,AR\\,e} = "+n(SR.CDi,5),"Parasitic and induced drag coefficients")}
+  ${eq("(L/D)_{actual} = \\frac{C_{L,des}}{C_{D_0}+C_{D_i}} = "+n(SR.LDact,2),"Actual cruise lift-to-drag ratio")}
   ${table(["Parameter","Symbol","Value","Unit"],[
-    row("Wing Area","S<sub>w</sub>",n(R.Swing,2),"m²"),
-    row("Wing Span","b<sub>w</sub>",n(R.bWing,3),"m"),
-    row("Root Chord","C<sub>r</sub>",n(R.Cr_,3),"m"),
-    row("Tip Chord","C<sub>t</sub>",n(R.Ct_,3),"m"),
-    row("MAC","c̄",n(R.MAC,3),"m"),
-    row("y<sub>MAC</sub>","ȳ<sub>MAC</sub>",n(R.Ymac,3),"m"),
-    row("LE Sweep","Λ<sub>LE</sub>",n(R.sweep,2),"°"),
-    row("Wing Loading","W/S",n(R.WL,1),"N/m²"),
-    row("Re (MAC)","Re",n(R.Re_,0),""),
-    row("Selected Airfoil","—",R.selAF?.name||"—",""),
-    row("Actual L/D","(L/D)<sub>act</sub>",n(R.LDact,2),""),
-    row("C<sub>D0</sub> total","C<sub>D0</sub>",n(R.CD0tot,5),""),
-    row("C<sub>Di</sub>","C<sub>Di</sub>",n(R.CDi,5),""),
+    row("Wing Area","S<sub>w</sub>",n(SR.Swing,2),"m²"),
+    row("Wing Span","b<sub>w</sub>",n(SR.bWing,3),"m"),
+    row("Root Chord","C<sub>r</sub>",n(SR.Cr_,3),"m"),
+    row("Tip Chord","C<sub>t</sub>",n(SR.Ct_,3),"m"),
+    row("MAC","c̄",n(SR.MAC,3),"m"),
+    row("y<sub>MAC</sub>","ȳ<sub>MAC</sub>",n(SR.Ymac,3),"m"),
+    row("LE Sweep","Λ<sub>LE</sub>",n(SR.sweep,2),"°"),
+    row("Wing Loading","W/S",n(SR.WL,1),"N/m²"),
+    row("Re (MAC)","Re",n(SR.Re_,0),""),
+    row("Selected Airfoil","—",SR.selAF?.name||"—",""),
+    row("Actual L/D","(L/D)<sub>act</sub>",n(SR.LDact,2),""),
+    row("C<sub>D0</sub> total","C<sub>D0</sub>",n(SR.CD0tot,5),""),
+    row("C<sub>Di</sub>","C<sub>Di</sub>",n(SR.CDi,5),""),
   ])}
   `);
 
   // ── 6. PROPULSION ────────────────────────────────────────────────────
   const s6 = sec("prop","6. Hover Propulsion Sizing",`
   <p>Rotor disk area is sized from actuator disk theory to satisfy the hover power budget with the given figure of merit η<sub>hov</sub> = ${p.etaHov}.</p>
-  ${eq("T_{rotor} = \\frac{W\\,g_0}{N_{rot}} = \\frac{"+n(R.MTOW,1)+"\\times 9.81}{"+p.nPropHover+"} = "+n(R.MTOW*9.81/p.nPropHover,1)+"\\text{ N}","Thrust per rotor")}
+  ${eq("T_{rotor} = \\frac{W\\,g_0}{N_{rot}} = \\frac{"+n(SR.MTOW,1)+"\\times 9.81}{"+p.nPropHover+"} = "+n(SR.MTOW*9.81/p.nPropHover,1)+"\\text{ N}","Thrust per rotor")}
   ${eq("A_{disk} = \\frac{T_{rotor}^3}{2\\,\\rho_{SL}\\,(P_{rotor}\\,\\eta_{hov})^2}","Disk area from actuator disk momentum theory")}
-  ${eq("D_{rotor} = 2\\sqrt{A_{disk}/\\pi} = "+n(R.Drotor,3)+"\\text{ m}","Rotor diameter")}
-  ${eq("\\Omega_{tip} = \\sqrt{\\frac{2P_{rotor}\\eta_{hov}}{\\rho_{SL}\\,A_{disk}}}, \\quad \\text{RPM} = \\frac{60\\,\\Omega_{tip}}{2\\pi R} = "+n(R.RPM,0),"Tip speed and rotational speed")}
+  ${eq("D_{rotor} = 2\\sqrt{A_{disk}/\\pi} = "+n(SR.Drotor,3)+"\\text{ m}","Rotor diameter")}
+  ${eq("\\Omega_{tip} = \\sqrt{\\frac{2P_{rotor}\\eta_{hov}}{\\rho_{SL}\\,A_{disk}}}, \\quad \\text{RPM} = \\frac{60\\,\\Omega_{tip}}{2\\pi SR} = "+n(SR.RPM,0),"Tip speed and rotational speed")}
   ${table(["Parameter","Symbol","Value","Unit"],[
-    row("Hover Power (total)","P<sub>hov</sub>",n(R.Phov,2),"kW"),
-    row("Power per Rotor","P<sub>rotor</sub>",n(R.Phov/p.nPropHover,2),"kW"),
-    row("Rotor Diameter","D<sub>rot</sub>",n(R.Drotor,3),"m"),
-    row("Disk Loading","DL",n(R.DLrotor,1),"N/m²"),
-    row("Power Loading","PL",n(R.PLrotor,1),"N/W"),
-    row("Tip Speed","Ω<sub>tip</sub>",n(R.TipSpd,1),"m/s"),
-    row("Tip Mach","M<sub>tip</sub>",n(R.TipMach,4),""),
-    row("RPM","n",n(R.RPM,0),"rpm"),
-    row("No. of Blades","N<sub>bl</sub>",R.Nbld,""),
-    row("Blade Chord","c<sub>bl</sub>",n(R.ChordBl,4),"m"),
-    row("Motor Power","P<sub>mot</sub>",n(R.PmotKW,2),"kW"),
-    row("Peak Power","P<sub>peak</sub>",n(R.PpeakKW,2),"kW"),
+    row("Hover Power (total)","P<sub>hov</sub>",n(SR.Phov,2),"kW"),
+    row("Power per Rotor","P<sub>rotor</sub>",n(SR.Phov/p.nPropHover,2),"kW"),
+    row("Rotor Diameter","D<sub>rot</sub>",n(SR.Drotor,3),"m"),
+    row("Disk Loading","DL",n(SR.DLrotor,1),"N/m²"),
+    row("Power Loading","PL",n(SR.PLrotor,1),"N/W"),
+    row("Tip Speed","Ω<sub>tip</sub>",n(SR.TipSpd,1),"m/s"),
+    row("Tip Mach","M<sub>tip</sub>",n(SR.TipMach,4),""),
+    row("RPM","n",n(SR.RPM,0),"rpm"),
+    row("No. of Blades","N<sub>bl</sub>",SR.Nbld,""),
+    row("Blade Chord","c<sub>bl</sub>",n(SR.ChordBl,4),"m"),
+    row("Motor Power","P<sub>mot</sub>",n(SR.PmotKW,2),"kW"),
+    row("Peak Power","P<sub>peak</sub>",n(SR.PpeakKW,2),"kW"),
   ])}
   `);
 
   // ── 7. BATTERY ───────────────────────────────────────────────────────
   const s7 = sec("battery","7. Battery System Sizing",`
-  ${eq("W_{bat} = \\frac{E_{total}\\times 1000\\,(1+\\text{SoC}_{min})}{\\text{SED}_{cell}\\,\\eta_{bat}} = \\frac{"+n(R.Etot,3)+"\\times 1000\\times(1+"+p.socMin+")}{"+p.sedCell+"\\times"+p.etaBat+"} = "+n(R.Wbat,1)+"\\text{ kg}","Battery mass")}
-  ${eq("\\text{SED}_{pack} = \\frac{E_{total}}{W_{bat}} = "+n(R.SEDpack,1)+"\\text{ Wh/kg}","Pack-level specific energy density")}
-  ${eq("N_{series} = \\text{round}\\!\\left(\\frac{V_{pack}}{V_{cell}}\\right) = \\text{round}\\!\\left(\\frac{800}{3.6}\\right) = "+R.Nseries,"Series cell count for 800V pack")}
+  ${eq("W_{bat} = \\frac{E_{total}\\times 1000\\,(1+\\text{SoC}_{min})}{\\text{SED}_{cell}\\,\\eta_{bat}} = \\frac{"+n(SR.Etot,3)+"\\times 1000\\times(1+"+p.socMin+")}{"+p.sedCell+"\\times"+p.etaBat+"} = "+n(SR.Wbat,1)+"\\text{ kg}","Battery mass")}
+  ${eq("\\text{SED}_{pack} = \\frac{E_{total}}{W_{bat}} = "+n(SR.SEDpack,1)+"\\text{ Wh/kg}","Pack-level specific energy density")}
+  ${eq("N_{series} = \\text{round}\\!\\left(\\frac{V_{pack}}{V_{cell}}\\right) = \\text{round}\\!\\left(\\frac{800}{3.6}\\right) = "+SR.Nseries,"Series cell count for 800V pack")}
   ${table(["Parameter","Symbol","Value","Unit"],[
-    row("Battery Mass","W<sub>bat</sub>",n(R.Wbat,1),"kg"),
-    row("Total Energy","E<sub>total</sub>",n(R.Etot,3),"kWh"),
-    row("Pack SED","SED<sub>pack</sub>",n(R.SEDpack,1),"Wh/kg"),
-    row("Pack Voltage","V<sub>pack</sub>",n(R.PackV,0),"V"),
-    row("Pack Capacity","Q<sub>pack</sub>",n(R.PackAh,1),"Ah"),
-    row("Series Cells","N<sub>s</sub>",R.Nseries,""),
-    row("Parallel Strings","N<sub>p</sub>",R.Npar,""),
-    row("Total Cells","N<sub>cells</sub>",R.Ncells,""),
-    row("C-rate (Hover)","C<sub>hov</sub>",n(R.CrateHov,2),"C"),
-    row("C-rate (Cruise)","C<sub>cr</sub>",n(R.CrateCr,2),"C"),
+    row("Battery Mass","W<sub>bat</sub>",n(SR.Wbat,1),"kg"),
+    row("Total Energy","E<sub>total</sub>",n(SR.Etot,3),"kWh"),
+    row("Pack SED","SED<sub>pack</sub>",n(SR.SEDpack,1),"Wh/kg"),
+    row("Pack Voltage","V<sub>pack</sub>",n(SR.PackV,0),"V"),
+    row("Pack Capacity","Q<sub>pack</sub>",n(SR.PackAh,1),"Ah"),
+    row("Series Cells","N<sub>s</sub>",SR.Nseries,""),
+    row("Parallel Strings","N<sub>p</sub>",SR.Npar,""),
+    row("Total Cells","N<sub>cells</sub>",SR.Ncells,""),
+    row("C-rate (Hover)","C<sub>hov</sub>",n(SR.CrateHov,2),"C"),
+    row("C-rate (Cruise)","C<sub>cr</sub>",n(SR.CrateCr,2),"C"),
   ])}
   `);
 
   // ── 8. STABILITY ─────────────────────────────────────────────────────
-  const xACwing = n(+(p.fusLen*0.2589 + (R.Cr_-(R.MAC-0.25*R.MAC))),3);
+  const xACwing = n(+(p.fusLen*0.2589 + (SR.Cr_-(SR.MAC-0.25*SR.MAC))),3);
   const s8 = sec("stability","8. Longitudinal Stability",`
   <p>The static margin (SM) measures stability: positive SM indicates the neutral point (NP) is aft of the centre of gravity (CG).</p>
-  ${eq("x_{CG,total} = \\frac{W_e\\,x_{CG,e}+W_{bat}\\,x_{CG,bat}+m_{pay}\\,x_{CG,pay}}{\\text{MTOW}} = "+n(R.xCGtotal,3)+"\\text{ m from nose}","Total centre of gravity")}
-  ${eq("x_{NP} = x_{AC,wing} + \\frac{S_h}{S_w}\\,\\eta_h\\,(1-\\varepsilon_\\alpha)\\,l_h = "+n(R.SM_vt !== undefined ? R.xNP : R.xNP,3)+"\\text{ m from nose}","Neutral point (stick-fixed)")}
-  ${eq("SM = \\frac{x_{NP}-x_{CG}}{\\bar{c}} = \\frac{"+n(R.xNP,3)+"-"+n(R.xCGtotal,3)+"}{"+n(R.MAC,3)+"} = "+n(R.SM*100,1)+"\\%\\;\\text{MAC}","Static margin")}
+  ${eq("x_{CG,total} = \\frac{W_e\\,x_{CG,e}+W_{bat}\\,x_{CG,bat}+m_{pay}\\,x_{CG,pay}}{\\text{MTOW}} = "+n(SR.xCGtotal,3)+"\\text{ m from nose}","Total centre of gravity")}
+  ${eq("x_{NP} = x_{AC,wing} + \\frac{S_h}{S_w}\\,\\eta_h\\,(1-\\varepsilon_\\alpha)\\,l_h = "+n(SR.SM_vt !== undefined ? SR.xNP : SR.xNP,3)+"\\text{ m from nose}","Neutral point (stick-fixed)")}
+  ${eq("SM = \\frac{x_{NP}-x_{CG}}{\\bar{c}} = \\frac{"+n(SR.xNP,3)+"-"+n(SR.xCGtotal,3)+"}{"+n(SR.MAC,3)+"} = "+n(SR.SM*100,1)+"\\%\\;\\text{MAC}","Static margin")}
   ${table(["Quantity","Symbol","Value","Unit"],[
     row("Wing AC from nose","x<sub>AC,w</sub>",xACwing,"m"),
-    row("Total CG from nose","x<sub>CG</sub>",n(R.xCGtotal,3),"m"),
-    row("Neutral Point from nose","x<sub>NP</sub>",n(R.xNP,3),"m"),
-    row("Static Margin","SM",n(R.SM*100,2),"%  MAC"),
-    row("MAC","c̄",n(R.MAC,3),"m"),
+    row("Total CG from nose","x<sub>CG</sub>",n(SR.xCGtotal,3),"m"),
+    row("Neutral Point from nose","x<sub>NP</sub>",n(SR.xNP,3),"m"),
+    row("Static Margin","SM",n(SR.SM*100,2),"%  MAC"),
+    row("MAC","c̄",n(SR.MAC,3),"m"),
   ])}
   `);
 
   // ── 9. V-TAIL ────────────────────────────────────────────────────────
   const s9 = sec("vtail","9. V-Tail Sizing (Ruscheweyh / Raymer)",`
   <p>The V-tail replaces both the horizontal and vertical stabilisers. Each panel is inclined at dihedral angle Γ = ${p.vtGamma}° from horizontal.</p>
-  ${eq("S_{h,req} = \\frac{C_h\\,S_w\\,\\bar{c}}{l_v} = \\frac{"+p.vtCh+"\\times"+n(R.Swing,2)+"\\times"+n(R.MAC,3)+"}{"+n(R.lv,3)+"} = "+n(R.Sh_req,3)+"\\text{ m}^2","Required horizontal tail area")}
-  ${eq("S_{v,req} = \\frac{C_v\\,S_w\\,b_w}{l_v} = \\frac{"+p.vtCv+"\\times"+n(R.Swing,2)+"\\times"+n(R.bWing,2)+"}{"+n(R.lv,3)+"} = "+n(R.Sv_req,3)+"\\text{ m}^2","Required vertical tail area")}
-  ${eq("S_{panel} = \\max\\!\\left(\\frac{S_{h,req}}{\\cos^2\\Gamma},\\,\\frac{S_{v,req}}{\\sin^2\\Gamma}\\right) = "+n(R.Svt_panel,3)+"\\text{ m}^2","V-tail panel area (governing constraint)")}
-  ${eq("\\Gamma_{opt} = \\arctan\\!\\sqrt{\\frac{S_{v,req}}{S_{h,req}}} = "+n(R.vtGamma_opt,1)+"^\\circ","Optimal dihedral angle for minimum panel area")}
-  ${eq("b_{vt} = \\sqrt{AR_{vt}\\cdot S_{panel}} = "+n(R.bvt_panel,3)+"\\text{ m}, \\quad C_{r,vt} = "+n(R.Cr_vt,3)+"\\text{ m}, \\quad C_{t,vt} = "+n(R.Ct_vt,3)+"\\text{ m}","V-tail panel geometry")}
+  ${eq("S_{h,req} = \\frac{C_h\\,S_w\\,\\bar{c}}{l_v} = \\frac{"+p.vtCh+"\\times"+n(SR.Swing,2)+"\\times"+n(SR.MAC,3)+"}{"+n(SR.lv,3)+"} = "+n(SR.Sh_req,3)+"\\text{ m}^2","Required horizontal tail area")}
+  ${eq("S_{v,req} = \\frac{C_v\\,S_w\\,b_w}{l_v} = \\frac{"+p.vtCv+"\\times"+n(SR.Swing,2)+"\\times"+n(SR.bWing,2)+"}{"+n(SR.lv,3)+"} = "+n(SR.Sv_req,3)+"\\text{ m}^2","Required vertical tail area")}
+  ${eq("S_{panel} = \\max\\!\\left(\\frac{S_{h,req}}{\\cos^2\\Gamma},\\,\\frac{S_{v,req}}{\\sin^2\\Gamma}\\right) = "+n(SR.Svt_panel,3)+"\\text{ m}^2","V-tail panel area (governing constraint)")}
+  ${eq("\\Gamma_{opt} = \\arctan\\!\\sqrt{\\frac{S_{v,req}}{S_{h,req}}} = "+n(SR.vtGamma_opt,1)+"^\\circ","Optimal dihedral angle for minimum panel area")}
+  ${eq("b_{vt} = \\sqrt{AR_{vt}\\cdot S_{panel}} = "+n(SR.bvt_panel,3)+"\\text{ m}, \\quad C_{r,vt} = "+n(SR.Cr_vt,3)+"\\text{ m}, \\quad C_{t,vt} = "+n(SR.Ct_vt,3)+"\\text{ m}","V-tail panel geometry")}
   ${table(["Parameter","Symbol","Value","Unit"],[
-    row("Tail moment arm","l<sub>v</sub>",n(R.lv,3),"m"),
-    row("Req. H-tail area","S<sub>h,req</sub>",n(R.Sh_req,3),"m²"),
-    row("Req. V-tail area","S<sub>v,req</sub>",n(R.Sv_req,3),"m²"),
-    row("Panel area","S<sub>panel</sub>",n(R.Svt_panel,3),"m²"),
-    row("Total V-tail area","S<sub>vt,total</sub>",n(R.Svt_total,3),"m²"),
-    row("Optimal Γ","Γ<sub>opt</sub>",n(R.vtGamma_opt,1),"°"),
+    row("Tail moment arm","l<sub>v</sub>",n(SR.lv,3),"m"),
+    row("Req. H-tail area","S<sub>h,req</sub>",n(SR.Sh_req,3),"m²"),
+    row("Req. V-tail area","S<sub>v,req</sub>",n(SR.Sv_req,3),"m²"),
+    row("Panel area","S<sub>panel</sub>",n(SR.Svt_panel,3),"m²"),
+    row("Total V-tail area","S<sub>vt,total</sub>",n(SR.Svt_total,3),"m²"),
+    row("Optimal Γ","Γ<sub>opt</sub>",n(SR.vtGamma_opt,1),"°"),
     row("Chosen Γ","Γ",p.vtGamma,"°"),
-    row("Panel span","b<sub>vt</sub>",n(R.bvt_panel,3),"m"),
-    row("Root chord","C<sub>r,vt</sub>",n(R.Cr_vt,3),"m"),
-    row("Tip chord","C<sub>t,vt</sub>",n(R.Ct_vt,3),"m"),
-    row("LE sweep","Λ<sub>LE,vt</sub>",n(R.sweep_vt,2),"°"),
-    row("Pitch authority","—",n(R.pitch_ratio*100,1),"%"),
-    row("Yaw authority","—",n(R.yaw_ratio*100,1),"%"),
+    row("Panel span","b<sub>vt</sub>",n(SR.bvt_panel,3),"m"),
+    row("Root chord","C<sub>r,vt</sub>",n(SR.Cr_vt,3),"m"),
+    row("Tip chord","C<sub>t,vt</sub>",n(SR.Ct_vt,3),"m"),
+    row("LE sweep","Λ<sub>LE,vt</sub>",n(SR.sweep_vt,2),"°"),
+    row("Pitch authority","—",n(SR.pitch_ratio*100,1),"%"),
+    row("Yaw authority","—",n(SR.yaw_ratio*100,1),"%"),
   ])}
   `);
 
   // ── 10. FEASIBILITY ──────────────────────────────────────────────────
   const s10 = sec("feasibility","10. Feasibility Checks",`
   <table class="check-table"><thead><tr><th>Pass</th><th>Criterion</th><th>Value</th></tr></thead><tbody>
-    ${(R.checks||[]).map(c=>check(c.ok,c.label,c.val)).join("")}
+    ${(SR.checks||[]).map(c=>check(c.ok,c.label,c.val)).join("")}
   </tbody></table>
   `);
 
@@ -965,134 +965,134 @@ function generateReport(p, R, branding={}) {
   const CruiseRanged=p.range*1000-ClimbRd-DescRd-p.reserveRange*1000;
   const bfd=(g0d*p.range*1000)/(p.LD*p.etaSys*p.sedCell*3600);
   const lambdaFd=p.fusLen/p.fusDiam;
-  const Swwd=2*R.Swing*(1+0.25*p.tc*(1+p.taper*0.25));
+  const Swwd=2*SR.Swing*(1+0.25*p.tc*(1+p.taper*0.25));
   const SwfWetd=Math.PI*p.fusDiam*p.fusLen*Math.pow(1-2/lambdaFd,2/3)*(1+1/lambdaFd**2);
-  const Swhs_d=2*R.Swing*0.18, Swvs_d=2*R.Swing*0.12;
+  const Swhs_d=2*SR.Swing*0.18, Swvs_d=2*SR.Swing*0.12;
   const Swn_d=p.nPropHover*Math.PI*0.2*0.35;
   const Refusd=rhoCrd*p.vCruise*p.fusLen/muCrd;
-  const Cfwd=0.455/Math.log10(R.Re_)**2.58/(1+0.144*R.Mach**2)**0.65;
-  const Cffd=0.455/Math.log10(Refusd)**2.58/(1+0.144*R.Mach**2)**0.65;
+  const Cfwd=0.455/Math.log10(SR.Re_)**2.58/(1+0.144*SR.Mach**2)**0.65;
+  const Cffd=0.455/Math.log10(Refusd)**2.58/(1+0.144*SR.Mach**2)**0.65;
   const FFwd=(1+0.6/0.3*p.tc+100*p.tc**4)*1.05;
   const FFfd=1+60/lambdaFd**3+lambdaFd/400;
-  const Ttotd=R.MTOW*g0d, Trotord=Ttotd/p.nPropHover;
-  const PrWd=R.Phov*1000/p.nPropHover;
+  const Ttotd=SR.MTOW*g0d, Trotord=Ttotd/p.nPropHover;
+  const PrWd=SR.Phov*1000/p.nPropHover;
   const Adiskd=Trotord**3/(2*rhoSLd*(PrWd*p.etaHov)**2);
   const Rrotord=Math.sqrt(Adiskd/Math.PI);
   const TipSpdd=Math.sqrt(2*PrWd*p.etaHov/(rhoSLd*Adiskd));
   const PmotKWd=PrWd/1000*1.15, PpeakKWd=PmotKWd*1.50;
-  const Torqued=PmotKWd*1000/(R.RPM*Math.PI/30);
+  const Torqued=PmotKWd*1000/(SR.RPM*Math.PI/30);
   const Vcelld=3.6,Ahcelld=5.0,Vpackd=800;
   const Nseriesd=Math.round(Vpackd/Vcelld);
-  const PackAhReqd=R.Etot*1000/Vpackd;
+  const PackAhReqd=SR.Etot*1000/Vpackd;
   const Npard=Math.ceil(PackAhReqd/Ahcelld);
   const PackVd=Nseriesd*Vcelld, PackAhd=Npard*Ahcelld;
   const Rintd=0.030*Nseriesd/Npard;
-  const Pheatd=(R.Phov*1000/PackVd)**2*Rintd;
+  const Pheatd=(SR.Phov*1000/PackVd)**2*Rintd;
   const xCGfusd=p.fusLen*0.42;
-  const Xacd=R.Cr_-(R.MAC-0.25*R.MAC);
+  const Xacd=SR.Cr_-(SR.MAC-0.25*SR.MAC);
   const xCGwingd=p.fusLen*0.2589+Xacd;
   const xCGbatd=p.fusLen*0.38, xCGpayd=p.fusLen*0.40;
-  const Wfuscd=R.Wempty*0.35,Wwingcd=R.Wempty*0.18;
-  const Wmotcd=R.Wempty*0.22,Wavcd=R.Wempty*0.04,Wothcd=R.Wempty*0.21;
-  const xCGemptyd=(Wfuscd*xCGfusd+Wwingcd*xCGwingd+Wmotcd*xCGfusd+Wavcd*0.8+Wothcd*xCGfusd)/R.Wempty;
+  const Wfuscd=SR.Wempty*0.35,Wwingcd=SR.Wempty*0.18;
+  const Wmotcd=SR.Wempty*0.22,Wavcd=SR.Wempty*0.04,Wothcd=SR.Wempty*0.21;
+  const xCGemptyd=(Wfuscd*xCGfusd+Wwingcd*xCGwingd+Wmotcd*xCGfusd+Wavcd*0.8+Wothcd*xCGfusd)/SR.Wempty;
   const xACwingd=p.fusLen*0.2589+Xacd;
   const lhd=p.fusLen-xACwingd;
   const CLaWd=2*Math.PI*(1+0.77*p.tc);
   const dwd=2*CLaWd/(Math.PI*p.AR);
-  const Shd=R.Swing*0.18;
-  const DLd=R.MTOW*g0d/(Math.PI*Math.pow(p.propDiam/2,2)*p.nPropHover);
+  const Shd=SR.Swing*0.18;
+  const DLd=SR.MTOW*g0d/(Math.PI*Math.pow(p.propDiam/2,2)*p.nPropHover);
 
   // ── D1. ROUND 1 — INITIAL MTOW ──────────────────────────────────────
   const sd1 = sec("iter1","D1. Round 1 — Initial MTOW Estimate (Simplified Range-Energy Method)",`
   <p>Round 1 computes a first-pass MTOW using a simplified battery mass fraction derived purely from range. Starting guess MTOW<sub>0</sub> = 2177 kg, iterated to convergence (&lt; 10<sup>−6</sup> kg).</p>
-  ${eq("f_{bat} = \\frac{g_0 \\cdot R}{(L/D)\\,\\eta_{sys}\\,\\text{SED}_{cell}\\times 3600} = \\frac{9.81 \\times "+p.range+" \\times 1000}{"+p.LD+" \\times "+p.etaSys+" \\times "+p.sedCell+" \\times 3600} = "+n(bfd,5),"Simplified battery mass fraction (range-energy method)")}
+  ${eq("f_{bat} = \\frac{g_0 \\cdot SR}{(L/D)\\,\\eta_{sys}\\,\\text{SED}_{cell}\\times 3600} = \\frac{9.81 \\times "+p.range+" \\times 1000}{"+p.LD+" \\times "+p.etaSys+" \\times "+p.sedCell+" \\times 3600} = "+n(bfd,5),"Simplified battery mass fraction (range-energy method)")}
   ${eq("W_{empty} = f_{EW} \\cdot \\text{MTOW} = "+p.ewf+" \\cdot \\text{MTOW}","Empty weight from structural mass fraction EWF = "+p.ewf)}
   ${eq("W_{bat,1} = f_{bat} \\cdot \\text{MTOW} = "+n(bfd,5)+" \\cdot \\text{MTOW}","Battery mass (Round 1 approximation)")}
-  ${eq("\\text{MTOW}_{1} = \\frac{m_{pay}}{1 - f_{EW} - f_{bat}} = \\frac{"+p.payload+"}{1 - "+p.ewf+" - "+n(bfd,5)+"} = "+n(R.MTOW1,2)+"\\text{ kg}","Analytical solution of weight closure")}
+  ${eq("\\text{MTOW}_{1} = \\frac{m_{pay}}{1 - f_{EW} - f_{bat}} = \\frac{"+p.payload+"}{1 - "+p.ewf+" - "+n(bfd,5)+"} = "+n(SR.MTOW1,2)+"\\text{ kg}","Analytical solution of weight closure")}
   ${table(["Quantity","Formula / Value","Result","Unit"],[
-    row("Battery fraction","g₀·R / [(L/D)·η_sys·SED·3600]",n(bfd,5),""),
-    row("Empty weight (R1)","f_EW × MTOW₁",n(p.ewf*R.MTOW1,1),"kg"),
-    row("Battery mass (R1)","f_bat × MTOW₁",n(bfd*R.MTOW1,1),"kg"),
+    row("Battery fraction","g₀·SR / [(L/D)·η_sys·SED·3600]",n(bfd,5),""),
+    row("Empty weight (R1)","f_EW × MTOW₁",n(p.ewf*SR.MTOW1,1),"kg"),
+    row("Battery mass (R1)","f_bat × MTOW₁",n(bfd*SR.MTOW1,1),"kg"),
     row("Payload","given",p.payload,"kg"),
-    row("MTOW Round 1","m_pay + W_e + W_bat",n(R.MTOW1,2),"kg"),
+    row("MTOW Round 1","m_pay + W_e + W_bat",n(SR.MTOW1,2),"kg"),
   ])}
   `);
 
   // ── D2. ROUND 2 — COUPLED MTOW + ENERGY CONVERGENCE ─────────────────
   const sd2 = sec("iter2","D2. Round 2 — Coupled MTOW + Energy Convergence",`
-  <p>Round 2 couples weight closure to full mission energy. For each MTOW trial, all phase powers, times, and energies are computed; W<sub>bat</sub> is re-derived from E<sub>total</sub>; MTOW is updated until |MTOW<sub>new</sub> − MTOW<sub>old</sub>| &lt; 10<sup>−6</sup> kg. Starts from MTOW<sub>1</sub> = ${n(R.MTOW1,2)} kg.</p>
+  <p>Round 2 couples weight closure to full mission energy. For each MTOW trial, all phase powers, times, and energies are computed; W<sub>bat</sub> is re-derived from E<sub>total</sub>; MTOW is updated until |MTOW<sub>new</sub> − MTOW<sub>old</sub>| &lt; 10<sup>−6</sup> kg. Starts from MTOW<sub>1</sub> = ${n(SR.MTOW1,2)} kg.</p>
   <p><strong>Phase geometry (fixed, computed once):</strong></p>
   ${eq("V_{cl} = \\frac{\\dot{h}}{\\sin\\gamma_{cl}} = \\frac{"+RoCd+"}{\\sin("+clAngd+"^\\circ)} = "+n(Vcld,2)+"\\text{ m/s}","Climb speed from RoC and climb angle")}
   ${eq("(L/D)_{cl} = (L/D)_{cr}\\times 0.87 = "+p.LD+"\\times 0.87 = "+n(LDcld,3),"Climb L/D — 13% reduction for induced drag increase")}
   ${eq("\\gamma_{dc} = \\arctan\\!\\left(\\frac{1}{(L/D)}\\right) = "+n(desAngd,3)+"^\\circ, \\quad V_{dc} = \\frac{\\dot{h}}{\\sin\\gamma_{dc}} = "+n(Vdcd,2)+"\\text{ m/s}","Descent angle and speed")}
   ${eq("V_{res} = 0.7\\,V_{cr} = 0.7\\times "+p.vCruise+" = "+n(Vresd,2)+"\\text{ m/s}","Reserve loiter speed")}
   ${eq("d_{cl} = \\frac{h_{cr}-h_{hov}}{\\tan\\gamma_{cl}} = "+n(ClimbRd,1)+"\\text{ m}, \\quad d_{dc} = \\frac{h_{cr}-h_{hov}}{\\tan\\gamma_{dc}} = "+n(DescRd,1)+"\\text{ m}","Climb and descent ground tracks")}
-  ${eq("d_{cr} = R - d_{cl} - d_{dc} - R_{res} = "+p.range*1000+" - "+n(ClimbRd,1)+" - "+n(DescRd,1)+" - "+p.reserveRange*1000+" = "+n(CruiseRanged,1)+"\\text{ m}","Net cruise distance")}
-  <p><strong>Final converged iteration (MTOW = ${n(R.MTOW,2)} kg):</strong></p>
-  ${eq("DL = \\frac{\\text{MTOW}\\cdot g_0}{N_{rot}\\cdot A_{disk}} = \\frac{"+n(R.MTOW,2)+"\\times 9.81}{"+p.nPropHover+"\\times\\pi("+n(p.propDiam/2,3)+")^2} = "+n(DLd,2)+"\\text{ N/m}^2","Disk loading")}
-  ${eq("P_{hov} = \\frac{W}{\\eta_{hov}}\\sqrt{\\frac{DL}{2\\rho_{SL}}} \\div 1000 = \\frac{"+n(R.MTOW*g0d,1)+"}{"+p.etaHov+"}\\sqrt{\\frac{"+n(DLd,2)+"}{2.45}} \\div 1000 = "+n(R.Phov,2)+"\\text{ kW}","Hover power")}
-  ${eq("P_{cl} = \\frac{W}{\\eta_{sys}}\\!\\left(\\dot{h}+\\frac{V_{cl}}{(L/D)_{cl}}\\right)\\!\\div 1000 = \\frac{"+n(R.MTOW*g0d,1)+"}{"+p.etaSys+"}\\!\\left("+RoCd+"+\\frac{"+n(Vcld,2)+"}{"+n(LDcld,3)+"}\\right)\\!\\div 1000 = "+n(R.Pcl,2)+"\\text{ kW}","Climb power")}
-  ${eq("P_{cr} = \\frac{W\\,V_{cr}}{\\eta_{sys}\\,(L/D)} = \\frac{"+n(R.MTOW*g0d,1)+"\\times "+p.vCruise+"}{"+p.etaSys+"\\times "+p.LD+"} \\div 1000 = "+n(R.Pcr,2)+"\\text{ kW}","Cruise power")}
-  ${eq("P_{dc} = \\frac{W}{\\eta_{sys}}\\!\\left(-\\dot{h}+\\frac{V_{dc}}{(L/D)_{cl}}\\right)\\!\\div 1000 = "+n(R.Pdc,2)+"\\text{ kW}","Descent power")}
-  ${eq("P_{res} = \\frac{W\\,V_{res}}{\\eta_{sys}\\,(L/D)} \\div 1000 = "+n(R.Pres,2)+"\\text{ kW}","Reserve power")}
-  ${eq("W_{bat} = \\frac{E_{total}\\times 1000\\,(1+\\text{SoC}_{min})}{\\text{SED}_{cell}\\,\\eta_{bat}} = \\frac{"+n(R.Etot,3)+"\\times 1000\\times(1+"+p.socMin+")}{"+p.sedCell+"\\times "+p.etaBat+"} = "+n(R.Wbat,2)+"\\text{ kg}","Battery mass from total energy")}
-  ${eq("\\text{MTOW} = "+p.payload+" + "+n(R.Wempty,2)+" + "+n(R.Wbat,2)+" = "+n(R.MTOW,2)+"\\text{ kg} \\quad \\checkmark\\text{ Converged}","Final weight closure")}
+  ${eq("d_{cr} = SR - d_{cl} - d_{dc} - R_{res} = "+p.range*1000+" - "+n(ClimbRd,1)+" - "+n(DescRd,1)+" - "+p.reserveRange*1000+" = "+n(CruiseRanged,1)+"\\text{ m}","Net cruise distance")}
+  <p><strong>Final converged iteration (MTOW = ${n(SR.MTOW,2)} kg):</strong></p>
+  ${eq("DL = \\frac{\\text{MTOW}\\cdot g_0}{N_{rot}\\cdot A_{disk}} = \\frac{"+n(SR.MTOW,2)+"\\times 9.81}{"+p.nPropHover+"\\times\\pi("+n(p.propDiam/2,3)+")^2} = "+n(DLd,2)+"\\text{ N/m}^2","Disk loading")}
+  ${eq("P_{hov} = \\frac{W}{\\eta_{hov}}\\sqrt{\\frac{DL}{2\\rho_{SL}}} \\div 1000 = \\frac{"+n(SR.MTOW*g0d,1)+"}{"+p.etaHov+"}\\sqrt{\\frac{"+n(DLd,2)+"}{2.45}} \\div 1000 = "+n(SR.Phov,2)+"\\text{ kW}","Hover power")}
+  ${eq("P_{cl} = \\frac{W}{\\eta_{sys}}\\!\\left(\\dot{h}+\\frac{V_{cl}}{(L/D)_{cl}}\\right)\\!\\div 1000 = \\frac{"+n(SR.MTOW*g0d,1)+"}{"+p.etaSys+"}\\!\\left("+RoCd+"+\\frac{"+n(Vcld,2)+"}{"+n(LDcld,3)+"}\\right)\\!\\div 1000 = "+n(SR.Pcl,2)+"\\text{ kW}","Climb power")}
+  ${eq("P_{cr} = \\frac{W\\,V_{cr}}{\\eta_{sys}\\,(L/D)} = \\frac{"+n(SR.MTOW*g0d,1)+"\\times "+p.vCruise+"}{"+p.etaSys+"\\times "+p.LD+"} \\div 1000 = "+n(SR.Pcr,2)+"\\text{ kW}","Cruise power")}
+  ${eq("P_{dc} = \\frac{W}{\\eta_{sys}}\\!\\left(-\\dot{h}+\\frac{V_{dc}}{(L/D)_{cl}}\\right)\\!\\div 1000 = "+n(SR.Pdc,2)+"\\text{ kW}","Descent power")}
+  ${eq("P_{res} = \\frac{W\\,V_{res}}{\\eta_{sys}\\,(L/D)} \\div 1000 = "+n(SR.Pres,2)+"\\text{ kW}","Reserve power")}
+  ${eq("W_{bat} = \\frac{E_{total}\\times 1000\\,(1+\\text{SoC}_{min})}{\\text{SED}_{cell}\\,\\eta_{bat}} = \\frac{"+n(SR.Etot,3)+"\\times 1000\\times(1+"+p.socMin+")}{"+p.sedCell+"\\times "+p.etaBat+"} = "+n(SR.Wbat,2)+"\\text{ kg}","Battery mass from total energy")}
+  ${eq("\\text{MTOW} = "+p.payload+" + "+n(SR.Wempty,2)+" + "+n(SR.Wbat,2)+" = "+n(SR.MTOW,2)+"\\text{ kg} \\quad \\checkmark\\text{ Converged}","Final weight closure")}
   `);
 
   // ── D3. MISSION PHASE TIMING ─────────────────────────────────────────
   const sd3 = sec("timing","D3. Mission Phase Timing & Distance Analysis",`
-  ${eq("t_{TO} = \\frac{h_{hov}}{0.5} = \\frac{"+hvtold+"}{0.5} = "+n(R.tto,0)+"\\text{ s}","Takeoff hover time — average vertical speed = 0.5 m/s")}
-  ${eq("t_{cl} = \\frac{d_{cl}}{V_{cl}} = \\frac{"+n(ClimbRd,1)+"}{"+n(Vcld,2)+"} = "+n(R.tcl,0)+"\\text{ s}","Climb duration")}
-  ${eq("t_{cr} = \\frac{d_{cr}}{V_{cr}} = \\frac{"+n(CruiseRanged,1)+"}{"+p.vCruise+"} = "+n(R.tcr,0)+"\\text{ s}","Cruise duration")}
-  ${eq("t_{dc} = \\frac{d_{dc}}{V_{dc}} = \\frac{"+n(DescRd,1)+"}{"+n(Vdcd,2)+"} = "+n(R.tdc,0)+"\\text{ s}","Descent duration")}
-  ${eq("t_{ld} = \\frac{h_{hov}}{0.5} = "+n(R.tld,0)+"\\text{ s}","Landing hover time")}
-  ${eq("t_{res} = \\frac{R_{res}}{V_{res}} = \\frac{"+p.reserveRange*1000+"}{"+n(Vresd,2)+"} = "+n(R.tres,0)+"\\text{ s}","Reserve duration")}
-  ${eq("T_{mission} = "+n(R.tto,0)+"+"+n(R.tcl,0)+"+"+n(R.tcr,0)+"+"+n(R.tdc,0)+"+"+n(R.tld,0)+"+"+n(R.tres,0)+" = "+n(R.Tend,0)+"\\text{ s} = "+n(R.Tend/60,1)+"\\text{ min}","Total mission time")}
+  ${eq("t_{TO} = \\frac{h_{hov}}{0.5} = \\frac{"+hvtold+"}{0.5} = "+n(SR.tto,0)+"\\text{ s}","Takeoff hover time — average vertical speed = 0.5 m/s")}
+  ${eq("t_{cl} = \\frac{d_{cl}}{V_{cl}} = \\frac{"+n(ClimbRd,1)+"}{"+n(Vcld,2)+"} = "+n(SR.tcl,0)+"\\text{ s}","Climb duration")}
+  ${eq("t_{cr} = \\frac{d_{cr}}{V_{cr}} = \\frac{"+n(CruiseRanged,1)+"}{"+p.vCruise+"} = "+n(SR.tcr,0)+"\\text{ s}","Cruise duration")}
+  ${eq("t_{dc} = \\frac{d_{dc}}{V_{dc}} = \\frac{"+n(DescRd,1)+"}{"+n(Vdcd,2)+"} = "+n(SR.tdc,0)+"\\text{ s}","Descent duration")}
+  ${eq("t_{ld} = \\frac{h_{hov}}{0.5} = "+n(SR.tld,0)+"\\text{ s}","Landing hover time")}
+  ${eq("t_{res} = \\frac{R_{res}}{V_{res}} = \\frac{"+p.reserveRange*1000+"}{"+n(Vresd,2)+"} = "+n(SR.tres,0)+"\\text{ s}","Reserve duration")}
+  ${eq("T_{mission} = "+n(SR.tto,0)+"+"+n(SR.tcl,0)+"+"+n(SR.tcr,0)+"+"+n(SR.tdc,0)+"+"+n(SR.tld,0)+"+"+n(SR.tres,0)+" = "+n(SR.Tend,0)+"\\text{ s} = "+n(SR.Tend/60,1)+"\\text{ min}","Total mission time")}
   ${table(["Phase","Distance (m)","Speed (m/s)","Duration (s)","Duration (min)"],[
-    row("Takeoff (hover)","Vertical "+hvtold+" m","0.5",n(R.tto,0),n(R.tto/60,1)),
-    row("Climb",n(ClimbRd,1),n(Vcld,2),n(R.tcl,0),n(R.tcl/60,1)),
-    row("Cruise",n(CruiseRanged,1),p.vCruise,n(R.tcr,0),n(R.tcr/60,1)),
-    row("Descent",n(DescRd,1),n(Vdcd,2),n(R.tdc,0),n(R.tdc/60,1)),
-    row("Landing (hover)","Vertical "+hvtold+" m","0.5",n(R.tld,0),n(R.tld/60,1)),
-    row("Reserve",n(p.reserveRange*1000,0),n(Vresd,2),n(R.tres,0),n(R.tres/60,1)),
-    row("<b>Total</b>","<b>"+n(p.range*1000,0)+" m</b>","—","<b>"+n(R.Tend,0)+"</b>","<b>"+n(R.Tend/60,1)+"</b>"),
+    row("Takeoff (hover)","Vertical "+hvtold+" m","0.5",n(SR.tto,0),n(SR.tto/60,1)),
+    row("Climb",n(ClimbRd,1),n(Vcld,2),n(SR.tcl,0),n(SR.tcl/60,1)),
+    row("Cruise",n(CruiseRanged,1),p.vCruise,n(SR.tcr,0),n(SR.tcr/60,1)),
+    row("Descent",n(DescRd,1),n(Vdcd,2),n(SR.tdc,0),n(SR.tdc/60,1)),
+    row("Landing (hover)","Vertical "+hvtold+" m","0.5",n(SR.tld,0),n(SR.tld/60,1)),
+    row("Reserve",n(p.reserveRange*1000,0),n(Vresd,2),n(SR.tres,0),n(SR.tres/60,1)),
+    row("<b>Total</b>","<b>"+n(p.range*1000,0)+" m</b>","—","<b>"+n(SR.Tend,0)+"</b>","<b>"+n(SR.Tend/60,1)+"</b>"),
   ])}
   `);
 
   // ── D4. PHASE POWER & ENERGY ─────────────────────────────────────────
   const sd4 = sec("phasecalc","D4. Phase Power & Energy — Detailed Calculations",`
   <p>Energy per phase: E<sub>phase</sub> = P<sub>phase</sub> × t<sub>phase</sub> / 3600. Cumulative column tracks battery draw throughout the mission.</p>
-  ${eq("E_{TO} = P_{hov}\\times\\frac{t_{TO}}{3600} = "+n(R.Phov,2)+"\\times\\frac{"+n(R.tto,0)+"}{3600} = "+n(R.Eto,4)+"\\text{ kWh}","Takeoff energy")}
-  ${eq("E_{cl} = P_{cl}\\times\\frac{t_{cl}}{3600} = "+n(R.Pcl,2)+"\\times\\frac{"+n(R.tcl,0)+"}{3600} = "+n(R.Ecl,4)+"\\text{ kWh}","Climb energy")}
-  ${eq("E_{cr} = P_{cr}\\times\\frac{t_{cr}}{3600} = "+n(R.Pcr,2)+"\\times\\frac{"+n(R.tcr,0)+"}{3600} = "+n(R.Ecr,4)+"\\text{ kWh}","Cruise energy")}
-  ${eq("E_{dc} = |P_{dc}|\\times\\frac{t_{dc}}{3600} = "+n(R.Pdc,2)+"\\times\\frac{"+n(R.tdc,0)+"}{3600} = "+n(R.Edc,4)+"\\text{ kWh}","Descent energy")}
-  ${eq("E_{ld} = P_{hov}\\times\\frac{t_{ld}}{3600} = "+n(R.Phov,2)+"\\times\\frac{"+n(R.tld,0)+"}{3600} = "+n(R.Eld,4)+"\\text{ kWh}","Landing energy")}
-  ${eq("E_{res} = P_{res}\\times\\frac{t_{res}}{3600} = "+n(R.Pres,2)+"\\times\\frac{"+n(R.tres,0)+"}{3600} = "+n(R.Eres,4)+"\\text{ kWh}","Reserve energy")}
-  ${eq("E_{total} = "+n(R.Eto,4)+"+"+n(R.Ecl,4)+"+"+n(R.Ecr,4)+"+"+n(R.Edc,4)+"+"+n(R.Eld,4)+"+"+n(R.Eres,4)+" = "+n(R.Etot,3)+"\\text{ kWh}","Total mission energy")}
+  ${eq("E_{TO} = P_{hov}\\times\\frac{t_{TO}}{3600} = "+n(SR.Phov,2)+"\\times\\frac{"+n(SR.tto,0)+"}{3600} = "+n(SR.Eto,4)+"\\text{ kWh}","Takeoff energy")}
+  ${eq("E_{cl} = P_{cl}\\times\\frac{t_{cl}}{3600} = "+n(SR.Pcl,2)+"\\times\\frac{"+n(SR.tcl,0)+"}{3600} = "+n(SR.Ecl,4)+"\\text{ kWh}","Climb energy")}
+  ${eq("E_{cr} = P_{cr}\\times\\frac{t_{cr}}{3600} = "+n(SR.Pcr,2)+"\\times\\frac{"+n(SR.tcr,0)+"}{3600} = "+n(SR.Ecr,4)+"\\text{ kWh}","Cruise energy")}
+  ${eq("E_{dc} = |P_{dc}|\\times\\frac{t_{dc}}{3600} = "+n(SR.Pdc,2)+"\\times\\frac{"+n(SR.tdc,0)+"}{3600} = "+n(SR.Edc,4)+"\\text{ kWh}","Descent energy")}
+  ${eq("E_{ld} = P_{hov}\\times\\frac{t_{ld}}{3600} = "+n(SR.Phov,2)+"\\times\\frac{"+n(SR.tld,0)+"}{3600} = "+n(SR.Eld,4)+"\\text{ kWh}","Landing energy")}
+  ${eq("E_{res} = P_{res}\\times\\frac{t_{res}}{3600} = "+n(SR.Pres,2)+"\\times\\frac{"+n(SR.tres,0)+"}{3600} = "+n(SR.Eres,4)+"\\text{ kWh}","Reserve energy")}
+  ${eq("E_{total} = "+n(SR.Eto,4)+"+"+n(SR.Ecl,4)+"+"+n(SR.Ecr,4)+"+"+n(SR.Edc,4)+"+"+n(SR.Eld,4)+"+"+n(SR.Eres,4)+" = "+n(SR.Etot,3)+"\\text{ kWh}","Total mission energy")}
   ${table(["Phase","Power (kW)","Time (s)","Energy (kWh)","Cumulative (kWh)","% Total"],[
-    `<tr><td>Takeoff</td><td>${n(R.Phov,2)}</td><td>${n(R.tto,0)}</td><td>${n(R.Eto,4)}</td><td>${n(R.Eto,4)}</td><td>${n(R.Eto/R.Etot*100,1)}%</td></tr>`,
-    `<tr><td>Climb</td><td>${n(R.Pcl,2)}</td><td>${n(R.tcl,0)}</td><td>${n(R.Ecl,4)}</td><td>${n(R.Eto+R.Ecl,4)}</td><td>${n(R.Ecl/R.Etot*100,1)}%</td></tr>`,
-    `<tr><td>Cruise</td><td>${n(R.Pcr,2)}</td><td>${n(R.tcr,0)}</td><td>${n(R.Ecr,4)}</td><td>${n(R.Eto+R.Ecl+R.Ecr,4)}</td><td>${n(R.Ecr/R.Etot*100,1)}%</td></tr>`,
-    `<tr><td>Descent</td><td>${n(R.Pdc,2)}</td><td>${n(R.tdc,0)}</td><td>${n(R.Edc,4)}</td><td>${n(R.Eto+R.Ecl+R.Ecr+R.Edc,4)}</td><td>${n(R.Edc/R.Etot*100,1)}%</td></tr>`,
-    `<tr><td>Landing</td><td>${n(R.Phov,2)}</td><td>${n(R.tld,0)}</td><td>${n(R.Eld,4)}</td><td>${n(R.Eto+R.Ecl+R.Ecr+R.Edc+R.Eld,4)}</td><td>${n(R.Eld/R.Etot*100,1)}%</td></tr>`,
-    `<tr><td>Reserve</td><td>${n(R.Pres,2)}</td><td>${n(R.tres,0)}</td><td>${n(R.Eres,4)}</td><td>${n(R.Etot,3)}</td><td>${n(R.Eres/R.Etot*100,1)}%</td></tr>`,
-    `<tr style="font-weight:700"><td>Total</td><td>—</td><td>${n(R.Tend,0)}</td><td>${n(R.Etot,3)}</td><td>${n(R.Etot,3)}</td><td>100%</td></tr>`,
+    `<tr><td>Takeoff</td><td>${n(SR.Phov,2)}</td><td>${n(SR.tto,0)}</td><td>${n(SR.Eto,4)}</td><td>${n(SR.Eto,4)}</td><td>${n(SR.Eto/SR.Etot*100,1)}%</td></tr>`,
+    `<tr><td>Climb</td><td>${n(SR.Pcl,2)}</td><td>${n(SR.tcl,0)}</td><td>${n(SR.Ecl,4)}</td><td>${n(SR.Eto+SR.Ecl,4)}</td><td>${n(SR.Ecl/SR.Etot*100,1)}%</td></tr>`,
+    `<tr><td>Cruise</td><td>${n(SR.Pcr,2)}</td><td>${n(SR.tcr,0)}</td><td>${n(SR.Ecr,4)}</td><td>${n(SR.Eto+SR.Ecl+SR.Ecr,4)}</td><td>${n(SR.Ecr/SR.Etot*100,1)}%</td></tr>`,
+    `<tr><td>Descent</td><td>${n(SR.Pdc,2)}</td><td>${n(SR.tdc,0)}</td><td>${n(SR.Edc,4)}</td><td>${n(SR.Eto+SR.Ecl+SR.Ecr+SR.Edc,4)}</td><td>${n(SR.Edc/SR.Etot*100,1)}%</td></tr>`,
+    `<tr><td>Landing</td><td>${n(SR.Phov,2)}</td><td>${n(SR.tld,0)}</td><td>${n(SR.Eld,4)}</td><td>${n(SR.Eto+SR.Ecl+SR.Ecr+SR.Edc+SR.Eld,4)}</td><td>${n(SR.Eld/SR.Etot*100,1)}%</td></tr>`,
+    `<tr><td>Reserve</td><td>${n(SR.Pres,2)}</td><td>${n(SR.tres,0)}</td><td>${n(SR.Eres,4)}</td><td>${n(SR.Etot,3)}</td><td>${n(SR.Eres/SR.Etot*100,1)}%</td></tr>`,
+    `<tr style="font-weight:700"><td>Total</td><td>—</td><td>${n(SR.Tend,0)}</td><td>${n(SR.Etot,3)}</td><td>${n(SR.Etot,3)}</td><td>100%</td></tr>`,
   ])}
   `);
 
   // ── D5. WING SIZING DETAILED ──────────────────────────────────────────
   const sd5 = sec("wingdetail","D5. Wing Sizing — Detailed Calculations",`
-  ${eq("S_w = \\frac{2\\,L_{req}}{\\rho_{cr}\\,V_{cr}^2\\,C_{L,des}} = \\frac{2\\times "+n(R.MTOW*g0d,1)+"}{"+n(rhoCrd,4)+"\\times "+p.vCruise+"^2\\times "+p.clDesign+"} = "+n(R.Swing,2)+"\\text{ m}^2","Wing area from lift balance at cruise")}
-  ${eq("W/S = "+n(R.WL,1)+"\\text{ N/m}^2","Wing loading")}
-  ${eq("b_w = \\sqrt{AR\\cdot S_w} = \\sqrt{"+p.AR+"\\times "+n(R.Swing,2)+"} = "+n(R.bWing,2)+"\\text{ m}","Wing span")}
-  ${eq("C_r = \\frac{2S_w}{b_w(1+\\lambda)} = \\frac{2\\times "+n(R.Swing,2)+"}{"+n(R.bWing,2)+"\\times(1+"+p.taper+")} = "+n(R.Cr_,3)+"\\text{ m}","Root chord")}
-  ${eq("C_t = \\lambda\\,C_r = "+p.taper+"\\times "+n(R.Cr_,3)+" = "+n(R.Ct_,3)+"\\text{ m}","Tip chord")}
-  ${eq("\\bar{c} = \\frac{2}{3}\\,C_r\\,\\frac{1+\\lambda+\\lambda^2}{1+\\lambda} = "+n(R.MAC,3)+"\\text{ m}","Mean aerodynamic chord")}
-  ${eq("\\bar{y}_{MAC} = \\frac{b_w}{6}\\,\\frac{1+2\\lambda}{1+\\lambda} = "+n(R.Ymac,3)+"\\text{ m}","Spanwise MAC position")}
-  ${eq("\\Lambda_{LE} = \\arctan\\!\\left(\\frac{C_r-C_t}{b_w/2}\\right) = \\arctan\\!\\left(\\frac{"+n(R.Cr_,3)+"-"+n(R.Ct_,3)+"}{"+n(R.bWing/2,3)+"}\\right) = "+n(R.sweep,2)+"^\\circ","Leading edge sweep")}
-  ${eq("Re_w = \\frac{\\rho_{cr}\\,V_{cr}\\,\\bar{c}}{\\mu_{cr}} = \\frac{"+n(rhoCrd,4)+"\\times "+p.vCruise+"\\times "+n(R.MAC,3)+"}{"+n(muCrd,7)+"} = "+n(R.Re_,0),"Wing chord Reynolds number")}
-  ${eq("M = \\frac{V_{cr}}{a_{cr}} = \\frac{"+p.vCruise+"}{"+n(Math.sqrt(1.4*287*Tcrd),2)+"} = "+n(R.Mach,4),"Cruise Mach number")}
-  ${eq("V_{stall} = \\sqrt{\\frac{2(W/S)}{\\rho_{cr}\\,C_{L,max}}} = \\sqrt{\\frac{2\\times "+n(R.WL,1)+"}{"+n(rhoCrd,4)+"\\times "+(R.selAF&&R.selAF.CLmax?n(R.selAF.CLmax,2):"1.60")+"}} = "+n(R.Vstall,2)+"\\text{ m/s}","Stall speed")}
+  ${eq("S_w = \\frac{2\\,L_{req}}{\\rho_{cr}\\,V_{cr}^2\\,C_{L,des}} = \\frac{2\\times "+n(SR.MTOW*g0d,1)+"}{"+n(rhoCrd,4)+"\\times "+p.vCruise+"^2\\times "+p.clDesign+"} = "+n(SR.Swing,2)+"\\text{ m}^2","Wing area from lift balance at cruise")}
+  ${eq("W/S = "+n(SR.WL,1)+"\\text{ N/m}^2","Wing loading")}
+  ${eq("b_w = \\sqrt{AR\\cdot S_w} = \\sqrt{"+p.AR+"\\times "+n(SR.Swing,2)+"} = "+n(SR.bWing,2)+"\\text{ m}","Wing span")}
+  ${eq("C_r = \\frac{2S_w}{b_w(1+\\lambda)} = \\frac{2\\times "+n(SR.Swing,2)+"}{"+n(SR.bWing,2)+"\\times(1+"+p.taper+")} = "+n(SR.Cr_,3)+"\\text{ m}","Root chord")}
+  ${eq("C_t = \\lambda\\,C_r = "+p.taper+"\\times "+n(SR.Cr_,3)+" = "+n(SR.Ct_,3)+"\\text{ m}","Tip chord")}
+  ${eq("\\bar{c} = \\frac{2}{3}\\,C_r\\,\\frac{1+\\lambda+\\lambda^2}{1+\\lambda} = "+n(SR.MAC,3)+"\\text{ m}","Mean aerodynamic chord")}
+  ${eq("\\bar{y}_{MAC} = \\frac{b_w}{6}\\,\\frac{1+2\\lambda}{1+\\lambda} = "+n(SR.Ymac,3)+"\\text{ m}","Spanwise MAC position")}
+  ${eq("\\Lambda_{LE} = \\arctan\\!\\left(\\frac{C_r-C_t}{b_w/2}\\right) = \\arctan\\!\\left(\\frac{"+n(SR.Cr_,3)+"-"+n(SR.Ct_,3)+"}{"+n(SR.bWing/2,3)+"}\\right) = "+n(SR.sweep,2)+"^\\circ","Leading edge sweep")}
+  ${eq("Re_w = \\frac{\\rho_{cr}\\,V_{cr}\\,\\bar{c}}{\\mu_{cr}} = \\frac{"+n(rhoCrd,4)+"\\times "+p.vCruise+"\\times "+n(SR.MAC,3)+"}{"+n(muCrd,7)+"} = "+n(SR.Re_,0),"Wing chord Reynolds number")}
+  ${eq("M = \\frac{V_{cr}}{a_{cr}} = \\frac{"+p.vCruise+"}{"+n(Math.sqrt(1.4*287*Tcrd),2)+"} = "+n(SR.Mach,4),"Cruise Mach number")}
+  ${eq("V_{stall} = \\sqrt{\\frac{2(W/S)}{\\rho_{cr}\\,C_{L,max}}} = \\sqrt{\\frac{2\\times "+n(SR.WL,1)+"}{"+n(rhoCrd,4)+"\\times "+(SR.selAF&&SR.selAF.CLmax?n(SR.selAF.CLmax,2):"1.60")+"}} = "+n(SR.Vstall,2)+"\\text{ m/s}","Stall speed")}
   `);
 
   // ── D6. FUSELAGE SIZING & DRAG BUILDUP ───────────────────────────────
@@ -1102,34 +1102,34 @@ function generateReport(p, R, branding={}) {
   ${eq("S_{wet,f} = \\pi D_f L_f\\left(1-\\frac{2}{\\lambda_f}\\right)^{2/3}\\!\\left(1+\\frac{1}{\\lambda_f^2}\\right) = "+n(SwfWetd,3)+"\\text{ m}^2","Fuselage wetted area (Raymer Eq. 12.31)")}
   ${eq("S_{wet,w} = 2S_w\\left(1+0.25\\,\\frac{t}{c}(1+\\lambda\\cdot 0.25)\\right) = "+n(Swwd,3)+"\\text{ m}^2","Wing wetted area")}
   ${eq("Re_{fus} = \\frac{\\rho_{cr}\\,V_{cr}\\,L_{fus}}{\\mu_{cr}} = \\frac{"+n(rhoCrd,4)+"\\times "+p.vCruise+"\\times "+p.fusLen+"}{"+n(muCrd,7)+"} = "+n(Refusd,0),"Fuselage Reynolds number")}
-  ${eq("C_{f,w} = \\frac{0.455}{(\\log_{10}"+n(R.Re_,0)+")^{2.58}(1+0.144\\times "+n(R.Mach,4)+"^2)^{0.65}} = "+n(Cfwd,6),"Wing skin friction coefficient")}
-  ${eq("C_{f,f} = \\frac{0.455}{(\\log_{10}"+n(Refusd,0)+")^{2.58}(1+0.144\\times "+n(R.Mach,4)+"^2)^{0.65}} = "+n(Cffd,6),"Fuselage skin friction coefficient")}
+  ${eq("C_{f,w} = \\frac{0.455}{(\\log_{10}"+n(SR.Re_,0)+")^{2.58}(1+0.144\\times "+n(SR.Mach,4)+"^2)^{0.65}} = "+n(Cfwd,6),"Wing skin friction coefficient")}
+  ${eq("C_{f,f} = \\frac{0.455}{(\\log_{10}"+n(Refusd,0)+")^{2.58}(1+0.144\\times "+n(SR.Mach,4)+"^2)^{0.65}} = "+n(Cffd,6),"Fuselage skin friction coefficient")}
   ${eq("FF_w = \\left(1+2\\times "+p.tc+"+100\\times "+n(p.tc**4,6)+"\\right)\\times 1.05 = "+n(FFwd,4),"Wing form factor")}
   ${eq("FF_f = 1+\\frac{60}{"+n(lambdaFd,2)+"^3}+\\frac{"+n(lambdaFd,2)+"}{400} = "+n(FFfd,4),"Fuselage form factor")}
   ${table(["Component","C<sub>f</sub>","FF","S<sub>wet</sub> (m²)","S<sub>wet</sub>/S<sub>w</sub>","C<sub>D0</sub>"],[
-    `<tr><td>Wing</td><td>${n(Cfwd,6)}</td><td>${n(FFwd,4)}</td><td>${n(Swwd,3)}</td><td>${n(Swwd/R.Swing,4)}</td><td>${n(R.dragComp&&R.dragComp.find(d=>d.name==="Wing")?R.dragComp.find(d=>d.name==="Wing").val:0,5)}</td></tr>`,
-    `<tr><td>Fuselage</td><td>${n(Cffd,6)}</td><td>${n(FFfd,4)}</td><td>${n(SwfWetd,3)}</td><td>${n(SwfWetd/R.Swing,4)}</td><td>${n(R.dragComp&&R.dragComp.find(d=>d.name==="Fuselage")?R.dragComp.find(d=>d.name==="Fuselage").val:0,5)}</td></tr>`,
-    `<tr><td>H-Stab equiv.</td><td>${n(Cfwd,6)}</td><td>1.05</td><td>${n(Swhs_d,3)}</td><td>${n(Swhs_d/R.Swing,4)}</td><td>${n(R.dragComp&&R.dragComp.find(d=>d.name==="H-Stab")?R.dragComp.find(d=>d.name==="H-Stab").val:0,5)}</td></tr>`,
-    `<tr><td>V-Stab equiv.</td><td>${n(Cfwd,6)}</td><td>1.05</td><td>${n(Swvs_d,3)}</td><td>${n(Swvs_d/R.Swing,4)}</td><td>${n(R.dragComp&&R.dragComp.find(d=>d.name==="V-Stab")?R.dragComp.find(d=>d.name==="V-Stab").val:0,5)}</td></tr>`,
-    `<tr><td>Nacelles (×${p.nPropHover})</td><td>${n(Cfwd,6)}</td><td>1.30</td><td>${n(Swn_d,3)}</td><td>${n(Swn_d/R.Swing,4)}</td><td>${n(R.dragComp&&R.dragComp.find(d=>d.name==="Nacelles")?R.dragComp.find(d=>d.name==="Nacelles").val:0,5)}</td></tr>`,
+    `<tr><td>Wing</td><td>${n(Cfwd,6)}</td><td>${n(FFwd,4)}</td><td>${n(Swwd,3)}</td><td>${n(Swwd/SR.Swing,4)}</td><td>${n(SR.dragComp&&SR.dragComp.find(d=>d.name==="Wing")?SR.dragComp.find(d=>d.name==="Wing").val:0,5)}</td></tr>`,
+    `<tr><td>Fuselage</td><td>${n(Cffd,6)}</td><td>${n(FFfd,4)}</td><td>${n(SwfWetd,3)}</td><td>${n(SwfWetd/SR.Swing,4)}</td><td>${n(SR.dragComp&&SR.dragComp.find(d=>d.name==="Fuselage")?SR.dragComp.find(d=>d.name==="Fuselage").val:0,5)}</td></tr>`,
+    `<tr><td>H-Stab equiv.</td><td>${n(Cfwd,6)}</td><td>1.05</td><td>${n(Swhs_d,3)}</td><td>${n(Swhs_d/SR.Swing,4)}</td><td>${n(SR.dragComp&&SR.dragComp.find(d=>d.name==="H-Stab")?SR.dragComp.find(d=>d.name==="H-Stab").val:0,5)}</td></tr>`,
+    `<tr><td>V-Stab equiv.</td><td>${n(Cfwd,6)}</td><td>1.05</td><td>${n(Swvs_d,3)}</td><td>${n(Swvs_d/SR.Swing,4)}</td><td>${n(SR.dragComp&&SR.dragComp.find(d=>d.name==="V-Stab")?SR.dragComp.find(d=>d.name==="V-Stab").val:0,5)}</td></tr>`,
+    `<tr><td>Nacelles (×${p.nPropHover})</td><td>${n(Cfwd,6)}</td><td>1.30</td><td>${n(Swn_d,3)}</td><td>${n(Swn_d/SR.Swing,4)}</td><td>${n(SR.dragComp&&SR.dragComp.find(d=>d.name==="Nacelles")?SR.dragComp.find(d=>d.name==="Nacelles").val:0,5)}</td></tr>`,
     `<tr><td>Landing Gear</td><td colspan="4">Fixed interference estimate</td><td>0.01500</td></tr>`,
     `<tr><td>Miscellaneous</td><td colspan="4">Gaps, protuberances</td><td>0.00200</td></tr>`,
-    `<tr style="font-weight:700"><td>Total C<sub>D0</sub></td><td colspan="4"></td><td>${n(R.CD0tot,5)}</td></tr>`,
+    `<tr style="font-weight:700"><td>Total C<sub>D0</sub></td><td colspan="4"></td><td>${n(SR.CD0tot,5)}</td></tr>`,
   ])}
-  ${eq("C_{D_i} = \\frac{C_{L,des}^2}{\\pi\\,AR\\,e} = \\frac{"+p.clDesign+"^2}{\\pi\\times "+p.AR+"\\times "+p.eOsw+"} = "+n(R.CDi,5),"Induced drag")}
-  ${eq("C_{D,total} = "+n(R.CD0tot,5)+"+"+n(R.CDi,5)+" = "+n(R.CDtot,5)+", \\quad (L/D)_{act} = "+n(R.LDact,2),"Total drag and actual L/D")}
+  ${eq("C_{D_i} = \\frac{C_{L,des}^2}{\\pi\\,AR\\,e} = \\frac{"+p.clDesign+"^2}{\\pi\\times "+p.AR+"\\times "+p.eOsw+"} = "+n(SR.CDi,5),"Induced drag")}
+  ${eq("C_{D,total} = "+n(SR.CD0tot,5)+"+"+n(SR.CDi,5)+" = "+n(SR.CDtot,5)+", \\quad (L/D)_{act} = "+n(SR.LDact,2),"Total drag and actual L/D")}
   `);
 
   // ── D7. ROTOR & MOTOR SIZING ──────────────────────────────────────────
   const sd7 = sec("rotcalc","D7. Rotor & Motor Sizing — Actuator Disk Theory",`
-  ${eq("T_{total} = \\text{MTOW}\\times g_0 = "+n(R.MTOW,2)+"\\times 9.81 = "+n(Ttotd,1)+"\\text{ N}","Total hover thrust")}
+  ${eq("T_{total} = \\text{MTOW}\\times g_0 = "+n(SR.MTOW,2)+"\\times 9.81 = "+n(Ttotd,1)+"\\text{ N}","Total hover thrust")}
   ${eq("T_{rotor} = T_{total}/N_{rot} = "+n(Trotord,1)+"\\text{ N}, \\quad P_{rotor} = P_{hov}\\times 1000/N_{rot} = "+n(PrWd,1)+"\\text{ W}","Thrust and power per rotor")}
   ${eq("A_{disk} = \\frac{T_{rotor}^3}{2\\,\\rho_{SL}\\,(P_{rotor}\\,\\eta_{hov})^2} = \\frac{"+n(Trotord,1)+"^3}{2\\times 1.225\\times("+n(PrWd,1)+"\\times "+p.etaHov+")^2} = "+n(Adiskd,4)+"\\text{ m}^2","Disk area from actuator disk theory")}
-  ${eq("D_{rot} = 2\\sqrt{A_{disk}/\\pi} = 2\\sqrt{"+n(Adiskd,4)+"/\\pi} = "+n(R.Drotor,3)+"\\text{ m}","Rotor diameter")}
-  ${eq("DL = T_{rotor}/A_{disk} = "+n(R.DLrotor,1)+"\\text{ N/m}^2, \\quad PL = T_{rotor}/(P_{rotor}/1000) = "+n(R.PLrotor,1)+"\\text{ N/W}","Disk loading and power loading")}
-  ${eq("V_{tip} = \\sqrt{2P_{rotor}\\,\\eta_{hov}/(\\rho_{SL}\\,A_{disk})} = "+n(TipSpdd,2)+"\\text{ m/s}, \\quad M_{tip} = "+n(R.TipMach,4)+"\\;(<0.70\\;\\checkmark)","Tip speed and tip Mach number")}
-  ${eq("N = \\frac{V_{tip}}{R_{rot}}\\times\\frac{60}{2\\pi} = \\frac{"+n(TipSpdd,2)+"}{"+n(Rrotord,4)+"}\\times\\frac{60}{2\\pi} = "+n(R.RPM,0)+"\\text{ rpm}","Rotational speed")}
-  ${eq("c_{blade} = \\sigma\\pi R_{rot}/N_{bl} = 0.10\\times\\pi\\times "+n(Rrotord,4)+"/3 = "+n(R.ChordBl,4)+"\\text{ m}\\;(\\sigma=0.10,\\;N_{bl}=3)","Blade chord")}
+  ${eq("D_{rot} = 2\\sqrt{A_{disk}/\\pi} = 2\\sqrt{"+n(Adiskd,4)+"/\\pi} = "+n(SR.Drotor,3)+"\\text{ m}","Rotor diameter")}
+  ${eq("DL = T_{rotor}/A_{disk} = "+n(SR.DLrotor,1)+"\\text{ N/m}^2, \\quad PL = T_{rotor}/(P_{rotor}/1000) = "+n(SR.PLrotor,1)+"\\text{ N/W}","Disk loading and power loading")}
+  ${eq("V_{tip} = \\sqrt{2P_{rotor}\\,\\eta_{hov}/(\\rho_{SL}\\,A_{disk})} = "+n(TipSpdd,2)+"\\text{ m/s}, \\quad M_{tip} = "+n(SR.TipMach,4)+"\\;(<0.70\\;\\checkmark)","Tip speed and tip Mach number")}
+  ${eq("N = \\frac{V_{tip}}{R_{rot}}\\times\\frac{60}{2\\pi} = \\frac{"+n(TipSpdd,2)+"}{"+n(Rrotord,4)+"}\\times\\frac{60}{2\\pi} = "+n(SR.RPM,0)+"\\text{ rpm}","Rotational speed")}
+  ${eq("c_{blade} = \\sigma\\pi R_{rot}/N_{bl} = 0.10\\times\\pi\\times "+n(Rrotord,4)+"/3 = "+n(SR.ChordBl,4)+"\\text{ m}\\;(\\sigma=0.10,\\;N_{bl}=3)","Blade chord")}
   ${eq("P_{motor,cont} = 1.15\\times P_{rotor} = "+n(PmotKWd,2)+"\\text{ kW}, \\quad P_{peak} = 1.50\\times P_{motor} = "+n(PpeakKWd,2)+"\\text{ kW}","Motor ratings with margins")}
   ${eq("Q = P_{motor}\\times 1000/\\Omega = "+n(Torqued,1)+"\\text{ N·m}","Motor shaft torque")}
   `);
@@ -1137,12 +1137,12 @@ function generateReport(p, R, branding={}) {
   // ── D8. BATTERY PACK ARCHITECTURE ────────────────────────────────────
   const sd8 = sec("battcalc","D8. Battery Pack Architecture & Sizing",`
   <p>Cell specs: NMC Li-ion, V<sub>cell</sub> = 3.6 V, Q<sub>cell</sub> = 5.0 Ah. Bus voltage = 800 V DC.</p>
-  ${eq("W_{bat} = \\frac{E_{total}\\times 1000\\,(1+\\text{SoC}_{min})}{\\text{SED}_{cell}\\,\\eta_{bat}} = \\frac{"+n(R.Etot,3)+"\\times 1000\\times(1+"+p.socMin+")}{"+p.sedCell+"\\times "+p.etaBat+"} = "+n(R.Wbat,2)+"\\text{ kg}","Battery mass")}
-  ${eq("\\text{SED}_{pack} = E_{total}\\times 1000/W_{bat} = "+n(R.SEDpack,1)+"\\text{ Wh/kg}","Pack energy density")}
+  ${eq("W_{bat} = \\frac{E_{total}\\times 1000\\,(1+\\text{SoC}_{min})}{\\text{SED}_{cell}\\,\\eta_{bat}} = \\frac{"+n(SR.Etot,3)+"\\times 1000\\times(1+"+p.socMin+")}{"+p.sedCell+"\\times "+p.etaBat+"} = "+n(SR.Wbat,2)+"\\text{ kg}","Battery mass")}
+  ${eq("\\text{SED}_{pack} = E_{total}\\times 1000/W_{bat} = "+n(SR.SEDpack,1)+"\\text{ Wh/kg}","Pack energy density")}
   ${eq("N_s = \\text{round}(800/3.6) = "+Nseriesd+", \\quad Q_{req} = E_{total}\\times 1000/800 = "+n(PackAhReqd,2)+"\\text{ Ah}","Series cells and required capacity")}
   ${eq("N_p = \\lceil "+n(PackAhReqd,2)+"/5.0 \\rceil = "+Npard+", \\quad N_{cells} = "+Nseriesd+"\\times "+Npard+" = "+Nseriesd*Npard,"Parallel strings and total cells")}
-  ${eq("E_{pack} = V_{pack}\\times Q_{pack}/1000 = "+n(PackVd,0)+"\\times "+n(PackAhd,1)+"/1000 = "+n(R.PackkWh,3)+"\\text{ kWh} \\geq "+n(R.Etot,3)+"\\text{ kWh}\\;\\checkmark","Pack energy must exceed mission energy")}
-  ${eq("C_{hov} = \\frac{P_{hov}\\times 1000/V_{pack}}{Q_{pack}} = \\frac{"+n(R.Phov*1000/PackVd,1)+"}{"+n(PackAhd,1)+"} = "+n(R.CrateHov,3)+"\\text{ C}, \\quad C_{cr} = "+n(R.CrateCr,3)+"\\text{ C}","Hover and cruise C-rates")}
+  ${eq("E_{pack} = V_{pack}\\times Q_{pack}/1000 = "+n(PackVd,0)+"\\times "+n(PackAhd,1)+"/1000 = "+n(SR.PackkWh,3)+"\\text{ kWh} \\geq "+n(SR.Etot,3)+"\\text{ kWh}\\;\\checkmark","Pack energy must exceed mission energy")}
+  ${eq("C_{hov} = \\frac{P_{hov}\\times 1000/V_{pack}}{Q_{pack}} = \\frac{"+n(SR.Phov*1000/PackVd,1)+"}{"+n(PackAhd,1)+"} = "+n(SR.CrateHov,3)+"\\text{ C}, \\quad C_{cr} = "+n(SR.CrateCr,3)+"\\text{ C}","Hover and cruise C-rates")}
   ${eq("R_{int} = 0.030\\times N_s/N_p = "+n(Rintd,4)+"\\,\\Omega, \\quad P_{heat} = I_{hov}^2\\times R_{int} = "+n(Pheatd,1)+"\\text{ W}","Pack resistance and ohmic heating at hover")}
   `);
 
@@ -1155,17 +1155,17 @@ function generateReport(p, R, branding={}) {
     `<tr><td>Motors (22% W<sub>e</sub>)</td><td>${n(Wmotcd,2)}</td><td>${n(xCGfusd,3)}</td><td>${n(Wmotcd*xCGfusd,2)}</td></tr>`,
     `<tr><td>Avionics (4% W<sub>e</sub>)</td><td>${n(Wavcd,2)}</td><td>0.800</td><td>${n(Wavcd*0.8,2)}</td></tr>`,
     `<tr><td>Other (21% W<sub>e</sub>)</td><td>${n(Wothcd,2)}</td><td>${n(xCGfusd,3)}</td><td>${n(Wothcd*xCGfusd,2)}</td></tr>`,
-    `<tr style="font-weight:700"><td>Empty W<sub>e</sub></td><td>${n(R.Wempty,2)}</td><td>${n(xCGemptyd,3)}</td><td>${n(R.Wempty*xCGemptyd,2)}</td></tr>`,
-    `<tr><td>Battery</td><td>${n(R.Wbat,2)}</td><td>${n(xCGbatd,3)}  = 0.38 × L<sub>fus</sub></td><td>${n(R.Wbat*xCGbatd,2)}</td></tr>`,
+    `<tr style="font-weight:700"><td>Empty W<sub>e</sub></td><td>${n(SR.Wempty,2)}</td><td>${n(xCGemptyd,3)}</td><td>${n(SR.Wempty*xCGemptyd,2)}</td></tr>`,
+    `<tr><td>Battery</td><td>${n(SR.Wbat,2)}</td><td>${n(xCGbatd,3)}  = 0.38 × L<sub>fus</sub></td><td>${n(SR.Wbat*xCGbatd,2)}</td></tr>`,
     `<tr><td>Payload</td><td>${p.payload}</td><td>${n(xCGpayd,3)}  = 0.40 × L<sub>fus</sub></td><td>${n(p.payload*xCGpayd,2)}</td></tr>`,
-    `<tr style="font-weight:700;background:#dbeafe"><td>Total (MTOW)</td><td>${n(R.MTOW,2)}</td><td><b>${n(R.xCGtotal,3)}</b></td><td>${n(R.MTOW*R.xCGtotal,2)}</td></tr>`,
+    `<tr style="font-weight:700;background:#dbeafe"><td>Total (MTOW)</td><td>${n(SR.MTOW,2)}</td><td><b>${n(SR.xCGtotal,3)}</b></td><td>${n(SR.MTOW*SR.xCGtotal,2)}</td></tr>`,
   ])}
-  ${eq("x_{CG} = \\frac{W_e\\,x_{CG,e}+W_{bat}\\,x_{CG,bat}+m_{pay}\\,x_{CG,pay}}{\\text{MTOW}} = \\frac{"+n(R.Wempty*xCGemptyd,1)+"+"+n(R.Wbat*xCGbatd,1)+"+"+n(p.payload*xCGpayd,1)+"}{"+n(R.MTOW,2)+"} = "+n(R.xCGtotal,3)+"\\text{ m}","Total CG from nose")}
+  ${eq("x_{CG} = \\frac{W_e\\,x_{CG,e}+W_{bat}\\,x_{CG,bat}+m_{pay}\\,x_{CG,pay}}{\\text{MTOW}} = \\frac{"+n(SR.Wempty*xCGemptyd,1)+"+"+n(SR.Wbat*xCGbatd,1)+"+"+n(p.payload*xCGpayd,1)+"}{"+n(SR.MTOW,2)+"} = "+n(SR.xCGtotal,3)+"\\text{ m}","Total CG from nose")}
   ${eq("x_{AC,wing} = L_{fus}\\times 0.2589+X_{ac} = "+n(p.fusLen*0.2589,3)+"+"+n(Xacd,3)+" = "+n(xACwingd,3)+"\\text{ m}","Wing aerodynamic centre")}
   ${eq("C_{L_\\alpha,w} = 2\\pi(1+0.77\\times "+p.tc+") = "+n(CLaWd,4)+"\\text{ rad}^{-1}, \\quad \\frac{d\\varepsilon}{d\\alpha} = \\frac{2C_{L_\\alpha,w}}{\\pi AR} = "+n(dwd,4),"Lift-curve slope and downwash gradient")}
   ${eq("l_h = L_{fus}-x_{AC,wing} = "+p.fusLen+"-"+n(xACwingd,3)+" = "+n(lhd,3)+"\\text{ m}","Tail moment arm")}
-  ${eq("x_{NP} = x_{AC,wing}+\\frac{S_h}{S_w}\\eta_h(1-\\frac{d\\varepsilon}{d\\alpha})l_h = "+n(xACwingd,3)+"+\\frac{"+n(Shd,3)+"}{"+n(R.Swing,2)+"}\\times 0.9\\times(1-"+n(dwd,4)+")\\times "+n(lhd,3)+" = "+n(R.xNP,3)+"\\text{ m}","Neutral point")}
-  ${eq("SM = \\frac{x_{NP}-x_{CG}}{\\bar{c}} = \\frac{"+n(R.xNP,3)+"-"+n(R.xCGtotal,3)+"}{"+n(R.MAC,3)+"} = "+n(R.SM*100,2)+"\\%\\;\\text{MAC}","Static margin (target 5–25% MAC)")}
+  ${eq("x_{NP} = x_{AC,wing}+\\frac{S_h}{S_w}\\eta_h(1-\\frac{d\\varepsilon}{d\\alpha})l_h = "+n(xACwingd,3)+"+\\frac{"+n(Shd,3)+"}{"+n(SR.Swing,2)+"}\\times 0.9\\times(1-"+n(dwd,4)+")\\times "+n(lhd,3)+" = "+n(SR.xNP,3)+"\\text{ m}","Neutral point")}
+  ${eq("SM = \\frac{x_{NP}-x_{CG}}{\\bar{c}} = \\frac{"+n(SR.xNP,3)+"-"+n(SR.xCGtotal,3)+"}{"+n(SR.MAC,3)+"} = "+n(SR.SM*100,2)+"\\%\\;\\text{MAC}","Static margin (target 5–25% MAC)")}
   `);
 
   // ── FULL HTML PAGE ───────────────────────────────────────────────────
@@ -1248,14 +1248,14 @@ ${s1}${s2}${sd1}${sd2}${s3}${sd3}${sd4}${s4}${sd5}${s5}${sd6}${s6}${sd7}${s7}${s
   <table class="data-table">
     <thead><tr><th>Metric</th><th>This Design</th><th>Community Target</th><th>Status</th></tr></thead>
     <tbody>
-      <tr><td class="td-label">Actual L/D</td><td class="td-value">${n(R.LDact,2)}</td><td class="td-value">≥ 12.0</td><td style="color:${R.LDact>=12?"#16a34a":"#dc2626"};font-weight:700">${R.LDact>=12?"✓ Above target":"✗ Below target"}</td></tr>
-      <tr style="background:#f8faff"><td class="td-label">MTOW / Payload ratio</td><td class="td-value">${n(R.MTOW/p.payload,2)}</td><td class="td-value">≤ 6.0</td><td style="color:${R.MTOW/p.payload<=6?"#16a34a":"#dc2626"};font-weight:700">${R.MTOW/p.payload<=6?"✓ Efficient":"✗ Review weight"}</td></tr>
-      <tr><td class="td-label">Energy / Range (Wh/km)</td><td class="td-value">${n(R.Etot*1000/p.range,1)} Wh/km</td><td class="td-value">≤ 400 Wh/km</td><td style="color:${R.Etot*1000/p.range<=400?"#16a34a":"#dc2626"};font-weight:700">${R.Etot*1000/p.range<=400?"✓ Efficient":"✗ High consumption"}</td></tr>
-      <tr style="background:#f8faff"><td class="td-label">Battery pack energy density</td><td class="td-value">${n(R.SEDpack,1)} Wh/kg</td><td class="td-value">≥ 150 Wh/kg</td><td style="color:${R.SEDpack>=150?"#16a34a":"#d97706"};font-weight:700">${R.SEDpack>=150?"✓ Good":"⚠ Marginal"}</td></tr>
-      <tr><td class="td-label">Static Margin (V-tail corrected)</td><td class="td-value">${n(R.SM_vt*100,1)}% MAC</td><td class="td-value">5–25% MAC</td><td style="color:${R.SM_vt>=0.05&&R.SM_vt<=0.25?"#16a34a":"#dc2626"};font-weight:700">${R.SM_vt>=0.05&&R.SM_vt<=0.25?"✓ Stable":"✗ Review"}</td></tr>
-      <tr style="background:#f8faff"><td class="td-label">Hover power / MTOW (W/kg)</td><td class="td-value">${n(R.Phov*1000/R.MTOW,1)} W/kg</td><td class="td-value">≤ 220 W/kg</td><td style="color:${R.Phov*1000/R.MTOW<=220?"#16a34a":"#d97706"};font-weight:700">${R.Phov*1000/R.MTOW<=220?"✓ Good":"⚠ High hover loading"}</td></tr>
-      <tr><td class="td-label">Tip Mach number</td><td class="td-value">${n(R.TipMach,4)}</td><td class="td-value">≤ 0.70</td><td style="color:${R.TipMach<0.70?"#16a34a":"#dc2626"};font-weight:700">${R.TipMach<0.70?"✓ Subsonic tips":"✗ Compressibility risk"}</td></tr>
-      <tr style="background:#f8faff"><td class="td-label">Noise at 150m (A-weighted)</td><td class="td-value">${n(R.dBA_150m,1)} dBA</td><td class="td-value">≤ 65 dBA (EASA UAM)</td><td style="color:${R.dBA_150m<=65?"#16a34a":R.dBA_150m<=75?"#d97706":"#dc2626"};font-weight:700">${R.dBA_150m<=65?"✓ Meets EASA target":R.dBA_150m<=75?"⚠ Above EASA target":"✗ Exceeds limit"}</td></tr>
+      <tr><td class="td-label">Actual L/D</td><td class="td-value">${n(SR.LDact,2)}</td><td class="td-value">≥ 12.0</td><td style="color:${SR.LDact>=12?"#16a34a":"#dc2626"};font-weight:700">${SR.LDact>=12?"✓ Above target":"✗ Below target"}</td></tr>
+      <tr style="background:#f8faff"><td class="td-label">MTOW / Payload ratio</td><td class="td-value">${n(SR.MTOW/p.payload,2)}</td><td class="td-value">≤ 6.0</td><td style="color:${SR.MTOW/p.payload<=6?"#16a34a":"#dc2626"};font-weight:700">${SR.MTOW/p.payload<=6?"✓ Efficient":"✗ Review weight"}</td></tr>
+      <tr><td class="td-label">Energy / Range (Wh/km)</td><td class="td-value">${n(SR.Etot*1000/p.range,1)} Wh/km</td><td class="td-value">≤ 400 Wh/km</td><td style="color:${SR.Etot*1000/p.range<=400?"#16a34a":"#dc2626"};font-weight:700">${SR.Etot*1000/p.range<=400?"✓ Efficient":"✗ High consumption"}</td></tr>
+      <tr style="background:#f8faff"><td class="td-label">Battery pack energy density</td><td class="td-value">${n(SR.SEDpack,1)} Wh/kg</td><td class="td-value">≥ 150 Wh/kg</td><td style="color:${SR.SEDpack>=150?"#16a34a":"#d97706"};font-weight:700">${SR.SEDpack>=150?"✓ Good":"⚠ Marginal"}</td></tr>
+      <tr><td class="td-label">Static Margin (V-tail corrected)</td><td class="td-value">${n(SR.SM_vt*100,1)}% MAC</td><td class="td-value">5–25% MAC</td><td style="color:${SR.SM_vt>=0.05&&SR.SM_vt<=0.25?"#16a34a":"#dc2626"};font-weight:700">${SR.SM_vt>=0.05&&SR.SM_vt<=0.25?"✓ Stable":"✗ Review"}</td></tr>
+      <tr style="background:#f8faff"><td class="td-label">Hover power / MTOW (W/kg)</td><td class="td-value">${n(SR.Phov*1000/SR.MTOW,1)} W/kg</td><td class="td-value">≤ 220 W/kg</td><td style="color:${SR.Phov*1000/SR.MTOW<=220?"#16a34a":"#d97706"};font-weight:700">${SR.Phov*1000/SR.MTOW<=220?"✓ Good":"⚠ High hover loading"}</td></tr>
+      <tr><td class="td-label">Tip Mach number</td><td class="td-value">${n(SR.TipMach,4)}</td><td class="td-value">≤ 0.70</td><td style="color:${SR.TipMach<0.70?"#16a34a":"#dc2626"};font-weight:700">${SR.TipMach<0.70?"✓ Subsonic tips":"✗ Compressibility risk"}</td></tr>
+      <tr style="background:#f8faff"><td class="td-label">Noise at 150m (A-weighted)</td><td class="td-value">${n(SR.dBA_150m,1)} dBA</td><td class="td-value">≤ 65 dBA (EASA UAM)</td><td style="color:${SR.dBA_150m<=65?"#16a34a":SR.dBA_150m<=75?"#d97706":"#dc2626"};font-weight:700">${SR.dBA_150m<=65?"✓ Meets EASA target":SR.dBA_150m<=75?"⚠ Above EASA target":"✗ Exceeds limit"}</td></tr>
     </tbody>
   </table>
   <p style="font-size:8.5pt;color:#64748b;margin-top:8px;font-style:italic">
@@ -1296,7 +1296,7 @@ const DARK={bg:"#07090f",panel:"#0d1117",border:"#1c2333",amber:"#f59e0b",teal:"
 const LIGHT={bg:"#f8fafc",panel:"#ffffff",border:"#e2e8f0",amber:"#d97706",teal:"#0d9488",
   blue:"#2563eb",red:"#dc2626",green:"#16a34a",dim:"#9ca3af",text:"#0f172a",muted:"#64748b",
   purple:"#7c3aed",orange:"#ea580c"};
-let C=DARK; // global ref — updated by App before render
+let SC=DARK; // global ref — updated by App before render
 
 const PHC=["#ff6b35","#ffd23f","#06d6a0","#118ab2","#8338ec","#6c757d"];
 
@@ -1308,46 +1308,46 @@ function Slider({label,unit,value,min,max,step,onChange,note}){
   return(
     <div style={{marginBottom:12}}>
       <div style={{display:"flex",justifyContent:"space-between",marginBottom:4,alignItems:"center"}}>
-        <span style={{fontSize:10,color:C.muted,fontFamily:"'DM Mono',monospace",letterSpacing:"0.04em"}}>{label}</span>
+        <span style={{fontSize:10,color:SC.muted,fontFamily:"'DM Mono',monospace",letterSpacing:"0.04em"}}>{label}</span>
         <div style={{display:"flex",alignItems:"center",gap:4}}>
           <input type="number" value={value} step={step} min={min} max={max}
             onChange={e=>{const v=parseFloat(e.target.value);if(!isNaN(v))onChange(Math.max(min,Math.min(max,v)));}}
-            style={{width:62,background:C.panel,border:`1px solid ${C.border}`,borderRadius:3,color:C.amber,
+            style={{width:62,background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:3,color:SC.amber,
               fontSize:11,textAlign:"right",padding:"2px 5px",fontFamily:"'DM Mono',monospace",outline:"none"}}/>
-          <span style={{fontSize:9,color:C.dim,minWidth:26,fontFamily:"'DM Mono',monospace"}}>{unit}</span>
+          <span style={{fontSize:9,color:SC.dim,minWidth:26,fontFamily:"'DM Mono',monospace"}}>{unit}</span>
         </div>
       </div>
-      <div style={{position:"relative",height:3,background:C.border,borderRadius:2}}>
+      <div style={{position:"relative",height:3,background:SC.border,borderRadius:2}}>
         <div style={{position:"absolute",left:0,top:0,height:"100%",width:`${pct}%`,
-          background:`linear-gradient(90deg,${C.teal},${C.amber})`,borderRadius:2,transition:"width 0.1s"}}/>
+          background:`linear-gradient(90deg,${SC.teal},${SC.amber})`,borderRadius:2,transition:"width 0.1s"}}/>
         <input type="range" value={value} min={min} max={max} step={step}
           onChange={e=>onChange(parseFloat(e.target.value))}
           style={{position:"absolute",top:-7,left:0,width:"100%",opacity:0,cursor:"pointer",height:17}}/>
       </div>
-      {note&&<div style={{fontSize:8,color:C.dim,marginTop:2,fontFamily:"'DM Mono',monospace"}}>{note}</div>}
+      {note&&<div style={{fontSize:8,color:SC.dim,marginTop:2,fontFamily:"'DM Mono',monospace"}}>{note}</div>}
     </div>
   );
 }
 
 function KPI({label,value,unit,sub,color}){
-  const col=color||C.amber;
+  const col=color||SC.amber;
   return(
-    <div style={{background:C.panel,border:`1px solid ${C.border}`,borderRadius:6,padding:"9px 12px",borderLeft:`2px solid ${col}`}}>
-      <div style={{fontSize:8,color:C.muted,textTransform:"uppercase",letterSpacing:"0.12em",fontFamily:"'DM Mono',monospace",marginBottom:3}}>{label}</div>
+    <div style={{background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:6,padding:"9px 12px",borderLeft:`2px solid ${col}`}}>
+      <div style={{fontSize:8,color:SC.muted,textTransform:"uppercase",letterSpacing:"0.12em",fontFamily:"'DM Mono',monospace",marginBottom:3}}>{label}</div>
       <div style={{fontSize:18,fontWeight:700,color:col,fontFamily:"'DM Mono',monospace",lineHeight:1.1}}>
         {typeof value==="number"?value.toLocaleString():value}
-        <span style={{fontSize:9,color:C.muted,marginLeft:3,fontWeight:400}}>{unit}</span>
+        <span style={{fontSize:9,color:SC.muted,marginLeft:3,fontWeight:400}}>{unit}</span>
       </div>
-      {sub&&<div style={{fontSize:8,color:C.dim,marginTop:2,fontFamily:"'DM Mono',monospace"}}>{sub}</div>}
+      {sub&&<div style={{fontSize:8,color:SC.dim,marginTop:2,fontFamily:"'DM Mono',monospace"}}>{sub}</div>}
     </div>
   );
 }
 
 function Panel({title,children,ht}){
   return(
-    <div style={{background:C.panel,border:`1px solid ${C.border}`,borderRadius:8,padding:"12px 14px",height:ht||"auto"}}>
-      <div style={{fontSize:9,color:C.muted,textTransform:"uppercase",letterSpacing:"0.12em",fontFamily:"'DM Mono',monospace",
-        marginBottom:8,borderBottom:`1px solid ${C.border}`,paddingBottom:5}}>{title}</div>
+    <div style={{background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:8,padding:"12px 14px",height:ht||"auto"}}>
+      <div style={{fontSize:9,color:SC.muted,textTransform:"uppercase",letterSpacing:"0.12em",fontFamily:"'DM Mono',monospace",
+        marginBottom:8,borderBottom:`1px solid ${SC.border}`,paddingBottom:5}}>{title}</div>
       {children}
     </div>
   );
@@ -1360,8 +1360,8 @@ function Acc({title,icon,children}){
       <button onClick={()=>setOpen(o=>!o)} style={{width:"100%",background:"transparent",border:"none",cursor:"pointer",
         display:"flex",alignItems:"center",gap:7,padding:"4px 0"}}>
         <span style={{fontSize:12}}>{icon}</span>
-        <span style={{fontSize:9,fontWeight:700,color:C.muted,textTransform:"uppercase",letterSpacing:"0.1em",fontFamily:"'DM Mono',monospace"}}>{title}</span>
-        <span style={{marginLeft:"auto",color:C.dim,fontSize:10}}>{open?"▾":"▸"}</span>
+        <span style={{fontSize:9,fontWeight:700,color:SC.muted,textTransform:"uppercase",letterSpacing:"0.1em",fontFamily:"'DM Mono',monospace"}}>{title}</span>
+        <span style={{marginLeft:"auto",color:SC.dim,fontSize:10}}>{open?"▾":"▸"}</span>
       </button>
       {open&&<div style={{paddingTop:4}}>{children}</div>}
     </div>
@@ -1442,16 +1442,16 @@ export default function App(){
   ];
 
   // Update global C on every render based on theme
-  C = darkMode ? DARK : LIGHT;
+  SC = darkMode ? DARK : LIGHT;
   // Sync theme to AuthSystem so modal inputs also update
   setAuthTheme(darkMode);
 
   // Dynamic tooltip style (reads current C — correct for both themes)
   const TTP = {
-    contentStyle:{background:C.panel,border:`1px solid ${C.border}`,borderRadius:6,fontSize:12,
-      color:C.text,boxShadow:"0 4px 20px rgba(0,0,0,0.4)",padding:"8px 12px"},
-    labelStyle:{color:C.muted,fontSize:12,fontWeight:600},
-    itemStyle:{color:C.text,fontSize:12},
+    contentStyle:{background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:6,fontSize:12,
+      color:SC.text,boxShadow:"0 4px 20px rgba(0,0,0,0.4)",padding:"8px 12px"},
+    labelStyle:{color:SC.muted,fontSize:12,fontWeight:600},
+    itemStyle:{color:SC.text,fontSize:12},
   };
 
   // URL param: ?design=shareId for shared design loading
@@ -1468,53 +1468,53 @@ export default function App(){
 
   /* ── CSV Export ── */
   const exportCSV=()=>{
-    if(!R) return;
+    if(!SR) return;
     const rows=[
       ["eVTOL Sizer — Results Export","",""],
       ["Generated",new Date().toLocaleString(),""],
       ["","",""],
       ["=== WEIGHTS ===","",""],
-      ["MTOW (kg)",R.MTOW,""],
-      ["Empty Weight (kg)",R.Wempty,""],
-      ["Battery Mass (kg)",R.Wbat,""],
+      ["MTOW (kg)",SR.MTOW,""],
+      ["Empty Weight (kg)",SR.Wempty,""],
+      ["Battery Mass (kg)",SR.Wbat,""],
       ["Payload (kg)",p.payload,""],
       ["","",""],
       ["=== ENERGY & POWER ===","",""],
-      ["Total Mission Energy (kWh)",R.Etot,""],
-      ["Pack Energy (kWh)",R.PackkWh,""],
-      ["Hover Power (kW)",R.Phov,""],
-      ["Climb Power (kW)",R.Pcl,""],
-      ["Cruise Power (kW)",R.Pcr,""],
-      ["Descent Power (kW)",R.Pdc,""],
-      ["Reserve Power (kW)",R.Pres,""],
+      ["Total Mission Energy (kWh)",SR.Etot,""],
+      ["Pack Energy (kWh)",SR.PackkWh,""],
+      ["Hover Power (kW)",SR.Phov,""],
+      ["Climb Power (kW)",SR.Pcl,""],
+      ["Cruise Power (kW)",SR.Pcr,""],
+      ["Descent Power (kW)",SR.Pdc,""],
+      ["Reserve Power (kW)",SR.Pres,""],
       ["","",""],
       ["=== PHASE TIMES (s) ===","",""],
-      ["Takeoff",R.tto,""],["Climb",R.tcl,""],["Cruise",R.tcr,""],
-      ["Descent",R.tdc,""],["Landing",R.tld,""],["Reserve",R.tres,""],
-      ["Total",R.Tend,""],
+      ["Takeoff",SR.tto,""],["Climb",SR.tcl,""],["Cruise",SR.tcr,""],
+      ["Descent",SR.tdc,""],["Landing",SR.tld,""],["Reserve",SR.tres,""],
+      ["Total",SR.Tend,""],
       ["","",""],
       ["=== AERODYNAMICS ===","",""],
-      ["Wing Area (m²)",R.Swing,""],["Wing Span (m)",R.bWing,""],
-      ["MAC (m)",R.MAC,""],["Sweep (°)",R.sweep,""],
-      ["Actual L/D",R.LDact,""],["CD0 total",R.CD0tot,""],
-      ["Mach",R.Mach,""],["Reynolds ×10⁶",(R.Re_/1e6).toFixed(2),""],
-      ["Selected Airfoil",R.selAF.name,""],
+      ["Wing Area (m²)",SR.Swing,""],["Wing Span (m)",SR.bWing,""],
+      ["MAC (m)",SR.MAC,""],["Sweep (°)",SR.sweep,""],
+      ["Actual L/D",SR.LDact,""],["CD0 total",SR.CD0tot,""],
+      ["Mach",SR.Mach,""],["Reynolds ×10⁶",(SR.Re_/1e6).toFixed(2),""],
+      ["Selected Airfoil",SR.selAF.name,""],
       ["","",""],
       ["=== PROPULSION ===","",""],
-      ["Rotor Diameter AD (m)",R.Drotor,""],["Tip Mach",R.TipMach,""],
-      ["RPM",R.RPM,""],["Disk Loading (N/m²)",R.DLrotor,""],
-      ["Tip Speed (m/s)",R.TipSpd,""],["Motor Power/rotor (kW)",R.PmotKW,""],
-      ["T/W hover",R.TW_hover,""],["T/W cruise",R.TW_cruise,""],
+      ["Rotor Diameter AD (m)",SR.Drotor,""],["Tip Mach",SR.TipMach,""],
+      ["RPM",SR.RPM,""],["Disk Loading (N/m²)",SR.DLrotor,""],
+      ["Tip Speed (m/s)",SR.TipSpd,""],["Motor Power/rotor (kW)",SR.PmotKW,""],
+      ["T/W hover",SR.TW_hover,""],["T/W cruise",SR.TW_cruise,""],
       ["","",""],
       ["=== STABILITY ===","",""],
-      ["CG from nose (m)",R.xCGtotal,""],["NP from nose (m)",R.xNP,""],
-      ["Static Margin baseline (% MAC)",(R.SM*100).toFixed(2),""],
-      ["Static Margin w/ V-tail (% MAC)",(R.SM_vt*100).toFixed(2),""],
+      ["CG from nose (m)",SR.xCGtotal,""],["NP from nose (m)",SR.xNP,""],
+      ["Static Margin baseline (% MAC)",(SR.SM*100).toFixed(2),""],
+      ["Static Margin w/ V-tail (% MAC)",(SR.SM_vt*100).toFixed(2),""],
       ["","",""],
       ["=== BATTERY ===","",""],
-      ["Pack Energy (kWh)",R.PackkWh,""],["SED pack (Wh/kg)",R.SEDpack,""],
-      ["Cell config",`${R.Nseries}s×${R.Npar}p`,""],["Total cells",R.Ncells,""],
-      ["C-rate hover",R.CrateHov,""],["C-rate cruise",R.CrateCr,""],
+      ["Pack Energy (kWh)",SR.PackkWh,""],["SED pack (Wh/kg)",SR.SEDpack,""],
+      ["Cell config",`${SR.Nseries}s×${SR.Npar}p`,""],["Total cells",SR.Ncells,""],
+      ["C-rate hover",SR.CrateHov,""],["C-rate cruise",SR.CrateCr,""],
       ["","",""],
       ["=== INPUT PARAMETERS ===","",""],
       ["Payload (kg)",p.payload,""],["Range (km)",p.range,""],
@@ -1534,13 +1534,14 @@ export default function App(){
     if(user) addNotif(user.id,{title:"CSV Exported",body:"Results downloaded as spreadsheet.",type:"success"});
   };
 
+  const SR=useMemo(()=>{try{return runSizing(p);}catch{return null;}},[p]);
   /* ── Mission Builder — compute custom mission ──
      BUG FIX: wrapped in useCallback so useEffect dependency is stable.
-     Auto-triggers whenever customPhases or R changes — no manual "Compute" needed. */
+     Auto-triggers whenever customPhases or SR changes — no manual "Compute" needed. */
   const computeCustomMission=useCallback(()=>{
-    if(!R) return;
+    if(!SR) return;
     const g0=9.81,rhoMSL=1.225,T0=288.15,Rgas=287,GAM=1.4,L=0.0065;
-    const MTOW=R.MTOW, W=MTOW*g0;
+    const MTOW=SR.MTOW, W=MTOW*g0;
     let totalE=0,totalT=0,totalDist=0,phaseResults=[];
     customPhases.forEach(ph=>{
       const pt=PHASE_TYPES[ph.type];
@@ -1593,13 +1594,13 @@ export default function App(){
       totalE+=E; totalT+=t; totalDist+=dist;
       phaseResults.push({...ph,power:+power.toFixed(2),energy:+E.toFixed(3),time:+t.toFixed(0),distance:+dist.toFixed(0)});
     });
-    const PackkWh=R.PackkWh;
+    const PackkWh=SR.PackkWh;
     const finalSoC=(1-totalE/PackkWh)*100;
     const totalRange=totalDist/1000;
     setMbResults({phases:phaseResults,totalE:+totalE.toFixed(3),totalT:+totalT.toFixed(0),
       totalRange:+totalRange.toFixed(1),finalSoC:+finalSoC.toFixed(1),
       feasible:finalSoC>0&&totalE<=PackkWh});
-  },[customPhases,R,p]);
+  },[customPhases,SR,p]);
 
   /* Auto-recompute mission whenever phases or aircraft params change */
   useEffect(()=>{ computeCustomMission(); },[computeCustomMission]);
@@ -1635,18 +1636,18 @@ export default function App(){
       // Modify key atmospheric parameters
       const pWeather={...p, cruiseAlt:elevation};
       // Compute performance impacts
-      const MTOW=R.MTOW,W=MTOW*9.81;
+      const MTOW=SR.MTOW,W=MTOW*9.81;
       // Hover power change with density
       const DL_ISA=(W*p.twRatio)/(Math.PI*Math.pow(p.propDiam/2,2)*p.nPropHover);
-      const P_hov_ISA=R.Phov;
+      const P_hov_ISA=SR.Phov;
       const P_hov_wx=(W*p.twRatio/p.etaHov)*Math.sqrt(DL_ISA/(2*rho_actual))/1000;
       const P_hov_delta_pct=((P_hov_wx/P_hov_ISA)-1)*100;
       // Cruise speed / stall speed change with density
-      const V_stall_wx=R.Vstall*Math.sqrt(1/sigma);
-      const V_stall_delta=V_stall_wx-R.Vstall;
+      const V_stall_wx=SR.Vstall*Math.sqrt(1/sigma);
+      const V_stall_delta=V_stall_wx-SR.Vstall;
       // Cruise power ~ proportional to 1/rho for same speed
-      const P_cr_wx=R.Pcr*(1.225/rho_actual);
-      const P_cr_delta_pct=((P_cr_wx/R.Pcr)-1)*100;
+      const P_cr_wx=SR.Pcr*(1.225/rho_actual);
+      const P_cr_delta_pct=((P_cr_wx/SR.Pcr)-1)*100;
       // Range impact (Breguet — higher density = less drag = more range)
       const range_delta_pct=-P_hov_delta_pct*0.3; // approx
       // Mach change with temperature
@@ -1813,35 +1814,34 @@ export default function App(){
     vtAR:2.5,
   });
   const set=useCallback(k=>v=>setP(prev=>({...prev,[k]:v})),[]);
-  const R=useMemo(()=>{try{return runSizing(p);}catch{return null;}},[p]);
-  const stCol=!R?C.red:R.feasible?C.green:C.amber;
-  const stTxt=!R?"ERROR":R.feasible?"FEASIBLE":"CHECK DESIGN";
+  const stCol=!SR?SC.red:SR.feasible?SC.green:SC.amber;
+  const stTxt=!SR?"ERROR":SR.feasible?"FEASIBLE":"CHECK DESIGN";
 
   return(
     <div style={{display:"flex",flexDirection:"column",height:"100vh",
-      background:C.bg,color:C.text,
+      background:SC.bg,color:SC.text,
       fontFamily:"'Barlow',system-ui,sans-serif",overflow:"hidden",
       transition:"background 0.2s,color 0.2s"}}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Barlow:wght@400;600;700;800&display=swap');
-        html,body{background:${C.bg};color:${C.text};margin:0;padding:0}
+        html,body{background:${SC.bg};color:${SC.text};margin:0;padding:0}
         *{box-sizing:border-box}
         ::-webkit-scrollbar{width:5px;height:5px}
-        ::-webkit-scrollbar-track{background:${C.bg}}
-        ::-webkit-scrollbar-thumb{background:${C.border};border-radius:3px}
+        ::-webkit-scrollbar-track{background:${SC.bg}}
+        ::-webkit-scrollbar-thumb{background:${SC.border};border-radius:3px}
         input[type=range]{-webkit-appearance:none;appearance:none}
-        input[type=number]{-moz-appearance:textfield;background:${C.panel};color:${C.amber}}
+        input[type=number]{-moz-appearance:textfield;background:${SC.panel};color:${SC.amber}}
         input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
-        .recharts-tooltip-wrapper .recharts-default-tooltip{background:${C.panel} !important;border:1px solid ${C.border} !important;border-radius:6px !important;box-shadow:0 4px 20px rgba(0,0,0,0.4) !important;padding:8px 12px !important}
-        .recharts-tooltip-wrapper .recharts-tooltip-label{color:${C.muted} !important;font-size:12px !important;font-weight:600 !important;margin-bottom:4px !important;display:block}
-        .recharts-tooltip-wrapper .recharts-tooltip-item{color:${C.text} !important;font-size:12px !important}
-        .recharts-tooltip-wrapper .recharts-tooltip-item-name{color:${C.muted} !important}
-        .recharts-tooltip-wrapper .recharts-tooltip-item-value{color:${C.amber} !important;font-weight:700 !important}
-        .recharts-tooltip-wrapper .recharts-tooltip-item-separator{color:${C.dim} !important}
-        .recharts-legend-item-text{color:${C.muted} !important;font-size:11px !important}
-        .recharts-cartesian-axis-tick text{fill:${C.muted} !important}
-        .recharts-label{fill:${C.muted} !important}
-        .recharts-cartesian-grid line{stroke:${C.border} !important}
+        .recharts-tooltip-wrapper .recharts-default-tooltip{background:${SC.panel} !important;border:1px solid ${SC.border} !important;border-radius:6px !important;box-shadow:0 4px 20px rgba(0,0,0,0.4) !important;padding:8px 12px !important}
+        .recharts-tooltip-wrapper .recharts-tooltip-label{color:${SC.muted} !important;font-size:12px !important;font-weight:600 !important;margin-bottom:4px !important;display:block}
+        .recharts-tooltip-wrapper .recharts-tooltip-item{color:${SC.text} !important;font-size:12px !important}
+        .recharts-tooltip-wrapper .recharts-tooltip-item-name{color:${SC.muted} !important}
+        .recharts-tooltip-wrapper .recharts-tooltip-item-value{color:${SC.amber} !important;font-weight:700 !important}
+        .recharts-tooltip-wrapper .recharts-tooltip-item-separator{color:${SC.dim} !important}
+        .recharts-legend-item-text{color:${SC.muted} !important;font-size:11px !important}
+        .recharts-cartesian-axis-tick text{fill:${SC.muted} !important}
+        .recharts-label{fill:${SC.muted} !important}
+        .recharts-cartesian-grid line{stroke:${SC.border} !important}
         span,div,td,th{color:inherit}
         @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}
       `}</style>
@@ -1851,18 +1851,18 @@ export default function App(){
         <div style={{position:"fixed",inset:0,zIndex:3000,background:"rgba(0,0,0,0.7)",
           backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center"}}
           onClick={e=>e.target===e.currentTarget&&setShowPdfBranding(false)}>
-          <div style={{background:C.panel,border:`1px solid ${C.border}`,borderRadius:12,
+          <div style={{background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:12,
             padding:"24px 28px",width:460,maxWidth:"92vw",boxShadow:"0 20px 60px rgba(0,0,0,0.6)"}}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
               <div>
-                <div style={{fontSize:8,color:C.muted,fontFamily:"'DM Mono',monospace",letterSpacing:"0.15em",marginBottom:4}}>PDF REPORT</div>
-                <div style={{fontSize:16,fontWeight:800,color:C.text}}>
-                  <span style={{color:C.amber}}>eVTOL</span> — Report Branding
+                <div style={{fontSize:8,color:SC.muted,fontFamily:"'DM Mono',monospace",letterSpacing:"0.15em",marginBottom:4}}>PDF REPORT</div>
+                <div style={{fontSize:16,fontWeight:800,color:SC.text}}>
+                  <span style={{color:SC.amber}}>eVTOL</span> — Report Branding
                 </div>
               </div>
               <button onClick={()=>setShowPdfBranding(false)} type="button"
-                style={{background:"transparent",border:`1px solid ${C.border}`,borderRadius:6,
-                  color:C.muted,fontSize:14,cursor:"pointer",padding:"5px 10px"}}>✕ Close</button>
+                style={{background:"transparent",border:`1px solid ${SC.border}`,borderRadius:6,
+                  color:SC.muted,fontSize:14,cursor:"pointer",padding:"5px 10px"}}>✕ Close</button>
             </div>
             {[
               ["Author / Engineer Name","authorName","Your full name"],
@@ -1872,19 +1872,19 @@ export default function App(){
               ["Report Date","date",new Date().toLocaleDateString()],
             ].map(([lbl,key,ph])=>(
               <div key={key} style={{marginBottom:12}}>
-                <div style={{fontSize:10,color:C.muted,fontFamily:"'DM Mono',monospace",
+                <div style={{fontSize:10,color:SC.muted,fontFamily:"'DM Mono',monospace",
                   textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:5}}>{lbl}</div>
                 <input value={pdfBranding[key]} onChange={e=>setPdfBranding(b=>({...b,[key]:e.target.value}))}
                   placeholder={ph} type="text"
-                  style={{width:"100%",boxSizing:"border-box",background:C.bg,border:`1px solid ${C.border}`,
-                    borderRadius:6,color:C.text,fontSize:12,padding:"8px 12px",
+                  style={{width:"100%",boxSizing:"border-box",background:SC.bg,border:`1px solid ${SC.border}`,
+                    borderRadius:6,color:SC.text,fontSize:12,padding:"8px 12px",
                     fontFamily:"'DM Mono',monospace",outline:"none"}}
-                  onFocus={e=>e.target.style.borderColor=C.amber}
-                  onBlur={e=>e.target.style.borderColor=C.border}/>
+                  onFocus={e=>e.target.style.borderColor=SC.amber}
+                  onBlur={e=>e.target.style.borderColor=SC.border}/>
               </div>
             ))}
-            <div style={{marginTop:6,padding:"8px 12px",background:`${C.green}11`,
-              border:`1px solid ${C.green}44`,borderRadius:6,fontSize:10,color:C.green,
+            <div style={{marginTop:6,padding:"8px 12px",background:`${SC.green}11`,
+              border:`1px solid ${SC.green}44`,borderRadius:6,fontSize:10,color:SC.green,
               fontFamily:"'DM Mono',monospace"}}>
               ✓ These details will appear on the PDF cover page when you click ⬇ PDF REPORT
             </div>
@@ -1893,14 +1893,14 @@ export default function App(){
       )}
 
       {/* HEADER */}
-      <div style={{display:"flex",alignItems:"center",padding:"8px 18px",background:C.panel,
-        borderBottom:`1px solid ${C.border}`,gap:14,flexShrink:0,flexWrap:"wrap"}}>
+      <div style={{display:"flex",alignItems:"center",padding:"8px 18px",background:SC.panel,
+        borderBottom:`1px solid ${SC.border}`,gap:14,flexShrink:0,flexWrap:"wrap"}}>
         <div>
-          <div style={{fontSize:7,color:C.muted,letterSpacing:"0.2em",fontFamily:"'DM Mono',monospace"}}>AEROSPACE DESIGN SUITE</div>
+          <div style={{fontSize:7,color:SC.muted,letterSpacing:"0.2em",fontFamily:"'DM Mono',monospace"}}>AEROSPACE DESIGN SUITE</div>
           <div style={{fontSize:19,fontWeight:800,letterSpacing:"-0.03em",lineHeight:1}}>
-            <span style={{color:C.amber}}>eVTOL</span>
-            <span style={{color:C.text}}> SIZER</span>
-            <span style={{fontSize:8,color:C.dim,marginLeft:6,fontFamily:"'DM Mono',monospace",fontWeight:400}}>v2.0 — MATLAB Algorithm</span>
+            <span style={{color:SC.amber}}>eVTOL</span>
+            <span style={{color:SC.text}}> SIZER</span>
+            <span style={{fontSize:8,color:SC.dim,marginLeft:6,fontFamily:"'DM Mono',monospace",fontWeight:400}}>v2.0 — MATLAB Algorithm</span>
           </div>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:6,padding:"4px 10px",
@@ -1908,17 +1908,17 @@ export default function App(){
           <div style={{width:6,height:6,borderRadius:"50%",background:stCol,boxShadow:`0 0 8px ${stCol}`}}/>
           <span style={{fontSize:9,color:stCol,fontFamily:"'DM Mono',monospace",fontWeight:700,letterSpacing:"0.08em"}}>{stTxt}</span>
         </div>
-        {R&&(
+        {SR&&(
           <div style={{display:"flex",gap:14,marginLeft:6,flexWrap:"wrap"}}>
-            {[[" MTOW",R.MTOW,"kg",R.MTOW<4000?C.green:R.MTOW<5000?C.amber:C.red],
-              ["E_total",R.Etot,"kWh",C.teal],["P_hover",R.Phov,"kW",C.blue],
-              ["  L/D",R.LDact,"",R.LDact>12?C.green:C.amber],
-              [" SM",(R.SM_vt*100).toFixed(1)+"%","",R.SM_vt>0.05&&R.SM_vt<0.25?C.green:C.red]
+            {[[" MTOW",SR.MTOW,"kg",SR.MTOW<4000?SC.green:SR.MTOW<5000?SC.amber:SC.red],
+              ["E_total",SR.Etot,"kWh",SC.teal],["P_hover",SR.Phov,"kW",SC.blue],
+              ["  L/D",SR.LDact,"",SR.LDact>12?SC.green:SC.amber],
+              [" SM",(SR.SM_vt*100).toFixed(1)+"%","",SR.SM_vt>0.05&&SR.SM_vt<0.25?SC.green:SC.red]
             ].map(([l,v,u,col])=>(
               <div key={l} style={{textAlign:"center"}}>
-                <div style={{fontSize:7,color:C.muted,fontFamily:"'DM Mono',monospace",letterSpacing:"0.08em"}}>{l}</div>
+                <div style={{fontSize:7,color:SC.muted,fontFamily:"'DM Mono',monospace",letterSpacing:"0.08em"}}>{l}</div>
                 <div style={{fontSize:13,fontWeight:700,color:col,fontFamily:"'DM Mono',monospace",lineHeight:1.1}}>
-                  {typeof v==="number"?v.toLocaleString():v}<span style={{fontSize:8,color:C.dim,marginLeft:2}}>{u}</span>
+                  {typeof v==="number"?v.toLocaleString():v}<span style={{fontSize:8,color:SC.dim,marginLeft:2}}>{u}</span>
                 </div>
               </div>
             ))}
@@ -1931,8 +1931,8 @@ export default function App(){
           <button onClick={()=>setDarkMode(d=>!d)} type="button"
             title={darkMode?"Switch to Light Mode":"Switch to Dark Mode"}
             style={{padding:"5px 10px",background:"transparent",
-              border:`1px solid ${C.border}`,borderRadius:4,
-              color:C.muted,fontSize:13,cursor:"pointer",lineHeight:1}}>
+              border:`1px solid ${SC.border}`,borderRadius:4,
+              color:SC.muted,fontSize:13,cursor:"pointer",lineHeight:1}}>
             {darkMode?"☀️":"🌙"}
           </button>
 
@@ -1941,13 +1941,13 @@ export default function App(){
             LD:14,AR:9,eOsw:0.85,clDesign:0.55,taper:0.45,tc:0.15,nPropHover:6,propDiam:3.0,twRatio:1.2,convTolExp:-6,
             etaHov:0.70,etaSys:0.80,rateOfClimb:5.08,climbAngle:5,sedCell:300,etaBat:0.90,socMin:0.2,ewf:0.50,
             fusLen:7.2,fusDiam:1.65,vtGamma:45,vtCh:0.45,vtCv:0.032,vtAR:2.5})}
-            style={{padding:"5px 12px",background:"transparent",border:`1px solid ${C.border}`,
-              borderRadius:4,color:C.muted,fontSize:9,cursor:"pointer",fontFamily:"'DM Mono',monospace"}}>
+            style={{padding:"5px 12px",background:"transparent",border:`1px solid ${SC.border}`,
+              borderRadius:4,color:SC.muted,fontSize:9,cursor:"pointer",fontFamily:"'DM Mono',monospace"}}>
             ↺ RESET
           </button>
 
           {/* CSV Export */}
-          {R&&(
+          {SR&&(
             <button onClick={exportCSV} type="button"
               style={{padding:"5px 12px",background:`linear-gradient(135deg,#14532d,#166534)`,
                 border:`1px solid #22c55e`,borderRadius:4,color:"#86efac",fontSize:9,
@@ -1957,26 +1957,26 @@ export default function App(){
           )}
 
           {/* PDF Branding settings */}
-          {R&&(
+          {SR&&(
             <button onClick={()=>setShowPdfBranding(true)} type="button"
               style={{padding:"5px 12px",background:"transparent",
-                border:`1px solid ${C.border}`,borderRadius:4,
-                color:C.muted,fontSize:9,cursor:"pointer",fontFamily:"'DM Mono',monospace"}}>
+                border:`1px solid ${SC.border}`,borderRadius:4,
+                color:SC.muted,fontSize:9,cursor:"pointer",fontFamily:"'DM Mono',monospace"}}>
               🎨 BRAND PDF
             </button>
           )}
 
           {/* PDF Report */}
-          {R&&(
+          {SR&&(
             <AuthGate user={user} onAuth={handleAuth}>
               <button onClick={()=>{
-                  const html=generateReport(p,R,pdfBranding);
+                  const html=generateReport(p,SR,pdfBranding);
                   const w=window.open("","_blank");
                   w.document.write(html);
                   w.document.close();
                   if(user){
-                    addNotif(user.id,{title:"PDF Report Generated",body:`Design report for MTOW=${R.MTOW} kg exported.`,type:"success"});
-                    addReport(user.id,{name:`Report — MTOW ${R.MTOW}kg · ${new Date().toLocaleDateString()}`,params:p,results:{MTOW:R.MTOW,Etot:R.Etot,Phov:R.Phov,LDact:R.LDact,SM:R.SM},pdfHtml:html});
+                    addNotif(user.id,{title:"PDF Report Generated",body:`Design report for MTOW=${SR.MTOW} kg exported.`,type:"success"});
+                    addReport(user.id,{name:`Report — MTOW ${SR.MTOW}kg · ${new Date().toLocaleDateString()}`,params:p,results:{MTOW:SR.MTOW,Etot:SR.Etot,Phov:SR.Phov,LDact:SR.LDact,SM:SR.SM},pdfHtml:html});
                   }
                 }}
                 style={{padding:"5px 14px",background:"linear-gradient(135deg,#1e3a5f,#1e40af)",
@@ -1989,13 +1989,13 @@ export default function App(){
           )}
 
           {/* Save Design */}
-          {R&&(
+          {SR&&(
             <AuthGate user={user} onAuth={handleAuth}>
               <button onClick={()=>{
                   if(!user) return;
-                  const html=generateReport(p,R,pdfBranding);
-                  const nm=`Design — MTOW ${R.MTOW}kg · ${new Date().toLocaleDateString()}`;
-                  saveDesign(user.id,{name:nm,params:p,results:{MTOW:R.MTOW,Etot:R.Etot,Phov:R.Phov,LDact:R.LDact,SM:R.SM},pdfHtml:html});
+                  const html=generateReport(p,SR,pdfBranding);
+                  const nm=`Design — MTOW ${SR.MTOW}kg · ${new Date().toLocaleDateString()}`;
+                  saveDesign(user.id,{name:nm,params:p,results:{MTOW:SR.MTOW,Etot:SR.Etot,Phov:SR.Phov,LDact:SR.LDact,SM:SR.SM},pdfHtml:html});
                   addNotif(user.id,{title:"Design Saved",body:`"${nm}" saved to My Designs.`,type:"success"});
                 }}
                 style={{padding:"5px 14px",background:"linear-gradient(135deg,#0f2a0f,#14532d)",
@@ -2008,7 +2008,7 @@ export default function App(){
           )}
 
           {/* Share Design — community leaderboard */}
-          {R&&<ShareDesignButton user={user} params={p} results={R} C={C}/>}
+          {SR&&<ShareDesignButton user={user} params={p} results={SR} C={C}/>}
 
           <UserHeaderBar user={user} onSignOut={handleSignOut} onSignIn={()=>setShowAuthModal(true)} onUpdate={handleUpdate}/>
           {showAuthModal&&<AuthModal onClose={()=>setShowAuthModal(false)} onAuth={handleAuth}/>}
@@ -2017,18 +2017,18 @@ export default function App(){
 
       <div style={{display:"flex",flex:1,overflow:"hidden"}}>
         {/* SIDEBAR */}
-        <div style={{width:262,minWidth:262,background:C.panel,borderRight:`1px solid ${C.border}`,
+        <div style={{width:262,minWidth:262,background:SC.panel,borderRight:`1px solid ${SC.border}`,
           overflowY:"auto",padding:"10px 13px 24px"}}>
           <Acc title="Mission Requirements" icon="🛫">
             <Slider label="Payload" unit="kg" value={p.payload} min={100} max={900} step={5} onChange={set("payload")} note="Passengers + cargo"/>
             <Slider label="Range" unit="km" value={p.range} min={50} max={500} step={10} onChange={set("range")}/>
-            <Slider label="Cruise Speed" unit="m/s" value={p.vCruise} min={30} max={120} step={1} onChange={set("vCruise")} note={R?`Mach ${R.Mach}`:""}/>
+            <Slider label="Cruise Speed" unit="m/s" value={p.vCruise} min={30} max={120} step={1} onChange={set("vCruise")} note={SR?`Mach ${SR.Mach}`:""}/>
             <Slider label="Cruise Altitude" unit="m" value={p.cruiseAlt} min={200} max={3000} step={50} onChange={set("cruiseAlt")}/>
             <Slider label="Reserve Range" unit="km" value={p.reserveRange} min={20} max={120} step={5} onChange={set("reserveRange")}/>
             <Slider label="VTOL Height" unit="m" value={p.hoverHeight} min={10} max={50} step={0.5} onChange={set("hoverHeight")}/>
           </Acc>
           <Acc title="Aerodynamics" icon="✈️">
-            <Slider label="Lift-to-Drag L/D" unit="" value={p.LD} min={5} max={22} step={0.5} onChange={set("LD")} note={R?`Actual ${R.LDact} | Archer:11.3 Joby:~16`:"Archer:11.3 Joby:~16"}/>
+            <Slider label="Lift-to-Drag L/D" unit="" value={p.LD} min={5} max={22} step={0.5} onChange={set("LD")} note={SR?`Actual ${SR.LDact} | Archer:11.3 Joby:~16`:"Archer:11.3 Joby:~16"}/>
             <Slider label="Aspect Ratio AR" unit="" value={p.AR} min={4} max={16} step={0.5} onChange={set("AR")}/>
             <Slider label="Oswald e" unit="" value={p.eOsw} min={0.5} max={1.0} step={0.01} onChange={set("eOsw")}/>
             <Slider label="Design CL" unit="" value={p.clDesign} min={0.3} max={1.2} step={0.05} onChange={set("clDesign")} note="eVTOL cruise: 0.45–0.65"/>
@@ -2037,7 +2037,7 @@ export default function App(){
           </Acc>
           <Acc title="Propulsion" icon="🔧">
             <Slider label="Hover Rotors n" unit="" value={p.nPropHover} min={2} max={10} step={2} onChange={set("nPropHover")}/>
-            <Slider label="Rotor Diameter" unit="m" value={p.propDiam} min={1.0} max={5.0} step={0.1} onChange={set("propDiam")} note={R?`AD = ${R.Drotor} m`:""}/>
+            <Slider label="Rotor Diameter" unit="m" value={p.propDiam} min={1.0} max={5.0} step={0.1} onChange={set("propDiam")} note={SR?`AD = ${SR.Drotor} m`:""}/>
             <Slider label="Installed T/W" unit="" value={p.twRatio} min={1.0} max={1.6} step={0.05} onChange={set("twRatio")} note="1.2 = 20% thrust margin above hover weight"/>
             <Slider label="Hover FOM η" unit="" value={p.etaHov} min={0.4} max={0.85} step={0.01} onChange={set("etaHov")} note="Optimised eVTOL rotor: 0.65–0.75"/>
             <Slider label="System η" unit="" value={p.etaSys} min={0.5} max={0.95} step={0.01} onChange={set("etaSys")} note="Motor+inverter chain: 0.78–0.85"/>
@@ -2051,7 +2051,7 @@ export default function App(){
           </Acc>
           <Acc title="V-Tail Design" icon="🦋">
             <Slider label="Dihedral Angle Γ" unit="°" value={p.vtGamma} min={20} max={70} step={1} onChange={set("vtGamma")}
-              note={R?`Optimal: ${R.vtGamma_opt}°`:""}/>
+              note={SR?`Optimal: ${SR.vtGamma_opt}°`:""}/>
             <Slider label="H-Tail Vol. Coeff Ch" unit="" value={p.vtCh} min={0.15} max={0.60} step={0.01} onChange={set("vtCh")} note="FBW eVTOL: 0.35–0.50 | SM target 5–25%"/>
             <Slider label="V-Tail Vol. Coeff Cv" unit="" value={p.vtCv} min={0.015} max={0.10} step={0.005} onChange={set("vtCv")} note="FBW eVTOL (NASA): 0.025–0.040"/>
             <Slider label="Panel Aspect Ratio" unit="" value={p.vtAR} min={1.5} max={4.0} step={0.1} onChange={set("vtAR")} note="Typical 2.0–3.0"/>
@@ -2062,14 +2062,14 @@ export default function App(){
             <Slider label="Fuselage Diameter" unit="m" value={p.fusDiam} min={0.8} max={2.5} step={0.05} onChange={set("fusDiam")} note={`Fineness ratio: ${(p.fusLen/p.fusDiam).toFixed(1)}`}/>
           </Acc>
           {/* Design checks */}
-          {R&&(
-            <div style={{marginTop:10,borderTop:`1px solid ${C.border}`,paddingTop:10}}>
-              <div style={{fontSize:8,color:C.muted,textTransform:"uppercase",letterSpacing:"0.1em",fontFamily:"'DM Mono',monospace",marginBottom:7}}>Design Checks</div>
-              {R.checks.map((c,i)=>(
+          {SR&&(
+            <div style={{marginTop:10,borderTop:`1px solid ${SC.border}`,paddingTop:10}}>
+              <div style={{fontSize:8,color:SC.muted,textTransform:"uppercase",letterSpacing:"0.1em",fontFamily:"'DM Mono',monospace",marginBottom:7}}>Design Checks</div>
+              {SR.checks.map((c,i)=>(
                 <div key={i} style={{display:"flex",alignItems:"center",gap:5,padding:"3px 0",borderBottom:`1px solid #0f131a`}}>
                   <span style={{fontSize:9}}>{c.ok?"✅":"❌"}</span>
-                  <span style={{fontSize:8,color:c.ok?C.green:C.red,flex:1,fontFamily:"'DM Mono',monospace"}}>{c.label}</span>
-                  <span style={{fontSize:8,color:C.muted,fontFamily:"'DM Mono',monospace"}}>{c.val}</span>
+                  <span style={{fontSize:8,color:c.ok?SC.green:SC.red,flex:1,fontFamily:"'DM Mono',monospace"}}>{c.label}</span>
+                  <span style={{fontSize:8,color:SC.muted,fontFamily:"'DM Mono',monospace"}}>{c.val}</span>
                 </div>
               ))}
             </div>
@@ -2079,49 +2079,49 @@ export default function App(){
         {/* MAIN */}
         <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
           {/* Tabs */}
-          <div style={{display:"flex",background:C.panel,borderBottom:`1px solid ${C.border}`,overflowX:"auto",flexShrink:0}}>
+          <div style={{display:"flex",background:SC.panel,borderBottom:`1px solid ${SC.border}`,overflowX:"auto",flexShrink:0}}>
             {TABS.map((t,i)=>(
               <button key={i} onClick={()=>setTab(i)}
                 style={{padding:"8px 14px",background:"transparent",border:"none",cursor:"pointer",
-                  borderBottom:i===tab?`2px solid ${C.amber}`:"2px solid transparent",
-                  color:i===tab?C.text:C.muted,fontSize:10,fontFamily:"'DM Mono',monospace",
+                  borderBottom:i===tab?`2px solid ${SC.amber}`:"2px solid transparent",
+                  color:i===tab?SC.text:SC.muted,fontSize:10,fontFamily:"'DM Mono',monospace",
                   letterSpacing:"0.05em",whiteSpace:"nowrap",transition:"color 0.15s"}}>
                 {TABI[i]} {t}
               </button>
             ))}
           </div>
 
-          <div style={{flex:1,overflowY:"auto",padding:"14px 18px 28px",background:C.bg}}>
+          <div style={{flex:1,overflowY:"auto",padding:"14px 18px 28px",background:SC.bg}}>
             {/* Shared design banner — shown when ?design= is in URL */}
             {sharedDesignId&&(
               <PublicDesignBanner shareId={sharedDesignId} onLoad={params=>setP(prev=>({...prev,...params}))} C={C}/>
             )}
-            {!R&&<div style={{color:C.red,fontFamily:"'DM Mono',monospace",padding:20}}>Calculation error — adjust inputs.</div>}
-            {R&&<>
+            {!SR&&<div style={{color:SC.red,fontFamily:"'DM Mono',monospace",padding:20}}>Calculation error — adjust inputs.</div>}
+            {SR&&<>
 
             {/* ──── TAB 0: OVERVIEW ──── */}
             {tab===0&&(
               <div style={{display:"flex",flexDirection:"column",gap:12}}>
                 <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
-                  <KPI label="MTOW" value={R.MTOW} unit="kg" color={R.MTOW<4000?C.green:R.MTOW<5000?C.amber:C.red} sub={`R1: ${R.MTOW1} kg`}/>
-                  <KPI label="Battery Mass" value={R.Wbat} unit="kg" color={R.Wbat/R.MTOW<0.4?C.green:C.amber} sub={`${(R.Wbat/R.MTOW*100).toFixed(1)}% of MTOW`}/>
-                  <KPI label="Total Energy" value={R.Etot} unit="kWh" color={C.teal} sub={`Pack: ${R.PackkWh} kWh`}/>
-                  <KPI label="Actual L/D" value={R.LDact} unit="" color={R.LDact>12?C.green:C.amber} sub={`CD₀=${R.CD0tot} CDi=${R.CDi}`}/>
+                  <KPI label="MTOW" value={SR.MTOW} unit="kg" color={SR.MTOW<4000?SC.green:SR.MTOW<5000?SC.amber:SC.red} sub={`R1: ${SR.MTOW1} kg`}/>
+                  <KPI label="Battery Mass" value={SR.Wbat} unit="kg" color={SR.Wbat/SR.MTOW<0.4?SC.green:SC.amber} sub={`${(SR.Wbat/SR.MTOW*100).toFixed(1)}% of MTOW`}/>
+                  <KPI label="Total Energy" value={SR.Etot} unit="kWh" color={SC.teal} sub={`Pack: ${SR.PackkWh} kWh`}/>
+                  <KPI label="Actual L/D" value={SR.LDact} unit="" color={SR.LDact>12?SC.green:SC.amber} sub={`CD₀=${SR.CD0tot} CDi=${SR.CDi}`}/>
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
-                  <KPI label="Wing Area" value={R.Swing} unit="m²" sub={`Span ${R.bWing} m`}/>
-                  <KPI label="Hover Power" value={R.Phov} unit="kW" color={C.blue} sub={`Cruise ${R.Pcr} kW`}/>
-                  <KPI label="Static Margin" value={(R.SM*100).toFixed(1)} unit="% MAC" color={R.SM>0.05&&R.SM<0.25?C.green:C.red}/>
-                  <KPI label="Mach" value={R.Mach} unit="" color={R.Mach<0.35?C.green:C.amber} sub={`Re ${(R.Re_/1e6).toFixed(2)}×10⁶`}/>
+                  <KPI label="Wing Area" value={SR.Swing} unit="m²" sub={`Span ${SR.bWing} m`}/>
+                  <KPI label="Hover Power" value={SR.Phov} unit="kW" color={SC.blue} sub={`Cruise ${SR.Pcr} kW`}/>
+                  <KPI label="Static Margin" value={(SR.SM*100).toFixed(1)} unit="% MAC" color={SR.SM>0.05&&SR.SM<0.25?SC.green:SC.red}/>
+                  <KPI label="Mach" value={SR.Mach} unit="" color={SR.Mach<0.35?SC.green:SC.amber} sub={`Re ${(SR.Re_/1e6).toFixed(2)}×10⁶`}/>
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
                   <Panel title="Power per Phase (kW)" ht={255}>
                     <ResponsiveContainer width="100%" height={205}>
-                      <BarChart data={[{ph:"T/O",v:R.Phov},{ph:"Climb",v:R.Pcl},{ph:"Cruise",v:R.Pcr},{ph:"Descent",v:R.Pdc},{ph:"Land",v:R.Phov},{ph:"Reserve",v:R.Pres}]}
+                      <BarChart data={[{ph:"T/O",v:SR.Phov},{ph:"Climb",v:SR.Pcl},{ph:"Cruise",v:SR.Pcr},{ph:"Descent",v:SR.Pdc},{ph:"Land",v:SR.Phov},{ph:"Reserve",v:SR.Pres}]}
                         margin={{top:5,right:8,left:-15,bottom:0}}>
-                        <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
-                        <XAxis dataKey="ph" tick={{fontSize:11,fill:C.muted}}/>
-                        <YAxis tick={{fontSize:11,fill:C.muted}}/>
+                        <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
+                        <XAxis dataKey="ph" tick={{fontSize:11,fill:SC.muted}}/>
+                        <YAxis tick={{fontSize:11,fill:SC.muted}}/>
                         <Tooltip {...TTP}/>
                         <Bar dataKey="v" radius={[3,3,0,0]} name="kW">{PHC.map((c,i)=><Cell key={i} fill={c}/>)}</Bar>
                       </BarChart>
@@ -2129,11 +2129,11 @@ export default function App(){
                   </Panel>
                   <Panel title="Energy per Phase (kWh)" ht={255}>
                     <ResponsiveContainer width="100%" height={205}>
-                      <BarChart data={[{ph:"T/O",v:R.Eto},{ph:"Climb",v:R.Ecl},{ph:"Cruise",v:R.Ecr},{ph:"Descent",v:R.Edc},{ph:"Land",v:R.Eld},{ph:"Reserve",v:R.Eres}]}
+                      <BarChart data={[{ph:"T/O",v:SR.Eto},{ph:"Climb",v:SR.Ecl},{ph:"Cruise",v:SR.Ecr},{ph:"Descent",v:SR.Edc},{ph:"Land",v:SR.Eld},{ph:"Reserve",v:SR.Eres}]}
                         margin={{top:5,right:8,left:-15,bottom:0}}>
-                        <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
-                        <XAxis dataKey="ph" tick={{fontSize:11,fill:C.muted}}/>
-                        <YAxis tick={{fontSize:11,fill:C.muted}}/>
+                        <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
+                        <XAxis dataKey="ph" tick={{fontSize:11,fill:SC.muted}}/>
+                        <YAxis tick={{fontSize:11,fill:SC.muted}}/>
                         <Tooltip {...TTP}/>
                         <Bar dataKey="v" radius={[3,3,0,0]} name="kWh">{PHC.map((c,i)=><Cell key={i} fill={c}/>)}</Bar>
                       </BarChart>
@@ -2143,25 +2143,25 @@ export default function App(){
                 <Panel title="Mission Timeline — Final Converged Values">
                   <div style={{overflowX:"auto"}}>
                     <table style={{width:"100%",borderCollapse:"collapse",fontSize:10}}>
-                      <thead><tr style={{background:C.panel}}>
+                      <thead><tr style={{background:SC.panel}}>
                         {["Phase","Time (s)","Power (kW)","Energy (kWh)","Velocity (m/s)"].map(hdr=>(
-                          <th key={hdr} style={{padding:"5px 12px",textAlign:"left",color:C.muted,fontFamily:"'DM Mono',monospace",fontSize:8,fontWeight:600,letterSpacing:"0.05em"}}>{hdr}</th>
+                          <th key={hdr} style={{padding:"5px 12px",textAlign:"left",color:SC.muted,fontFamily:"'DM Mono',monospace",fontSize:8,fontWeight:600,letterSpacing:"0.05em"}}>{hdr}</th>
                         ))}
                       </tr></thead>
                       <tbody>
-                        {[["🛫 Takeoff Hover",R.tto,R.Phov,R.Eto,0.5],
-                          ["📈 Climb",R.tcl,R.Pcl,R.Ecl,+(p.rateOfClimb/Math.sin(p.climbAngle*Math.PI/180)).toFixed(1)],
-                          ["✈️ Cruise",R.tcr,R.Pcr,R.Ecr,p.vCruise],
-                          ["📉 Descent",R.tdc,R.Pdc,R.Edc,+(p.cruiseAlt/Math.tan(Math.atan(1/p.LD))/R.tdc).toFixed(1)],
-                          ["🛬 Landing Hover",R.tld,R.Phov,R.Eld,0.5],
-                          ["🔄 Reserve",R.tres,R.Pres,R.Eres,+(0.7*p.vCruise).toFixed(1)],
+                        {[["🛫 Takeoff Hover",SR.tto,SR.Phov,SR.Eto,0.5],
+                          ["📈 Climb",SR.tcl,SR.Pcl,SR.Ecl,+(p.rateOfClimb/Math.sin(p.climbAngle*Math.PI/180)).toFixed(1)],
+                          ["✈️ Cruise",SR.tcr,SR.Pcr,SR.Ecr,p.vCruise],
+                          ["📉 Descent",SR.tdc,SR.Pdc,SR.Edc,+(p.cruiseAlt/Math.tan(Math.atan(1/p.LD))/SR.tdc).toFixed(1)],
+                          ["🛬 Landing Hover",SR.tld,SR.Phov,SR.Eld,0.5],
+                          ["🔄 Reserve",SR.tres,SR.Pres,SR.Eres,+(0.7*p.vCruise).toFixed(1)],
                         ].map(([ph,t,pw,e,v],i)=>(
-                          <tr key={i} style={{borderTop:`1px solid ${C.border}`,background:i%2?"#0a0d14":C.bg}}>
-                            <td style={{padding:"6px 12px",color:C.text,fontWeight:600}}>{ph}</td>
-                            <td style={{padding:"6px 12px",color:C.amber,fontFamily:"'DM Mono',monospace"}}>{t}</td>
+                          <tr key={i} style={{borderTop:`1px solid ${SC.border}`,background:i%2?"#0a0d14":SC.bg}}>
+                            <td style={{padding:"6px 12px",color:SC.text,fontWeight:600}}>{ph}</td>
+                            <td style={{padding:"6px 12px",color:SC.amber,fontFamily:"'DM Mono',monospace"}}>{t}</td>
                             <td style={{padding:"6px 12px",color:PHC[i],fontFamily:"'DM Mono',monospace"}}>{pw}</td>
-                            <td style={{padding:"6px 12px",color:C.teal,fontFamily:"'DM Mono',monospace"}}>{e}</td>
-                            <td style={{padding:"6px 12px",color:C.muted,fontFamily:"'DM Mono',monospace"}}>{v}</td>
+                            <td style={{padding:"6px 12px",color:SC.teal,fontFamily:"'DM Mono',monospace"}}>{e}</td>
+                            <td style={{padding:"6px 12px",color:SC.muted,fontFamily:"'DM Mono',monospace"}}>{v}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -2178,15 +2178,15 @@ export default function App(){
                 {/* KPI row */}
                 <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:8}}>
                   {[
-                    ["Total Time",`${R.Tend}s`,C.muted],
-                    ["Total Energy",`${R.Etot} kWh`,C.teal],
-                    ["Peak Power",`${R.Phov} kW`,C.amber],
-                    ["Cruise Power",`${R.Pcr} kW`,C.blue],
-                    ["Cruise Speed",`${p.vCruise} m/s`,C.green],
-                    ["Range",`${p.range} km`,C.purple],
+                    ["Total Time",`${SR.Tend}s`,SC.muted],
+                    ["Total Energy",`${SR.Etot} kWh`,SC.teal],
+                    ["Peak Power",`${SR.Phov} kW`,SC.amber],
+                    ["Cruise Power",`${SR.Pcr} kW`,SC.blue],
+                    ["Cruise Speed",`${p.vCruise} m/s`,SC.green],
+                    ["Range",`${p.range} km`,SC.purple],
                   ].map(([lbl,val,col])=>(
-                    <div key={lbl} style={{background:C.panel,border:`1px solid ${C.border}`,borderRadius:6,padding:"8px 10px",borderLeft:`2px solid ${col}`}}>
-                      <div style={{fontSize:8,color:C.muted,fontFamily:"'DM Mono',monospace",textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:3}}>{lbl}</div>
+                    <div key={lbl} style={{background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:6,padding:"8px 10px",borderLeft:`2px solid ${col}`}}>
+                      <div style={{fontSize:8,color:SC.muted,fontFamily:"'DM Mono',monospace",textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:3}}>{lbl}</div>
                       <div style={{fontSize:13,fontWeight:700,color:col,fontFamily:"'DM Mono',monospace"}}>{val}</div>
                     </div>
                   ))}
@@ -2195,16 +2195,16 @@ export default function App(){
                 {/* Power vs Time */}
                 <Panel title="Power vs Mission Time (kW)" ht={270}>
                   <ResponsiveContainer width="100%" height={220}>
-                    <AreaChart data={R.powerSteps} margin={{top:5,right:16,left:-5,bottom:16}}>
+                    <AreaChart data={SR.powerSteps} margin={{top:5,right:16,left:-5,bottom:16}}>
                       <defs><linearGradient id="pg" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor={C.amber} stopOpacity={0.4}/><stop offset="95%" stopColor={C.amber} stopOpacity={0.02}/>
+                        <stop offset="5%" stopColor={SC.amber} stopOpacity={0.4}/><stop offset="95%" stopColor={SC.amber} stopOpacity={0.02}/>
                       </linearGradient></defs>
-                      <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
-                      <XAxis dataKey="t" tick={{fontSize:10,fill:C.muted}} label={{value:"Time (s)",position:"insideBottom",offset:-6,fontSize:11,fill:C.muted}}/>
-                      <YAxis tick={{fontSize:10,fill:C.muted}} label={{value:"Power (kW)",angle:-90,position:"insideLeft",offset:10,fontSize:11,fill:C.muted}}/>
+                      <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
+                      <XAxis dataKey="t" tick={{fontSize:10,fill:SC.muted}} label={{value:"Time (s)",position:"insideBottom",offset:-6,fontSize:11,fill:SC.muted}}/>
+                      <YAxis tick={{fontSize:10,fill:SC.muted}} label={{value:"Power (kW)",angle:-90,position:"insideLeft",offset:10,fontSize:11,fill:SC.muted}}/>
                       <Tooltip {...TTP} formatter={(v,n)=>[`${v} kW`,n]}/>
-                      <Area type="stepAfter" dataKey="P" stroke={C.amber} strokeWidth={2.5} fill="url(#pg)" dot={false} name="Power (kW)"/>
-                      {R.tPhases.slice(1,-1).map((tp,i)=>(
+                      <Area type="stepAfter" dataKey="P" stroke={SC.amber} strokeWidth={2.5} fill="url(#pg)" dot={false} name="Power (kW)"/>
+                      {SR.tPhases.slice(1,-1).map((tp,i)=>(
                         <ReferenceLine key={i} x={Math.round(tp)} stroke={PHC[i]} strokeDasharray="4 3" strokeWidth={1.5}
                           label={{value:["Climb","Cruise","Desc","Land","Res"][i],fill:PHC[i],fontSize:9,position:"top"}}/>
                       ))}
@@ -2215,20 +2215,20 @@ export default function App(){
                 {/* Energy vs Time — NEW */}
                 <Panel title="Cumulative Energy Consumed vs Mission Time (kWh)" ht={270}>
                   <ResponsiveContainer width="100%" height={220}>
-                    <AreaChart data={R.energySteps} margin={{top:5,right:16,left:-5,bottom:16}}>
+                    <AreaChart data={SR.energySteps} margin={{top:5,right:16,left:-5,bottom:16}}>
                       <defs><linearGradient id="eg" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor={C.teal} stopOpacity={0.45}/><stop offset="95%" stopColor={C.teal} stopOpacity={0.02}/>
+                        <stop offset="5%" stopColor={SC.teal} stopOpacity={0.45}/><stop offset="95%" stopColor={SC.teal} stopOpacity={0.02}/>
                       </linearGradient></defs>
-                      <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
-                      <XAxis dataKey="t" tick={{fontSize:10,fill:C.muted}} label={{value:"Time (s)",position:"insideBottom",offset:-6,fontSize:11,fill:C.muted}}/>
-                      <YAxis tick={{fontSize:10,fill:C.muted}} label={{value:"Energy (kWh)",angle:-90,position:"insideLeft",offset:10,fontSize:11,fill:C.muted}}/>
+                      <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
+                      <XAxis dataKey="t" tick={{fontSize:10,fill:SC.muted}} label={{value:"Time (s)",position:"insideBottom",offset:-6,fontSize:11,fill:SC.muted}}/>
+                      <YAxis tick={{fontSize:10,fill:SC.muted}} label={{value:"Energy (kWh)",angle:-90,position:"insideLeft",offset:10,fontSize:11,fill:SC.muted}}/>
                       <Tooltip {...TTP} formatter={(v,n)=>[`${v} kWh`,n]}/>
-                      <Area type="monotone" dataKey="E" stroke={C.teal} strokeWidth={2.5} fill="url(#eg)" dot={false} name="Cumulative Energy (kWh)"/>
-                      <ReferenceLine y={R.Etot} stroke={C.green} strokeDasharray="5 3"
-                        label={{value:`Total: ${R.Etot} kWh`,fill:C.green,fontSize:10,position:"insideTopRight"}}/>
-                      <ReferenceLine y={R.PackkWh} stroke={C.amber} strokeDasharray="5 3"
-                        label={{value:`Pack: ${R.PackkWh} kWh`,fill:C.amber,fontSize:10,position:"insideBottomRight"}}/>
-                      {R.tPhases.slice(1,-1).map((tp,i)=>(
+                      <Area type="monotone" dataKey="E" stroke={SC.teal} strokeWidth={2.5} fill="url(#eg)" dot={false} name="Cumulative Energy (kWh)"/>
+                      <ReferenceLine y={SR.Etot} stroke={SC.green} strokeDasharray="5 3"
+                        label={{value:`Total: ${SR.Etot} kWh`,fill:SC.green,fontSize:10,position:"insideTopRight"}}/>
+                      <ReferenceLine y={SR.PackkWh} stroke={SC.amber} strokeDasharray="5 3"
+                        label={{value:`Pack: ${SR.PackkWh} kWh`,fill:SC.amber,fontSize:10,position:"insideBottomRight"}}/>
+                      {SR.tPhases.slice(1,-1).map((tp,i)=>(
                         <ReferenceLine key={i} x={Math.round(tp)} stroke={PHC[i]} strokeDasharray="4 3" strokeWidth={1.5}
                           label={{value:["Climb","Cruise","Desc","Land","Res"][i],fill:PHC[i],fontSize:9,position:"top"}}/>
                       ))}
@@ -2239,18 +2239,18 @@ export default function App(){
                 {/* Velocity vs Time */}
                 <Panel title="Velocity vs Mission Time (m/s)" ht={230}>
                   <ResponsiveContainer width="100%" height={185}>
-                    <AreaChart data={R.velSteps} margin={{top:5,right:16,left:-5,bottom:16}}>
+                    <AreaChart data={SR.velSteps} margin={{top:5,right:16,left:-5,bottom:16}}>
                       <defs><linearGradient id="vg" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor={C.blue} stopOpacity={0.4}/><stop offset="95%" stopColor={C.blue} stopOpacity={0.02}/>
+                        <stop offset="5%" stopColor={SC.blue} stopOpacity={0.4}/><stop offset="95%" stopColor={SC.blue} stopOpacity={0.02}/>
                       </linearGradient></defs>
-                      <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
-                      <XAxis dataKey="t" tick={{fontSize:10,fill:C.muted}} label={{value:"Time (s)",position:"insideBottom",offset:-6,fontSize:11,fill:C.muted}}/>
-                      <YAxis tick={{fontSize:10,fill:C.muted}} label={{value:"Speed (m/s)",angle:-90,position:"insideLeft",offset:10,fontSize:11,fill:C.muted}}/>
+                      <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
+                      <XAxis dataKey="t" tick={{fontSize:10,fill:SC.muted}} label={{value:"Time (s)",position:"insideBottom",offset:-6,fontSize:11,fill:SC.muted}}/>
+                      <YAxis tick={{fontSize:10,fill:SC.muted}} label={{value:"Speed (m/s)",angle:-90,position:"insideLeft",offset:10,fontSize:11,fill:SC.muted}}/>
                       <Tooltip {...TTP} formatter={(v,n)=>[`${v} m/s`,n]}/>
-                      <Area type="stepAfter" dataKey="V" stroke={C.blue} strokeWidth={2.5} fill="url(#vg)" dot={false} name="Speed (m/s)"/>
-                      <ReferenceLine y={p.vCruise} stroke={C.amber} strokeDasharray="4 3"
-                        label={{value:`Vcr = ${p.vCruise} m/s`,fill:C.amber,fontSize:10,position:"insideTopRight"}}/>
-                      {R.tPhases.slice(1,-1).map((tp,i)=>(
+                      <Area type="stepAfter" dataKey="V" stroke={SC.blue} strokeWidth={2.5} fill="url(#vg)" dot={false} name="Speed (m/s)"/>
+                      <ReferenceLine y={p.vCruise} stroke={SC.amber} strokeDasharray="4 3"
+                        label={{value:`Vcr = ${p.vCruise} m/s`,fill:SC.amber,fontSize:10,position:"insideTopRight"}}/>
+                      {SR.tPhases.slice(1,-1).map((tp,i)=>(
                         <ReferenceLine key={i} x={Math.round(tp)} stroke={PHC[i]} strokeDasharray="4 3" strokeWidth={1}/>
                       ))}
                     </AreaChart>
@@ -2259,9 +2259,9 @@ export default function App(){
 
                 {/* ── Combined Power + Energy vs Time (dual Y-axis) ── */}
                 <Panel title="Power & Energy vs Mission Time — Combined (Dual Axis)">
-                  <div style={{fontSize:10,color:C.muted,fontFamily:"'DM Mono',monospace",marginBottom:8,paddingLeft:4}}>
-                    <span style={{color:C.amber,fontWeight:700}}>■ Power (kW)</span> on left axis &nbsp;·&nbsp;
-                    <span style={{color:C.green,fontWeight:700}}>■ Phase Energy (kWh)</span> on right axis — both plotted step-wise per phase, matching the MATLAB reference.
+                  <div style={{fontSize:10,color:SC.muted,fontFamily:"'DM Mono',monospace",marginBottom:8,paddingLeft:4}}>
+                    <span style={{color:SC.amber,fontWeight:700}}>■ Power (kW)</span> on left axis &nbsp;·&nbsp;
+                    <span style={{color:SC.green,fontWeight:700}}>■ Phase Energy (kWh)</span> on right axis — both plotted step-wise per phase, matching the MATLAB reference.
                   </div>
                   <ResponsiveContainer width="100%" height={280}>
                     <ComposedChart
@@ -2269,12 +2269,12 @@ export default function App(){
                         // Build step data: for each phase show power and energy as step-wise blocks
                         // matching the MATLAB "Energy vs Time" shape exactly
                         const phases=[
-                          {label:"T/O",   tStart:R.tPhases[0], tEnd:R.tPhases[1], power:R.Phov, energy:R.Eto},
-                          {label:"Climb", tStart:R.tPhases[1], tEnd:R.tPhases[2], power:R.Pcl,  energy:R.Ecl},
-                          {label:"Cruise",tStart:R.tPhases[2], tEnd:R.tPhases[3], power:R.Pcr,  energy:R.Ecr},
-                          {label:"Desc",  tStart:R.tPhases[3], tEnd:R.tPhases[4], power:R.Pdc,  energy:R.Edc},
-                          {label:"Land",  tStart:R.tPhases[4], tEnd:R.tPhases[5], power:R.Phov, energy:R.Eld},
-                          {label:"Res",   tStart:R.tPhases[5], tEnd:R.tPhases[6], power:R.Pres, energy:R.Eres},
+                          {label:"T/O",   tStart:SR.tPhases[0], tEnd:SR.tPhases[1], power:SR.Phov, energy:SR.Eto},
+                          {label:"Climb", tStart:SR.tPhases[1], tEnd:SR.tPhases[2], power:SR.Pcl,  energy:SR.Ecl},
+                          {label:"Cruise",tStart:SR.tPhases[2], tEnd:SR.tPhases[3], power:SR.Pcr,  energy:SR.Ecr},
+                          {label:"Desc",  tStart:SR.tPhases[3], tEnd:SR.tPhases[4], power:SR.Pdc,  energy:SR.Edc},
+                          {label:"Land",  tStart:SR.tPhases[4], tEnd:SR.tPhases[5], power:SR.Phov, energy:SR.Eld},
+                          {label:"Res",   tStart:SR.tPhases[5], tEnd:SR.tPhases[6], power:SR.Pres, energy:SR.Eres},
                         ];
                         // Build array with step transitions: each phase generates 2 points (start, end)
                         const pts=[];
@@ -2285,48 +2285,48 @@ export default function App(){
                         return pts;
                       })()}
                       margin={{top:10,right:60,left:10,bottom:20}}>
-                      <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
-                      <XAxis dataKey="t" tick={{fontSize:10,fill:C.muted}}
-                        label={{value:"Time (s)",position:"insideBottom",offset:-6,fontSize:11,fill:C.muted}}/>
+                      <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
+                      <XAxis dataKey="t" tick={{fontSize:10,fill:SC.muted}}
+                        label={{value:"Time (s)",position:"insideBottom",offset:-6,fontSize:11,fill:SC.muted}}/>
                       {/* Left Y — Power */}
-                      <YAxis yAxisId="left" tick={{fontSize:10,fill:C.amber}}
-                        label={{value:"Power (kW)",angle:-90,position:"insideLeft",offset:14,fontSize:11,fill:C.amber}}/>
+                      <YAxis yAxisId="left" tick={{fontSize:10,fill:SC.amber}}
+                        label={{value:"Power (kW)",angle:-90,position:"insideLeft",offset:14,fontSize:11,fill:SC.amber}}/>
                       {/* Right Y — Energy */}
-                      <YAxis yAxisId="right" orientation="right" tick={{fontSize:10,fill:C.green}}
-                        label={{value:"Energy (kWh)",angle:90,position:"insideRight",offset:14,fontSize:11,fill:C.green}}/>
+                      <YAxis yAxisId="right" orientation="right" tick={{fontSize:10,fill:SC.green}}
+                        label={{value:"Energy (kWh)",angle:90,position:"insideRight",offset:14,fontSize:11,fill:SC.green}}/>
                       <Tooltip {...TTP}
                         formatter={(v,n)=>n==="Power (kW)"?[`${v} kW`,n]:[`${v} kWh`,n]}
                         labelFormatter={t=>`t = ${t} s`}/>
-                      <Legend iconSize={10} wrapperStyle={{fontSize:11,color:C.muted,paddingTop:4}}/>
+                      <Legend iconSize={10} wrapperStyle={{fontSize:11,color:SC.muted,paddingTop:4}}/>
                       {/* Phase reference lines */}
-                      {R.tPhases.slice(1,-1).map((tp,i)=>(
+                      {SR.tPhases.slice(1,-1).map((tp,i)=>(
                         <ReferenceLine key={i} x={Math.round(tp)} yAxisId="left"
                           stroke={PHC[i]} strokeDasharray="4 3" strokeWidth={1.5}
                           label={{value:["Climb","Cruise","Desc","Land","Res"][i],fill:PHC[i],fontSize:9,position:"top"}}/>
                       ))}
                       {/* Power line — amber, step, left axis */}
-                      <Line yAxisId="left" type="stepAfter" dataKey="P" stroke={C.amber} strokeWidth={2.5}
+                      <Line yAxisId="left" type="stepAfter" dataKey="P" stroke={SC.amber} strokeWidth={2.5}
                         dot={false} name="Power (kW)" connectNulls={false}/>
                       {/* Energy line — green, step, right axis */}
-                      <Line yAxisId="right" type="stepAfter" dataKey="E" stroke={C.green} strokeWidth={2.5}
+                      <Line yAxisId="right" type="stepAfter" dataKey="E" stroke={SC.green} strokeWidth={2.5}
                         dot={false} name="Energy (kWh)" connectNulls={false}
                         strokeDasharray="0"/>
                     </ComposedChart>
                   </ResponsiveContainer>
-                  <div style={{display:"flex",gap:20,marginTop:8,padding:"8px 12px",background:C.bg,borderRadius:6,border:`1px solid ${C.border}`,flexWrap:"wrap"}}>
+                  <div style={{display:"flex",gap:20,marginTop:8,padding:"8px 12px",background:SC.bg,borderRadius:6,border:`1px solid ${SC.border}`,flexWrap:"wrap"}}>
                     {[
-                      ["T/O",   R.Phov, R.Eto,  PHC[0]],
-                      ["Climb", R.Pcl,  R.Ecl,  PHC[1]],
-                      ["Cruise",R.Pcr,  R.Ecr,  PHC[2]],
-                      ["Desc",  R.Pdc,  R.Edc,  PHC[3]],
-                      ["Land",  R.Phov, R.Eld,  PHC[4]],
-                      ["Res",   R.Pres, R.Eres, PHC[5]],
+                      ["T/O",   SR.Phov, SR.Eto,  PHC[0]],
+                      ["Climb", SR.Pcl,  SR.Ecl,  PHC[1]],
+                      ["Cruise",SR.Pcr,  SR.Ecr,  PHC[2]],
+                      ["Desc",  SR.Pdc,  SR.Edc,  PHC[3]],
+                      ["Land",  SR.Phov, SR.Eld,  PHC[4]],
+                      ["Res",   SR.Pres, SR.Eres, PHC[5]],
                     ].map(([lbl,pw,e,col])=>(
                       <div key={lbl} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
                         <div style={{width:8,height:8,borderRadius:"50%",background:col}}/>
-                        <span style={{fontSize:9,color:C.muted,fontFamily:"'DM Mono',monospace"}}>{lbl}</span>
-                        <span style={{fontSize:10,color:C.amber,fontFamily:"'DM Mono',monospace",fontWeight:700}}>{pw} kW</span>
-                        <span style={{fontSize:10,color:C.green,fontFamily:"'DM Mono',monospace",fontWeight:700}}>{e} kWh</span>
+                        <span style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace"}}>{lbl}</span>
+                        <span style={{fontSize:10,color:SC.amber,fontFamily:"'DM Mono',monospace",fontWeight:700}}>{pw} kW</span>
+                        <span style={{fontSize:10,color:SC.green,fontFamily:"'DM Mono',monospace",fontWeight:700}}>{e} kWh</span>
                       </div>
                     ))}
                   </div>
@@ -2334,29 +2334,29 @@ export default function App(){
 
                 {/* Phase Power vs Phase Energy vs Phase Time — NEW grouped bar chart */}
                 <Panel title="Phase Comparison — Power (kW) · Energy (kWh) · Duration (s)">
-                  <div style={{fontSize:10,color:C.muted,fontFamily:"'DM Mono',monospace",marginBottom:8,paddingLeft:4}}>
+                  <div style={{fontSize:10,color:SC.muted,fontFamily:"'DM Mono',monospace",marginBottom:8,paddingLeft:4}}>
                     Grouped bars show the three key metrics for each mission phase. Each metric is normalised relative to its maximum value so all three can be compared on the same axis.
                     Raw values shown in the data table below.
                   </div>
                   <ResponsiveContainer width="100%" height={240}>
                     <BarChart
                       data={[
-                        {ph:"T/O",    power:+(R.Phov/Math.max(R.Phov,R.Pcl,R.Pcr,R.Pdc,R.Pres)*100).toFixed(1), energy:+(R.Eto/R.Etot*100).toFixed(1),  time:+(R.tto/R.Tend*100).toFixed(1)},
-                        {ph:"Climb",  power:+(R.Pcl/Math.max(R.Phov,R.Pcl,R.Pcr,R.Pdc,R.Pres)*100).toFixed(1),  energy:+(R.Ecl/R.Etot*100).toFixed(1),  time:+(R.tcl/R.Tend*100).toFixed(1)},
-                        {ph:"Cruise", power:+(R.Pcr/Math.max(R.Phov,R.Pcl,R.Pcr,R.Pdc,R.Pres)*100).toFixed(1),  energy:+(R.Ecr/R.Etot*100).toFixed(1),  time:+(R.tcr/R.Tend*100).toFixed(1)},
-                        {ph:"Descent",power:+(R.Pdc/Math.max(R.Phov,R.Pcl,R.Pcr,R.Pdc,R.Pres)*100).toFixed(1),  energy:+(R.Edc/R.Etot*100).toFixed(1),  time:+(R.tdc/R.Tend*100).toFixed(1)},
-                        {ph:"Land",   power:+(R.Phov/Math.max(R.Phov,R.Pcl,R.Pcr,R.Pdc,R.Pres)*100).toFixed(1), energy:+(R.Eld/R.Etot*100).toFixed(1),  time:+(R.tld/R.Tend*100).toFixed(1)},
-                        {ph:"Reserve",power:+(R.Pres/Math.max(R.Phov,R.Pcl,R.Pcr,R.Pdc,R.Pres)*100).toFixed(1), energy:+(R.Eres/R.Etot*100).toFixed(1), time:+(R.tres/R.Tend*100).toFixed(1)},
+                        {ph:"T/O",    power:+(SR.Phov/Math.max(SR.Phov,SR.Pcl,SR.Pcr,SR.Pdc,SR.Pres)*100).toFixed(1), energy:+(SR.Eto/SR.Etot*100).toFixed(1),  time:+(SR.tto/SR.Tend*100).toFixed(1)},
+                        {ph:"Climb",  power:+(SR.Pcl/Math.max(SR.Phov,SR.Pcl,SR.Pcr,SR.Pdc,SR.Pres)*100).toFixed(1),  energy:+(SR.Ecl/SR.Etot*100).toFixed(1),  time:+(SR.tcl/SR.Tend*100).toFixed(1)},
+                        {ph:"Cruise", power:+(SR.Pcr/Math.max(SR.Phov,SR.Pcl,SR.Pcr,SR.Pdc,SR.Pres)*100).toFixed(1),  energy:+(SR.Ecr/SR.Etot*100).toFixed(1),  time:+(SR.tcr/SR.Tend*100).toFixed(1)},
+                        {ph:"Descent",power:+(SR.Pdc/Math.max(SR.Phov,SR.Pcl,SR.Pcr,SR.Pdc,SR.Pres)*100).toFixed(1),  energy:+(SR.Edc/SR.Etot*100).toFixed(1),  time:+(SR.tdc/SR.Tend*100).toFixed(1)},
+                        {ph:"Land",   power:+(SR.Phov/Math.max(SR.Phov,SR.Pcl,SR.Pcr,SR.Pdc,SR.Pres)*100).toFixed(1), energy:+(SR.Eld/SR.Etot*100).toFixed(1),  time:+(SR.tld/SR.Tend*100).toFixed(1)},
+                        {ph:"Reserve",power:+(SR.Pres/Math.max(SR.Phov,SR.Pcl,SR.Pcr,SR.Pdc,SR.Pres)*100).toFixed(1), energy:+(SR.Eres/SR.Etot*100).toFixed(1), time:+(SR.tres/SR.Tend*100).toFixed(1)},
                       ]}
                       margin={{top:5,right:20,left:-10,bottom:0}}>
-                      <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
-                      <XAxis dataKey="ph" tick={{fontSize:11,fill:C.muted}}/>
-                      <YAxis tick={{fontSize:10,fill:C.muted}} label={{value:"% of max",angle:-90,position:"insideLeft",offset:14,fontSize:11,fill:C.muted}} domain={[0,110]}/>
+                      <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
+                      <XAxis dataKey="ph" tick={{fontSize:11,fill:SC.muted}}/>
+                      <YAxis tick={{fontSize:10,fill:SC.muted}} label={{value:"% of max",angle:-90,position:"insideLeft",offset:14,fontSize:11,fill:SC.muted}} domain={[0,110]}/>
                       <Tooltip {...TTP} formatter={(v,n)=>[`${v}%`,n]}/>
-                      <Legend iconSize={9} wrapperStyle={{fontSize:11,color:C.muted}}/>
-                      <Bar dataKey="power" name="Power (% of peak)" fill={C.amber} radius={[3,3,0,0]} maxBarSize={28}/>
-                      <Bar dataKey="energy" name="Energy (% of total)" fill={C.teal} radius={[3,3,0,0]} maxBarSize={28}/>
-                      <Bar dataKey="time" name="Duration (% of total)" fill={C.blue} radius={[3,3,0,0]} maxBarSize={28}/>
+                      <Legend iconSize={9} wrapperStyle={{fontSize:11,color:SC.muted}}/>
+                      <Bar dataKey="power" name="Power (% of peak)" fill={SC.amber} radius={[3,3,0,0]} maxBarSize={28}/>
+                      <Bar dataKey="energy" name="Energy (% of total)" fill={SC.teal} radius={[3,3,0,0]} maxBarSize={28}/>
+                      <Bar dataKey="time" name="Duration (% of total)" fill={SC.blue} radius={[3,3,0,0]} maxBarSize={28}/>
                     </BarChart>
                   </ResponsiveContainer>
 
@@ -2364,53 +2364,53 @@ export default function App(){
                   <div style={{overflowX:"auto",marginTop:12}}>
                     <table style={{width:"100%",borderCollapse:"collapse",fontSize:10,fontFamily:"'DM Mono',monospace"}}>
                       <thead>
-                        <tr style={{background:C.panel}}>
+                        <tr style={{background:SC.panel}}>
                           {["Phase","Power (kW)","Energy (kWh)","Duration (s)","% Total E","% Total Time"].map(hdr=>(
-                            <th key={hdr} style={{padding:"5px 10px",textAlign:"right",color:C.muted,fontSize:8,fontWeight:600,letterSpacing:"0.05em",
+                            <th key={hdr} style={{padding:"5px 10px",textAlign:"right",color:SC.muted,fontSize:8,fontWeight:600,letterSpacing:"0.05em",
                               textTransform:"uppercase",":first-child":{textAlign:"left"}}}>{hdr}</th>
                           ))}
                         </tr>
                       </thead>
                       <tbody>
                         {[
-                          ["🛫 Takeoff",R.Phov,R.Eto,R.tto,PHC[0]],
-                          ["📈 Climb",R.Pcl,R.Ecl,R.tcl,PHC[1]],
-                          ["✈️ Cruise",R.Pcr,R.Ecr,R.tcr,PHC[2]],
-                          ["📉 Descent",R.Pdc,R.Edc,R.tdc,PHC[3]],
-                          ["🛬 Landing",R.Phov,R.Eld,R.tld,PHC[4]],
-                          ["🔄 Reserve",R.Pres,R.Eres,R.tres,PHC[5]],
+                          ["🛫 Takeoff",SR.Phov,SR.Eto,SR.tto,PHC[0]],
+                          ["📈 Climb",SR.Pcl,SR.Ecl,SR.tcl,PHC[1]],
+                          ["✈️ Cruise",SR.Pcr,SR.Ecr,SR.tcr,PHC[2]],
+                          ["📉 Descent",SR.Pdc,SR.Edc,SR.tdc,PHC[3]],
+                          ["🛬 Landing",SR.Phov,SR.Eld,SR.tld,PHC[4]],
+                          ["🔄 Reserve",SR.Pres,SR.Eres,SR.tres,PHC[5]],
                         ].map(([ph,pw,e,t,col],i)=>(
-                          <tr key={i} style={{borderTop:`1px solid ${C.border}`,background:i%2?"#0a0d14":C.bg}}>
-                            <td style={{padding:"5px 10px",color:C.text,fontWeight:600}}>{ph}</td>
-                            <td style={{padding:"5px 10px",color:C.amber,textAlign:"right"}}>{pw}</td>
-                            <td style={{padding:"5px 10px",color:C.teal,textAlign:"right"}}>{e}</td>
-                            <td style={{padding:"5px 10px",color:C.blue,textAlign:"right"}}>{t}</td>
+                          <tr key={i} style={{borderTop:`1px solid ${SC.border}`,background:i%2?"#0a0d14":SC.bg}}>
+                            <td style={{padding:"5px 10px",color:SC.text,fontWeight:600}}>{ph}</td>
+                            <td style={{padding:"5px 10px",color:SC.amber,textAlign:"right"}}>{pw}</td>
+                            <td style={{padding:"5px 10px",color:SC.teal,textAlign:"right"}}>{e}</td>
+                            <td style={{padding:"5px 10px",color:SC.blue,textAlign:"right"}}>{t}</td>
                             <td style={{padding:"5px 10px",textAlign:"right"}}>
                               <div style={{display:"inline-flex",alignItems:"center",gap:6}}>
-                                <div style={{width:40,height:5,background:C.border,borderRadius:2}}>
-                                  <div style={{width:`${(e/R.Etot*100).toFixed(0)}%`,height:"100%",background:col,borderRadius:2}}/>
+                                <div style={{width:40,height:5,background:SC.border,borderRadius:2}}>
+                                  <div style={{width:`${(e/SR.Etot*100).toFixed(0)}%`,height:"100%",background:col,borderRadius:2}}/>
                                 </div>
-                                <span style={{color:col,minWidth:32}}>{(e/R.Etot*100).toFixed(1)}%</span>
+                                <span style={{color:col,minWidth:32}}>{(e/SR.Etot*100).toFixed(1)}%</span>
                               </div>
                             </td>
                             <td style={{padding:"5px 10px",textAlign:"right"}}>
                               <div style={{display:"inline-flex",alignItems:"center",gap:6}}>
-                                <div style={{width:40,height:5,background:C.border,borderRadius:2}}>
-                                  <div style={{width:`${(t/R.Tend*100).toFixed(0)}%`,height:"100%",background:C.muted,borderRadius:2}}/>
+                                <div style={{width:40,height:5,background:SC.border,borderRadius:2}}>
+                                  <div style={{width:`${(t/SR.Tend*100).toFixed(0)}%`,height:"100%",background:SC.muted,borderRadius:2}}/>
                                 </div>
-                                <span style={{color:C.muted,minWidth:32}}>{(t/R.Tend*100).toFixed(1)}%</span>
+                                <span style={{color:SC.muted,minWidth:32}}>{(t/SR.Tend*100).toFixed(1)}%</span>
                               </div>
                             </td>
                           </tr>
                         ))}
                         {/* Totals row */}
-                        <tr style={{borderTop:`2px solid ${C.border}`,background:C.panel}}>
-                          <td style={{padding:"6px 10px",color:C.text,fontWeight:700}}>TOTAL</td>
-                          <td style={{padding:"6px 10px",color:C.amber,textAlign:"right",fontWeight:700}}>—</td>
-                          <td style={{padding:"6px 10px",color:C.teal,textAlign:"right",fontWeight:700}}>{R.Etot}</td>
-                          <td style={{padding:"6px 10px",color:C.blue,textAlign:"right",fontWeight:700}}>{R.Tend}</td>
-                          <td style={{padding:"6px 10px",color:C.muted,textAlign:"right",fontWeight:700}}>100%</td>
-                          <td style={{padding:"6px 10px",color:C.muted,textAlign:"right",fontWeight:700}}>100%</td>
+                        <tr style={{borderTop:`2px solid ${SC.border}`,background:SC.panel}}>
+                          <td style={{padding:"6px 10px",color:SC.text,fontWeight:700}}>TOTAL</td>
+                          <td style={{padding:"6px 10px",color:SC.amber,textAlign:"right",fontWeight:700}}>—</td>
+                          <td style={{padding:"6px 10px",color:SC.teal,textAlign:"right",fontWeight:700}}>{SR.Etot}</td>
+                          <td style={{padding:"6px 10px",color:SC.blue,textAlign:"right",fontWeight:700}}>{SR.Tend}</td>
+                          <td style={{padding:"6px 10px",color:SC.muted,textAlign:"right",fontWeight:700}}>100%</td>
+                          <td style={{padding:"6px 10px",color:SC.muted,textAlign:"right",fontWeight:700}}>100%</td>
                         </tr>
                       </tbody>
                     </table>
@@ -2422,23 +2422,23 @@ export default function App(){
                   <Panel title="Phase Duration (s)" ht={240}>
                     <ResponsiveContainer width="100%" height={195}>
                       <PieChart>
-                        <Pie data={[{n:"T/O",v:R.tto},{n:"Climb",v:R.tcl},{n:"Cruise",v:R.tcr},{n:"Descent",v:R.tdc},{n:"Land",v:R.tld},{n:"Reserve",v:R.tres}]}
+                        <Pie data={[{n:"T/O",v:SR.tto},{n:"Climb",v:SR.tcl},{n:"Cruise",v:SR.tcr},{n:"Descent",v:SR.tdc},{n:"Land",v:SR.tld},{n:"Reserve",v:SR.tres}]}
                           dataKey="v" nameKey="n" cx="50%" cy="50%" innerRadius={45} outerRadius={80} paddingAngle={3}>
                           {PHC.map((c,i)=><Cell key={i} fill={c}/>)}
                         </Pie>
                         <Tooltip {...TTP} formatter={(v)=>[`${v} s`,"Duration"]}/>
-                        <Legend iconSize={8} wrapperStyle={{fontSize:11,color:C.muted}}/>
+                        <Legend iconSize={8} wrapperStyle={{fontSize:11,color:SC.muted}}/>
                       </PieChart>
                     </ResponsiveContainer>
                   </Panel>
                   <Panel title="Energy per Phase — Radar (kWh)" ht={240}>
                     <ResponsiveContainer width="100%" height={195}>
-                      <RadarChart data={[{ph:"T/O",E:R.Eto},{ph:"Climb",E:R.Ecl},{ph:"Cruise",E:R.Ecr},{ph:"Desc",E:R.Edc},{ph:"Land",E:R.Eld},{ph:"Res",E:R.Eres}]}>
-                        <PolarGrid stroke={C.border}/>
-                        <PolarAngleAxis dataKey="ph" tick={{fontSize:11,fill:C.muted}}/>
-                        <Radar dataKey="E" stroke={C.teal} fill={C.teal} fillOpacity={0.25} name="Energy (kWh)"/>
+                      <RadarChart data={[{ph:"T/O",E:SR.Eto},{ph:"Climb",E:SR.Ecl},{ph:"Cruise",E:SR.Ecr},{ph:"Desc",E:SR.Edc},{ph:"Land",E:SR.Eld},{ph:"Res",E:SR.Eres}]}>
+                        <PolarGrid stroke={SC.border}/>
+                        <PolarAngleAxis dataKey="ph" tick={{fontSize:11,fill:SC.muted}}/>
+                        <Radar dataKey="E" stroke={SC.teal} fill={SC.teal} fillOpacity={0.25} name="Energy (kWh)"/>
                         <Tooltip {...TTP} formatter={(v)=>[`${v} kWh`,"Energy"]}/>
-                        <Legend iconSize={8} wrapperStyle={{fontSize:11,color:C.muted}}/>
+                        <Legend iconSize={8} wrapperStyle={{fontSize:11,color:SC.muted}}/>
                       </RadarChart>
                     </ResponsiveContainer>
                   </Panel>
@@ -2452,41 +2452,41 @@ export default function App(){
             {tab===2&&(
               <div style={{display:"flex",flexDirection:"column",gap:12}}>
                 <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
-                  <KPI label="Wing Area" value={R.Swing} unit="m²"/><KPI label="Wing Span" value={R.bWing} unit="m"/>
-                  <KPI label="MAC" value={R.MAC} unit="m"/><KPI label="Sweep" value={R.sweep} unit="°"/>
-                  <KPI label="Root Chord" value={R.Cr_} unit="m"/><KPI label="Tip Chord" value={R.Ct_} unit="m"/>
-                  <KPI label="Wing Loading" value={R.WL} unit="N/m²"/><KPI label="Reynolds ×10⁶" value={(R.Re_/1e6).toFixed(2)} unit=""/>
+                  <KPI label="Wing Area" value={SR.Swing} unit="m²"/><KPI label="Wing Span" value={SR.bWing} unit="m"/>
+                  <KPI label="MAC" value={SR.MAC} unit="m"/><KPI label="Sweep" value={SR.sweep} unit="°"/>
+                  <KPI label="Root Chord" value={SR.Cr_} unit="m"/><KPI label="Tip Chord" value={SR.Ct_} unit="m"/>
+                  <KPI label="Wing Loading" value={SR.WL} unit="N/m²"/><KPI label="Reynolds ×10⁶" value={(SR.Re_/1e6).toFixed(2)} unit=""/>
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
                   <Panel title="CD₀ Breakdown (Raymer Buildup)" ht={265}>
                     <ResponsiveContainer width="100%" height={215}>
                       <PieChart>
-                        <Pie data={R.dragComp} dataKey="val" nameKey="name" cx="50%" cy="50%" innerRadius={48} outerRadius={85} paddingAngle={3}>
+                        <Pie data={SR.dragComp} dataKey="val" nameKey="name" cx="50%" cy="50%" innerRadius={48} outerRadius={85} paddingAngle={3}>
                           {["#3b82f6","#ef4444","#22c55e","#f59e0b","#8b5cf6","#ec4899","#06b6d4"].map((c,i)=><Cell key={i} fill={c}/>)}
                         </Pie>
                         <Tooltip {...TTP} formatter={(v)=>[v.toFixed(5),"CD₀"]}/>
-                        <Legend iconSize={8} wrapperStyle={{fontSize:12,color:C.muted}}/>
+                        <Legend iconSize={8} wrapperStyle={{fontSize:12,color:SC.muted}}/>
                       </PieChart>
                     </ResponsiveContainer>
                   </Panel>
                   <Panel title="Airfoil Selection Score" ht={265}>
                     <div style={{height:215,overflowY:"auto"}}>
-                      {[...R.afScored].sort((a,b)=>b.score-a.score).map((af,i)=>(
-                        <div key={i} style={{display:"flex",alignItems:"center",gap:7,padding:"4px 0",borderBottom:`1px solid ${C.border}`}}>
-                          <span style={{fontSize:9,minWidth:92,color:af.name===R.selAF.name?C.green:C.text,
-                            fontFamily:"'DM Mono',monospace",fontWeight:af.name===R.selAF.name?700:400}}>
-                            {af.name===R.selAF.name?"★ ":""}{af.name}
+                      {[...SR.afScored].sort((a,b)=>b.score-a.score).map((af,i)=>(
+                        <div key={i} style={{display:"flex",alignItems:"center",gap:7,padding:"4px 0",borderBottom:`1px solid ${SC.border}`}}>
+                          <span style={{fontSize:9,minWidth:92,color:af.name===SR.selAF.name?SC.green:SC.text,
+                            fontFamily:"'DM Mono',monospace",fontWeight:af.name===SR.selAF.name?700:400}}>
+                            {af.name===SR.selAF.name?"★ ":""}{af.name}
                           </span>
-                          <div style={{flex:1,height:4,background:C.border,borderRadius:2}}>
-                            <div style={{height:"100%",width:`${af.score*100}%`,background:af.name===R.selAF.name?C.green:C.muted,borderRadius:2}}/>
+                          <div style={{flex:1,height:4,background:SC.border,borderRadius:2}}>
+                            <div style={{height:"100%",width:`${af.score*100}%`,background:af.name===SR.selAF.name?SC.green:SC.muted,borderRadius:2}}/>
                           </div>
-                          <span style={{fontSize:9,color:af.name===R.selAF.name?C.green:C.muted,fontFamily:"'DM Mono',monospace",minWidth:36,textAlign:"right"}}>
+                          <span style={{fontSize:9,color:af.name===SR.selAF.name?SC.green:SC.muted,fontFamily:"'DM Mono',monospace",minWidth:36,textAlign:"right"}}>
                             {(af.score*100).toFixed(1)}%
                           </span>
                         </div>
                       ))}
-                      <div style={{marginTop:8,fontSize:8,color:C.muted,fontFamily:"'DM Mono',monospace"}}>
-                        ★ {R.selAF.name} | t/c={R.selAF.tc} CLmax={R.selAF.CLmax} CDmin={R.selAF.CDmin}
+                      <div style={{marginTop:8,fontSize:8,color:SC.muted,fontFamily:"'DM Mono',monospace"}}>
+                        ★ {SR.selAF.name} | t/c={SR.selAF.tc} CLmax={SR.selAF.CLmax} CDmin={SR.selAF.CDmin}
                       </div>
                     </div>
                   </Panel>
@@ -2494,39 +2494,39 @@ export default function App(){
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
                   <Panel title="Drag Polar" ht={235}>
                     <ResponsiveContainer width="100%" height={185}>
-                      <LineChart data={R.polarData} margin={{top:5,right:8,left:-20,bottom:0}}>
-                        <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
-                        <XAxis dataKey="CD" tick={{fontSize:11,fill:C.muted}} label={{value:"CD",position:"insideBottom",fontSize:12,fill:C.muted}}/>
-                        <YAxis tick={{fontSize:11,fill:C.muted}} label={{value:"CL",angle:-90,position:"insideLeft",fontSize:12,fill:C.muted}}/>
+                      <LineChart data={SR.polarData} margin={{top:5,right:8,left:-20,bottom:0}}>
+                        <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
+                        <XAxis dataKey="CD" tick={{fontSize:11,fill:SC.muted}} label={{value:"CD",position:"insideBottom",fontSize:12,fill:SC.muted}}/>
+                        <YAxis tick={{fontSize:11,fill:SC.muted}} label={{value:"CL",angle:-90,position:"insideLeft",fontSize:12,fill:SC.muted}}/>
                         <Tooltip {...TTP}/>
-                        <Line type="monotone" dataKey="CL" stroke={C.blue} strokeWidth={2} dot={false}/>
+                        <Line type="monotone" dataKey="CL" stroke={SC.blue} strokeWidth={2} dot={false}/>
                       </LineChart>
                     </ResponsiveContainer>
                   </Panel>
                   <Panel title="Lift Curve" ht={235}>
                     <ResponsiveContainer width="100%" height={185}>
-                      <LineChart data={R.polarData} margin={{top:5,right:8,left:-20,bottom:0}}>
-                        <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
-                        <XAxis dataKey="alpha" tick={{fontSize:11,fill:C.muted}} label={{value:"α (°)",position:"insideBottom",fontSize:12,fill:C.muted}}/>
-                        <YAxis tick={{fontSize:11,fill:C.muted}}/>
+                      <LineChart data={SR.polarData} margin={{top:5,right:8,left:-20,bottom:0}}>
+                        <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
+                        <XAxis dataKey="alpha" tick={{fontSize:11,fill:SC.muted}} label={{value:"α (°)",position:"insideBottom",fontSize:12,fill:SC.muted}}/>
+                        <YAxis tick={{fontSize:11,fill:SC.muted}}/>
                         <Tooltip {...TTP}/>
-                        <Line type="monotone" dataKey="CL" stroke={C.green} strokeWidth={2} dot={false}/>
-                        <ReferenceLine y={p.clDesign} stroke={C.amber} strokeDasharray="3 3" label={{value:"CL_des",fill:C.amber,fontSize:11}}/>
+                        <Line type="monotone" dataKey="CL" stroke={SC.green} strokeWidth={2} dot={false}/>
+                        <ReferenceLine y={p.clDesign} stroke={SC.amber} strokeDasharray="3 3" label={{value:"CL_des",fill:SC.amber,fontSize:11}}/>
                       </LineChart>
                     </ResponsiveContainer>
                   </Panel>
                   <Panel title="L/D Ratio" ht={235}>
                     <ResponsiveContainer width="100%" height={185}>
-                      <AreaChart data={R.polarData} margin={{top:5,right:8,left:-20,bottom:0}}>
+                      <AreaChart data={SR.polarData} margin={{top:5,right:8,left:-20,bottom:0}}>
                         <defs><linearGradient id="ldg" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor={C.amber} stopOpacity={0.3}/><stop offset="95%" stopColor={C.amber} stopOpacity={0}/>
+                          <stop offset="5%" stopColor={SC.amber} stopOpacity={0.3}/><stop offset="95%" stopColor={SC.amber} stopOpacity={0}/>
                         </linearGradient></defs>
-                        <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
-                        <XAxis dataKey="alpha" tick={{fontSize:11,fill:C.muted}} label={{value:"α (°)",position:"insideBottom",fontSize:12,fill:C.muted}}/>
-                        <YAxis tick={{fontSize:11,fill:C.muted}}/>
+                        <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
+                        <XAxis dataKey="alpha" tick={{fontSize:11,fill:SC.muted}} label={{value:"α (°)",position:"insideBottom",fontSize:12,fill:SC.muted}}/>
+                        <YAxis tick={{fontSize:11,fill:SC.muted}}/>
                         <Tooltip {...TTP}/>
-                        <Area type="monotone" dataKey="LD" stroke={C.amber} strokeWidth={2} fill="url(#ldg)" dot={false}/>
-                        <ReferenceLine y={R.LDact} stroke={C.green} strokeDasharray="3 3" label={{value:`${R.LDact}`,fill:C.green,fontSize:11}}/>
+                        <Area type="monotone" dataKey="LD" stroke={SC.amber} strokeWidth={2} fill="url(#ldg)" dot={false}/>
+                        <ReferenceLine y={SR.LDact} stroke={SC.green} strokeDasharray="3 3" label={{value:`${SR.LDact}`,fill:SC.green,fontSize:11}}/>
                       </AreaChart>
                     </ResponsiveContainer>
                   </Panel>
@@ -2535,8 +2535,8 @@ export default function App(){
                 <Panel title="Wing Planform — Top View">
                   {(()=>{
                     const W=680, H=220, margin={l:60,r:60,t:28,b:28};
-                    const b=R.bWing, Cr=R.Cr_, Ct=R.Ct_, sw=R.sweep*Math.PI/180;
-                    const mac=R.MAC, ymac=R.Ymac;
+                    const b=SR.bWing, Cr=SR.Cr_, Ct=SR.Ct_, sw=SR.sweep*Math.PI/180;
+                    const mac=SR.MAC, ymac=SR.Ymac;
                     // SVG scale: half-span fits in (W/2-margin.l-margin.r)
                     const halfW=(W/2-margin.l-4);
                     const scaleY=halfW/(b/2);        // px per metre (span direction → X in SVG)
@@ -2573,7 +2573,7 @@ export default function App(){
                       <polygon points={`${ptL(xRoot,yRoot)} ${ptL(xTip,yTip)} ${ptL(xTipTe,yTipTe)} ${ptL(xRootTe,yRootTe)}`}
                         fill="#1e3a5f" stroke="#3b82f6" strokeWidth={1.5} opacity={0.85}/>
                       {/* Root chord */}
-                      <line x1={cx} y1={yRoot} x2={cx} y2={yRootTe} stroke={C.muted} strokeWidth={1} strokeDasharray="4 2"/>
+                      <line x1={cx} y1={yRoot} x2={cx} y2={yRootTe} stroke={SC.muted} strokeWidth={1} strokeDasharray="4 2"/>
                       {/* QC sweep line */}
                       <line x1={cx+xRoot} y1={yRootQC} x2={cx+xTip} y2={yTipQC} stroke="#f59e0b" strokeWidth={1.5} strokeDasharray="5 3"/>
                       <line x1={cx-xRoot} y1={yRootQC} x2={cx-xTip} y2={yTipQC} stroke="#f59e0b" strokeWidth={1.5} strokeDasharray="5 3"/>
@@ -2585,15 +2585,15 @@ export default function App(){
                       <rect x={cx-xMac-2} y={yMacLE} width={4} height={mac*sc} fill="#22c55e" opacity={0.9} rx={2}/>
                       {/* Span arrow */}
                       <line x1={cx-xTip} y1={H-margin.b+14} x2={cx+xTip} y2={H-margin.b+14} stroke="#64748b" strokeWidth={1} markerEnd="url(#arr)" markerStart="url(#arrl)"/>
-                      <text x={cx} y={H-margin.b+22} textAnchor="middle" fill={C.muted} fontSize={9}>b = {b} m</text>
+                      <text x={cx} y={H-margin.b+22} textAnchor="middle" fill={SC.muted} fontSize={9}>b = {b} m</text>
                       {/* Root chord label */}
-                      <text x={cx+6} y={(yRoot+yRootTe)/2+3} fill={C.muted} fontSize={8}>Cr={Cr}m</text>
+                      <text x={cx+6} y={(yRoot+yRootTe)/2+3} fill={SC.muted} fontSize={8}>Cr={Cr}m</text>
                       {/* Tip chord label */}
-                      <text x={cx+xTip+4} y={(yTip+yTipTe)/2+3} fill={C.muted} fontSize={8}>Ct={Ct}m</text>
+                      <text x={cx+xTip+4} y={(yTip+yTipTe)/2+3} fill={SC.muted} fontSize={8}>Ct={Ct}m</text>
                       {/* MAC label */}
                       <text x={cx+xMac+6} y={yMacLE+mac*sc/2+3} fill="#22c55e" fontSize={8}>MAC={mac}m</text>
                       {/* Sweep annotation */}
-                      <text x={cx+12} y={yRootQC-4} fill="#f59e0b" fontSize={8}>Λ¼={R.sweep}°</text>
+                      <text x={cx+12} y={yRootQC-4} fill="#f59e0b" fontSize={8}>Λ¼={SR.sweep}°</text>
                       {/* LE label */}
                       <text x={cx-xTip-4} y={yTip-4} textAnchor="end" fill="#3b82f6" fontSize={8}>LE</text>
                       <text x={cx-xTipTe-4} y={yTipTe+4} textAnchor="end" fill="#3b82f6" fontSize={8}>TE</text>
@@ -2604,7 +2604,7 @@ export default function App(){
                       <text x={cx+b/2*sc} y={margin.t-10} textAnchor="middle" fill="#334155" fontSize={7}>tip</text>
                       <text x={cx} y={margin.t-10} textAnchor="middle" fill="#334155" fontSize={7}>CL</text>
                       {/* AR / taper info */}
-                      <text x={8} y={16} fill="#475569" fontSize={8}>AR={p.AR}  λ={p.taper}  t/c={p.tc}  Sw={R.Swing}m²</text>
+                      <text x={8} y={16} fill="#475569" fontSize={8}>AR={p.AR}  λ={p.taper}  t/c={p.tc}  Sw={SR.Swing}m²</text>
                       <defs>
                         <marker id="arr" markerWidth={6} markerHeight={6} refX={3} refY={3} orient="auto">
                           <path d="M0,0 L6,3 L0,6 Z" fill="#64748b"/>
@@ -2623,38 +2623,38 @@ export default function App(){
             {tab===3&&(
               <div style={{display:"flex",flexDirection:"column",gap:12}}>
                 <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
-                  <KPI label="Rotor Diam (AD)" value={R.Drotor} unit="m" color={C.amber}/>
-                  <KPI label="Disk Loading" value={R.DLrotor} unit="N/m²"/>
-                  <KPI label="Tip Speed" value={R.TipSpd} unit="m/s" color={R.TipMach<0.7?C.green:C.red} sub={`Tip Mach ${R.TipMach}`}/>
-                  <KPI label="RPM" value={R.RPM} unit="rpm"/>
+                  <KPI label="Rotor Diam (AD)" value={SR.Drotor} unit="m" color={SC.amber}/>
+                  <KPI label="Disk Loading" value={SR.DLrotor} unit="N/m²"/>
+                  <KPI label="Tip Speed" value={SR.TipSpd} unit="m/s" color={SR.TipMach<0.7?SC.green:SC.red} sub={`Tip Mach ${SR.TipMach}`}/>
+                  <KPI label="RPM" value={SR.RPM} unit="rpm"/>
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
                   <Panel title="Actuator Disk + Motor Sizing" ht={380}>
                     <div style={{overflowY:"auto",maxHeight:320}}>
                     {[["No. rotors (hover)",p.nPropHover],["Design diameter",`${p.propDiam} m`],
-                      ["AD-derived diameter",`${R.Drotor} m`],["Disk loading",`${R.DLrotor} N/m²`],
-                      ["Power loading",`${R.PLrotor} N/kW`],["Tip speed",`${R.TipSpd} m/s`],
-                      ["Tip Mach",R.TipMach],["Operating RPM",`${R.RPM} rpm`],
-                      ["No. blades",R.Nbld],["Solidity σ","0.10"],
-                      ["Blade chord",`${R.ChordBl} m`],["Blade AR",R.BladeAR],
-                      ["Continuous power/rotor",`${R.PmotKW} kW`],["Peak power/rotor",`${R.PpeakKW} kW`],
-                      ["Shaft torque",`${R.Torque} N·m`],["Motor mass/rotor",`${R.MotMass} kg`],
-                      ["Total motor mass",`${(R.MotMass*p.nPropHover).toFixed(1)} kg`],
+                      ["AD-derived diameter",`${SR.Drotor} m`],["Disk loading",`${SR.DLrotor} N/m²`],
+                      ["Power loading",`${SR.PLrotor} N/kW`],["Tip speed",`${SR.TipSpd} m/s`],
+                      ["Tip Mach",SR.TipMach],["Operating RPM",`${SR.RPM} rpm`],
+                      ["No. blades",SR.Nbld],["Solidity σ","0.10"],
+                      ["Blade chord",`${SR.ChordBl} m`],["Blade AR",SR.BladeAR],
+                      ["Continuous power/rotor",`${SR.PmotKW} kW`],["Peak power/rotor",`${SR.PpeakKW} kW`],
+                      ["Shaft torque",`${SR.Torque} N·m`],["Motor mass/rotor",`${SR.MotMass} kg`],
+                      ["Total motor mass",`${(SR.MotMass*p.nPropHover).toFixed(1)} kg`],
                     ].map(([k,v],i)=>(
                       <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 0",borderBottom:`1px solid #0f131a`}}>
-                        <span style={{fontSize:10,color:C.muted}}>{k}</span>
-                        <span style={{fontSize:10,color:C.amber,fontFamily:"'DM Mono',monospace",fontWeight:600}}>{v}</span>
+                        <span style={{fontSize:10,color:SC.muted}}>{k}</span>
+                        <span style={{fontSize:10,color:SC.amber,fontFamily:"'DM Mono',monospace",fontWeight:600}}>{v}</span>
                       </div>
                     ))}
                     </div>
                   </Panel>
                   <Panel title="Phase Power Comparison" ht={320}>
                     <ResponsiveContainer width="100%" height={270}>
-                      <BarChart data={[{ph:"T/O",v:R.Phov},{ph:"Climb",v:R.Pcl},{ph:"Cruise",v:R.Pcr},{ph:"Descent",v:R.Pdc},{ph:"Land",v:R.Phov},{ph:"Reserve",v:R.Pres}]}
+                      <BarChart data={[{ph:"T/O",v:SR.Phov},{ph:"Climb",v:SR.Pcl},{ph:"Cruise",v:SR.Pcr},{ph:"Descent",v:SR.Pdc},{ph:"Land",v:SR.Phov},{ph:"Reserve",v:SR.Pres}]}
                         margin={{top:5,right:8,left:-10,bottom:0}}>
-                        <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
-                        <XAxis dataKey="ph" tick={{fontSize:11,fill:C.muted}}/>
-                        <YAxis tick={{fontSize:11,fill:C.muted}} label={{value:"kW",angle:-90,position:"insideLeft",fontSize:12,fill:C.muted}}/>
+                        <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
+                        <XAxis dataKey="ph" tick={{fontSize:11,fill:SC.muted}}/>
+                        <YAxis tick={{fontSize:11,fill:SC.muted}} label={{value:"kW",angle:-90,position:"insideLeft",fontSize:12,fill:SC.muted}}/>
                         <Tooltip {...TTP}/>
                         <Bar dataKey="v" radius={[3,3,0,0]} name="Power (kW)">{PHC.map((c,i)=><Cell key={i} fill={c}/>)}</Bar>
                       </BarChart>
@@ -2668,50 +2668,50 @@ export default function App(){
             {tab===4&&(
               <div style={{display:"flex",flexDirection:"column",gap:12}}>
                 <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
-                  <KPI label="Pack Energy" value={R.PackkWh} unit="kWh" color={C.green} sub={`Mission: ${R.Etot} kWh`}/>
-                  <KPI label="Battery Mass" value={R.Wbat} unit="kg" color={R.Wbat/R.MTOW<0.4?C.green:C.amber} sub={`SED ${R.SEDpack} Wh/kg`}/>
-                  <KPI label="Cell Config" value={`${R.Nseries}s×${R.Npar}p`} unit="" sub={`${R.Ncells} cells total`}/>
-                  <KPI label="Final SoC" value={((1-R.Etot/R.PackkWh)*100).toFixed(1)} unit="%" color={(1-R.Etot/R.PackkWh)>=(p.socMin/(1+p.socMin))-0.01?C.green:C.red}/>
+                  <KPI label="Pack Energy" value={SR.PackkWh} unit="kWh" color={SC.green} sub={`Mission: ${SR.Etot} kWh`}/>
+                  <KPI label="Battery Mass" value={SR.Wbat} unit="kg" color={SR.Wbat/SR.MTOW<0.4?SC.green:SC.amber} sub={`SED ${SR.SEDpack} Wh/kg`}/>
+                  <KPI label="Cell Config" value={`${SR.Nseries}s×${SR.Npar}p`} unit="" sub={`${SR.Ncells} cells total`}/>
+                  <KPI label="Final SoC" value={((1-SR.Etot/SR.PackkWh)*100).toFixed(1)} unit="%" color={(1-SR.Etot/SR.PackkWh)>=(p.socMin/(1+p.socMin))-0.01?SC.green:SC.red}/>
                 </div>
                 <Panel title="Battery State of Charge — Full Mission" ht={285}>
                   <ResponsiveContainer width="100%" height={235}>
-                    <AreaChart data={R.socSteps} margin={{top:5,right:10,left:-10,bottom:0}}>
+                    <AreaChart data={SR.socSteps} margin={{top:5,right:10,left:-10,bottom:0}}>
                       <defs><linearGradient id="sg" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor={C.green} stopOpacity={0.5}/><stop offset="95%" stopColor={C.red} stopOpacity={0.05}/>
+                        <stop offset="5%" stopColor={SC.green} stopOpacity={0.5}/><stop offset="95%" stopColor={SC.red} stopOpacity={0.05}/>
                       </linearGradient></defs>
-                      <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
-                      <XAxis dataKey="t" tick={{fontSize:11,fill:C.muted}} label={{value:"Time (s)",position:"insideBottom",fontSize:12,fill:C.muted}}/>
-                      <YAxis domain={[0,105]} tick={{fontSize:11,fill:C.muted}} label={{value:"SoC (%)",angle:-90,position:"insideLeft",fontSize:12,fill:C.muted}}/>
+                      <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
+                      <XAxis dataKey="t" tick={{fontSize:11,fill:SC.muted}} label={{value:"Time (s)",position:"insideBottom",fontSize:12,fill:SC.muted}}/>
+                      <YAxis domain={[0,105]} tick={{fontSize:11,fill:SC.muted}} label={{value:"SoC (%)",angle:-90,position:"insideLeft",fontSize:12,fill:SC.muted}}/>
                       <Tooltip {...TTP} formatter={(v)=>[`${v}%`,"SoC"]}/>
-                      <ReferenceLine y={p.socMin/(1+p.socMin)*100} stroke={C.red} strokeDasharray="5 3"
-                        label={{value:`SoCmin ${(p.socMin/(1+p.socMin)*100).toFixed(1)}%`,fill:C.red,fontSize:11,position:"right"}}/>
-                      <Area type="stepAfter" dataKey="SoC" stroke={C.green} strokeWidth={2.5} fill="url(#sg)" dot={false}/>
-                      {R.tPhases.slice(1,-1).map((tp,i)=><ReferenceLine key={i} x={Math.round(tp)} stroke={PHC[i]} strokeDasharray="4 3" strokeWidth={1}/>)}
+                      <ReferenceLine y={p.socMin/(1+p.socMin)*100} stroke={SC.red} strokeDasharray="5 3"
+                        label={{value:`SoCmin ${(p.socMin/(1+p.socMin)*100).toFixed(1)}%`,fill:SC.red,fontSize:11,position:"right"}}/>
+                      <Area type="stepAfter" dataKey="SoC" stroke={SC.green} strokeWidth={2.5} fill="url(#sg)" dot={false}/>
+                      {SR.tPhases.slice(1,-1).map((tp,i)=><ReferenceLine key={i} x={Math.round(tp)} stroke={PHC[i]} strokeDasharray="4 3" strokeWidth={1}/>)}
                     </AreaChart>
                   </ResponsiveContainer>
                 </Panel>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
                   <Panel title="Pack Architecture (21700 NMC)" ht={260}>
-                    {[["Cell voltage","3.6 V"],["Cell capacity","5.0 Ah"],["Bus voltage",`${R.PackV} V`],
-                      ["Series cells",R.Nseries],["Parallel strings",R.Npar],["Total cells",R.Ncells],
-                      ["Pack energy",`${R.PackkWh} kWh`],["Battery mass",`${R.Wbat} kg`],
-                      ["SED (pack)",`${R.SEDpack} Wh/kg`],["C-rate hover",`${R.CrateHov}C`],
-                      ["C-rate cruise",`${R.CrateCr}C`],["Joule heating",`${R.Pheat} W`],
+                    {[["Cell voltage","3.6 V"],["Cell capacity","5.0 Ah"],["Bus voltage",`${SR.PackV} V`],
+                      ["Series cells",SR.Nseries],["Parallel strings",SR.Npar],["Total cells",SR.Ncells],
+                      ["Pack energy",`${SR.PackkWh} kWh`],["Battery mass",`${SR.Wbat} kg`],
+                      ["SED (pack)",`${SR.SEDpack} Wh/kg`],["C-rate hover",`${SR.CrateHov}C`],
+                      ["C-rate cruise",`${SR.CrateCr}C`],["Joule heating",`${SR.Pheat} W`],
                     ].map(([k,v],i)=>(
                       <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"3px 0",borderBottom:`1px solid #0f131a`}}>
-                        <span style={{fontSize:9,color:C.muted}}>{k}</span>
-                        <span style={{fontSize:9,color:C.teal,fontFamily:"'DM Mono',monospace"}}>{v}</span>
+                        <span style={{fontSize:9,color:SC.muted}}>{k}</span>
+                        <span style={{fontSize:9,color:SC.teal,fontFamily:"'DM Mono',monospace"}}>{v}</span>
                       </div>
                     ))}
                   </Panel>
                   <Panel title="SoC per Phase" ht={260}>
                     {(()=>{
-                      const E=[0,R.Eto,R.Eto+R.Ecl,R.Eto+R.Ecl+R.Ecr,R.Eto+R.Ecl+R.Ecr+R.Edc,R.Eto+R.Ecl+R.Ecr+R.Edc+R.Eld,R.Etot];
+                      const E=[0,SR.Eto,SR.Eto+SR.Ecl,SR.Eto+SR.Ecl+SR.Ecr,SR.Eto+SR.Ecl+SR.Ecr+SR.Edc,SR.Eto+SR.Ecl+SR.Ecr+SR.Edc+SR.Eld,SR.Etot];
                       return["Start","After T/O","After Climb","After Cruise","After Descent","After Landing","After Reserve"].map((lbl,i)=>{
-                        const soc=Math.max(0,(1-E[i]/R.PackkWh)*100),col=soc>60?C.green:soc>30?C.amber:C.red;
-                        return(<div key={i} style={{display:"flex",alignItems:"center",gap:6,padding:"5px 0",borderBottom:`1px solid ${C.border}`}}>
-                          <span style={{fontSize:8,color:C.muted,minWidth:95,fontFamily:"'DM Mono',monospace"}}>{lbl}</span>
-                          <div style={{flex:1,height:5,background:C.border,borderRadius:2}}>
+                        const soc=Math.max(0,(1-E[i]/SR.PackkWh)*100),col=soc>60?SC.green:soc>30?SC.amber:SC.red;
+                        return(<div key={i} style={{display:"flex",alignItems:"center",gap:6,padding:"5px 0",borderBottom:`1px solid ${SC.border}`}}>
+                          <span style={{fontSize:8,color:SC.muted,minWidth:95,fontFamily:"'DM Mono',monospace"}}>{lbl}</span>
+                          <div style={{flex:1,height:5,background:SC.border,borderRadius:2}}>
                             <div style={{height:"100%",width:`${soc}%`,background:col,borderRadius:2,transition:"width 0.3s"}}/>
                           </div>
                           <span style={{fontSize:9,color:col,minWidth:42,textAlign:"right",fontFamily:"'DM Mono',monospace"}}>{soc.toFixed(1)}%</span>
@@ -2727,44 +2727,44 @@ export default function App(){
             {tab===5&&(
               <div style={{display:"flex",flexDirection:"column",gap:12}}>
                 <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
-                  <KPI label="Stall Speed Vs" value={R.Vstall} unit="m/s"/>
-                  <KPI label="Corner Speed Va" value={R.VA} unit="m/s"/>
+                  <KPI label="Stall Speed Vs" value={SR.Vstall} unit="m/s"/>
+                  <KPI label="Corner Speed Va" value={SR.VA} unit="m/s"/>
                   <KPI label="Cruise Speed" value={p.vCruise} unit="m/s"/>
-                  <KPI label="Dive Speed Vd" value={R.VD} unit="m/s"/>
+                  <KPI label="Dive Speed Vd" value={SR.VD} unit="m/s"/>
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
                   <Panel title="V-n Structural Envelope" ht={310}>
                     <ResponsiveContainer width="100%" height={260}>
-                      <LineChart data={R.vnData} margin={{top:10,right:30,left:10,bottom:20}}>
-                        <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
-                        <XAxis dataKey="v" tick={{fontSize:11,fill:C.muted}} label={{value:"Airspeed (m/s)",position:"insideBottom",offset:-8,fontSize:12,fill:C.muted}}/>
-                        <YAxis domain={[-2.5,4.5]} tick={{fontSize:11,fill:C.muted}} label={{value:"Load factor n",angle:-90,position:"insideLeft",offset:10,fontSize:12,fill:C.muted}}/>
+                      <LineChart data={SR.vnData} margin={{top:10,right:30,left:10,bottom:20}}>
+                        <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
+                        <XAxis dataKey="v" tick={{fontSize:11,fill:SC.muted}} label={{value:"Airspeed (m/s)",position:"insideBottom",offset:-8,fontSize:12,fill:SC.muted}}/>
+                        <YAxis domain={[-2.5,4.5]} tick={{fontSize:11,fill:SC.muted}} label={{value:"Load factor n",angle:-90,position:"insideLeft",offset:10,fontSize:12,fill:SC.muted}}/>
                         <Tooltip {...TTP}/>
-                        <ReferenceLine y={0} stroke={C.muted}/>
-                        <ReferenceLine y={3.5} stroke={C.blue} strokeDasharray="4 3" label={{value:"n=3.5",fill:C.blue,fontSize:11,fontWeight:600}}/>
-                        <ReferenceLine y={-1.5} stroke={C.red} strokeDasharray="4 3" label={{value:"n=-1.5",fill:C.red,fontSize:11,fontWeight:600}}/>
-                        <ReferenceLine x={R.Vstall} stroke={C.amber} strokeDasharray="4 3" label={{value:"Vs",fill:C.amber,fontSize:11,fontWeight:600,position:"top"}}/>
-                        <ReferenceLine x={R.VA} stroke={C.green} strokeDasharray="4 3" label={{value:"Va",fill:C.green,fontSize:11,fontWeight:600,position:"top"}}/>
-                        <ReferenceLine x={p.vCruise} stroke={C.teal} strokeDasharray="4 3" label={{value:"Vc",fill:C.teal,fontSize:11,fontWeight:600,position:"top"}}/>
-                        <ReferenceLine x={R.VD} stroke={C.red} strokeDasharray="4 3" label={{value:"Vd",fill:C.red,fontSize:11,fontWeight:600,position:"top"}}/>
-                        <Line type="monotone" dataKey="nPos" stroke={C.blue} strokeWidth={2.5} dot={false} name="+n limit"/>
-                        <Line type="monotone" dataKey="nNeg" stroke={C.red} strokeWidth={2.5} dot={false} name="-n limit"/>
-                        <Legend iconSize={10} wrapperStyle={{fontSize:12,color:C.muted,paddingTop:4}}/>
+                        <ReferenceLine y={0} stroke={SC.muted}/>
+                        <ReferenceLine y={3.5} stroke={SC.blue} strokeDasharray="4 3" label={{value:"n=3.5",fill:SC.blue,fontSize:11,fontWeight:600}}/>
+                        <ReferenceLine y={-1.5} stroke={SC.red} strokeDasharray="4 3" label={{value:"n=-1.5",fill:SC.red,fontSize:11,fontWeight:600}}/>
+                        <ReferenceLine x={SR.Vstall} stroke={SC.amber} strokeDasharray="4 3" label={{value:"Vs",fill:SC.amber,fontSize:11,fontWeight:600,position:"top"}}/>
+                        <ReferenceLine x={SR.VA} stroke={SC.green} strokeDasharray="4 3" label={{value:"Va",fill:SC.green,fontSize:11,fontWeight:600,position:"top"}}/>
+                        <ReferenceLine x={p.vCruise} stroke={SC.teal} strokeDasharray="4 3" label={{value:"Vc",fill:SC.teal,fontSize:11,fontWeight:600,position:"top"}}/>
+                        <ReferenceLine x={SR.VD} stroke={SC.red} strokeDasharray="4 3" label={{value:"Vd",fill:SC.red,fontSize:11,fontWeight:600,position:"top"}}/>
+                        <Line type="monotone" dataKey="nPos" stroke={SC.blue} strokeWidth={2.5} dot={false} name="+n limit"/>
+                        <Line type="monotone" dataKey="nNeg" stroke={SC.red} strokeWidth={2.5} dot={false} name="-n limit"/>
+                        <Legend iconSize={10} wrapperStyle={{fontSize:12,color:SC.muted,paddingTop:4}}/>
                       </LineChart>
                     </ResponsiveContainer>
                   </Panel>
                   <Panel title="Range-Payload Diagram" ht={310}>
                     <ResponsiveContainer width="100%" height={260}>
-                      <AreaChart data={R.rpData} margin={{top:10,right:20,left:10,bottom:20}}>
+                      <AreaChart data={SR.rpData} margin={{top:10,right:20,left:10,bottom:20}}>
                         <defs><linearGradient id="rpg" x1="0" y1="0" x2="0" y2="1">
                           <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.4}/><stop offset="95%" stopColor="#8b5cf6" stopOpacity={0.02}/>
                         </linearGradient></defs>
-                        <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
-                        <XAxis dataKey="payload" tick={{fontSize:11,fill:C.muted}} label={{value:"Payload (kg)",position:"insideBottom",fontSize:12,fill:C.muted}}/>
-                        <YAxis tick={{fontSize:11,fill:C.muted}} label={{value:"Range (km)",angle:-90,position:"insideLeft",fontSize:12,fill:C.muted}}/>
+                        <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
+                        <XAxis dataKey="payload" tick={{fontSize:11,fill:SC.muted}} label={{value:"Payload (kg)",position:"insideBottom",fontSize:12,fill:SC.muted}}/>
+                        <YAxis tick={{fontSize:11,fill:SC.muted}} label={{value:"Range (km)",angle:-90,position:"insideLeft",fontSize:12,fill:SC.muted}}/>
                         <Tooltip {...TTP}/>
-                        <ReferenceLine x={p.payload} stroke={C.amber} strokeDasharray="4 3" label={{value:"Design",fill:C.amber,fontSize:11}}/>
-                        <ReferenceLine y={p.range} stroke={C.amber} strokeDasharray="4 3"/>
+                        <ReferenceLine x={p.payload} stroke={SC.amber} strokeDasharray="4 3" label={{value:"Design",fill:SC.amber,fontSize:11}}/>
+                        <ReferenceLine y={p.range} stroke={SC.amber} strokeDasharray="4 3"/>
                         <Area type="monotone" dataKey="range" stroke="#8b5cf6" strokeWidth={2} fill="url(#rpg)" dot={false} name="Range (km)"/>
                       </AreaChart>
                     </ResponsiveContainer>
@@ -2777,10 +2777,10 @@ export default function App(){
             {tab===6&&(
               <div style={{display:"flex",flexDirection:"column",gap:12}}>
                 <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
-                  <KPI label="CG (MTOW)" value={R.xCGtotal} unit="m from nose"/>
-                  <KPI label="Neutral Point" value={R.xNP} unit="m from nose"/>
-                  <KPI label="Static Margin" value={(R.SM*100).toFixed(1)} unit="% MAC" color={R.SM>=0.05&&R.SM<=0.25?C.green:C.red}/>
-                  <KPI label="MAC" value={R.MAC} unit="m"/>
+                  <KPI label="CG (MTOW)" value={SR.xCGtotal} unit="m from nose"/>
+                  <KPI label="Neutral Point" value={SR.xNP} unit="m from nose"/>
+                  <KPI label="Static Margin" value={(SR.SM*100).toFixed(1)} unit="% MAC" color={SR.SM>=0.05&&SR.SM<=0.25?SC.green:SC.red}/>
+                  <KPI label="MAC" value={SR.MAC} unit="m"/>
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
                   <Panel title="CG / NP / AC Positions (from nose)" ht={320}>
@@ -2795,7 +2795,7 @@ export default function App(){
                       {[0.25,0.5,0.75,1.0].map(frac=>(
                         <div key={frac} style={{position:"absolute",left:`${10+frac*82}%`,top:"55%",width:1,height:12,background:"#1e2a3a"}}/>
                       ))}
-                      {[[R.xCGtotal,C.amber,"CG"],[R.xNP,C.blue,"NP"],[1.45+R.Xac,C.green,"AC"]].map(([x,col,lbl])=>{
+                      {[[SR.xCGtotal,SC.amber,"CG"],[SR.xNP,SC.blue,"NP"],[1.45+SR.Xac,SC.green,"AC"]].map(([x,col,lbl])=>{
                         const pct=Math.min(92,Math.max(10,(x/p.fusLen)*82+10));
                         return(<div key={lbl} style={{position:"absolute",left:`${pct}%`,top:0,bottom:0,transform:"translateX(-50%)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
                           <div style={{fontSize:10,color:col,fontFamily:"'DM Mono',monospace",fontWeight:700,
@@ -2807,25 +2807,25 @@ export default function App(){
                         </div>);
                       })}
                     </div>
-                    {[["CG (MTOW)",`${R.xCGtotal} m`],["Wing AC",`${(1.45+R.Xac).toFixed(3)} m`],
-                      ["Neutral Point",`${R.xNP} m`],["Static Margin",`${(R.SM*100).toFixed(1)}% MAC`],
-                      ["MAC",`${R.MAC} m`],["Status",R.SM>=0.05&&R.SM<=0.25?"✅ OK (5–25%)":R.SM<0.05?"⚠️ Too small":"⚠️ Too large"],
+                    {[["CG (MTOW)",`${SR.xCGtotal} m`],["Wing AC",`${(1.45+SR.Xac).toFixed(3)} m`],
+                      ["Neutral Point",`${SR.xNP} m`],["Static Margin",`${(SR.SM*100).toFixed(1)}% MAC`],
+                      ["MAC",`${SR.MAC} m`],["Status",SR.SM>=0.05&&SR.SM<=0.25?"✅ OK (5–25%)":SR.SM<0.05?"⚠️ Too small":"⚠️ Too large"],
                     ].map(([k,v],i)=>(
                       <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:`1px solid #0f131a`}}>
-                        <span style={{fontSize:10,color:C.muted}}>{k}</span>
-                        <span style={{fontSize:10,color:C.amber,fontFamily:"'DM Mono',monospace"}}>{v}</span>
+                        <span style={{fontSize:10,color:SC.muted}}>{k}</span>
+                        <span style={{fontSize:10,color:SC.amber,fontFamily:"'DM Mono',monospace"}}>{v}</span>
                       </div>
                     ))}
                   </Panel>
                   <Panel title="Empty Weight Breakdown (Roskam)" ht={290}>
                     <ResponsiveContainer width="100%" height={240}>
-                      <BarChart layout="vertical" data={R.weightBreak} margin={{top:0,right:30,left:60,bottom:0}}>
-                        <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
-                        <XAxis type="number" tick={{fontSize:11,fill:C.muted}}/>
-                        <YAxis dataKey="name" type="category" tick={{fontSize:11,fill:C.muted}}/>
+                      <BarChart layout="vertical" data={SR.weightBreak} margin={{top:0,right:30,left:60,bottom:0}}>
+                        <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
+                        <XAxis type="number" tick={{fontSize:11,fill:SC.muted}}/>
+                        <YAxis dataKey="name" type="category" tick={{fontSize:11,fill:SC.muted}}/>
                         <Tooltip {...TTP}/>
                         <Bar dataKey="val" radius={[0,3,3,0]} name="kg">
-                          {R.weightBreak.map((_,i)=><Cell key={i} fill={["#3b82f6","#ef4444","#22c55e","#f59e0b","#8b5cf6","#ec4899","#06b6d4","#84cc16","#f97316","#a78bfa"][i]}/>)}
+                          {SR.weightBreak.map((_,i)=><Cell key={i} fill={["#3b82f6","#ef4444","#22c55e","#f59e0b","#8b5cf6","#ec4899","#06b6d4","#84cc16","#f97316","#a78bfa"][i]}/>)}
                         </Bar>
                       </BarChart>
                     </ResponsiveContainer>
@@ -2840,10 +2840,10 @@ export default function App(){
                     const pts=Array.from({length:51},(_,i)=>{
                       const frac=i/50;
                       // Linear blend: OEW → full battery → full payload
-                      const Wb=R.Wbat*frac, Wp=p.payload*frac;
-                      const W=R.Wempty+Wb+Wp;
-                      const cg=(R.Wempty*R.xCGempty+Wb*xCGbat+Wp*xCGpay)/W;
-                      return{mass:+W.toFixed(1),cg:+cg.toFixed(4),sm:+((R.xNP-cg)/R.MAC*100).toFixed(2)};
+                      const Wb=SR.Wbat*frac, Wp=p.payload*frac;
+                      const W=SR.Wempty+Wb+Wp;
+                      const cg=(SR.Wempty*SR.xCGempty+Wb*xCGbat+Wp*xCGpay)/W;
+                      return{mass:+W.toFixed(1),cg:+cg.toFixed(4),sm:+((SR.xNP-cg)/SR.MAC*100).toFixed(2)};
                     });
                     return(
                     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
@@ -2854,19 +2854,19 @@ export default function App(){
                         </div>
                         <ResponsiveContainer width="100%" height={175}>
                           <LineChart data={pts} margin={{top:4,right:12,left:-15,bottom:14}}>
-                            <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
-                            <XAxis dataKey="mass" tick={{fontSize:10,fill:C.muted}}
-                              label={{value:"Mass (kg)",position:"insideBottom",offset:-6,fontSize:10,fill:C.muted}}/>
-                            <YAxis domain={["auto","auto"]} tick={{fontSize:10,fill:C.muted}}
-                              label={{value:"xCG (m)",angle:-90,position:"insideLeft",offset:12,fontSize:10,fill:C.muted}}/>
+                            <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
+                            <XAxis dataKey="mass" tick={{fontSize:10,fill:SC.muted}}
+                              label={{value:"Mass (kg)",position:"insideBottom",offset:-6,fontSize:10,fill:SC.muted}}/>
+                            <YAxis domain={["auto","auto"]} tick={{fontSize:10,fill:SC.muted}}
+                              label={{value:"xCG (m)",angle:-90,position:"insideLeft",offset:12,fontSize:10,fill:SC.muted}}/>
                             <Tooltip {...TTP} formatter={(v,n)=>[`${v} m`,n]}/>
-                            <ReferenceLine y={R.xNP} stroke={C.blue} strokeDasharray="4 2"
-                              label={{value:"NP",fill:C.blue,fontSize:9,position:"right"}}/>
-                            <ReferenceLine y={R.xCGempty} stroke="#64748b" strokeDasharray="3 2"
+                            <ReferenceLine y={SR.xNP} stroke={SC.blue} strokeDasharray="4 2"
+                              label={{value:"NP",fill:SC.blue,fontSize:9,position:"right"}}/>
+                            <ReferenceLine y={SR.xCGempty} stroke="#64748b" strokeDasharray="3 2"
                               label={{value:"OEW",fill:"#64748b",fontSize:9,position:"right"}}/>
-                            <ReferenceLine y={R.xCGtotal} stroke={C.amber} strokeDasharray="3 2"
-                              label={{value:"MTOW",fill:C.amber,fontSize:9,position:"right"}}/>
-                            <Line type="monotone" dataKey="cg" stroke={C.green} strokeWidth={2} dot={false} name="xCG"/>
+                            <ReferenceLine y={SR.xCGtotal} stroke={SC.amber} strokeDasharray="3 2"
+                              label={{value:"MTOW",fill:SC.amber,fontSize:9,position:"right"}}/>
+                            <Line type="monotone" dataKey="cg" stroke={SC.green} strokeWidth={2} dot={false} name="xCG"/>
                           </LineChart>
                         </ResponsiveContainer>
                       </div>
@@ -2879,29 +2879,29 @@ export default function App(){
                           <AreaChart data={pts} margin={{top:4,right:12,left:-12,bottom:14}}>
                             <defs>
                               <linearGradient id="smg" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="5%" stopColor={C.green} stopOpacity={0.3}/>
-                                <stop offset="95%" stopColor={C.green} stopOpacity={0}/>
+                                <stop offset="5%" stopColor={SC.green} stopOpacity={0.3}/>
+                                <stop offset="95%" stopColor={SC.green} stopOpacity={0}/>
                               </linearGradient>
                             </defs>
-                            <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
-                            <XAxis dataKey="mass" tick={{fontSize:10,fill:C.muted}}
-                              label={{value:"Mass (kg)",position:"insideBottom",offset:-6,fontSize:10,fill:C.muted}}/>
-                            <YAxis tick={{fontSize:10,fill:C.muted}}
-                              label={{value:"SM (%)",angle:-90,position:"insideLeft",offset:15,fontSize:10,fill:C.muted}}/>
+                            <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
+                            <XAxis dataKey="mass" tick={{fontSize:10,fill:SC.muted}}
+                              label={{value:"Mass (kg)",position:"insideBottom",offset:-6,fontSize:10,fill:SC.muted}}/>
+                            <YAxis tick={{fontSize:10,fill:SC.muted}}
+                              label={{value:"SM (%)",angle:-90,position:"insideLeft",offset:15,fontSize:10,fill:SC.muted}}/>
                             <Tooltip {...TTP} formatter={(v,n)=>[`${v}%`,n]}/>
-                            <ReferenceLine y={5} stroke={C.red} strokeDasharray="3 2"
-                              label={{value:"5% min",fill:C.red,fontSize:9,position:"right"}}/>
-                            <ReferenceLine y={25} stroke={C.red} strokeDasharray="3 2"
-                              label={{value:"25% max",fill:C.red,fontSize:9,position:"right"}}/>
-                            <Area type="monotone" dataKey="sm" stroke={C.green} strokeWidth={2} fill="url(#smg)" dot={false} name="SM %"/>
+                            <ReferenceLine y={5} stroke={SC.red} strokeDasharray="3 2"
+                              label={{value:"5% min",fill:SC.red,fontSize:9,position:"right"}}/>
+                            <ReferenceLine y={25} stroke={SC.red} strokeDasharray="3 2"
+                              label={{value:"25% max",fill:SC.red,fontSize:9,position:"right"}}/>
+                            <Area type="monotone" dataKey="sm" stroke={SC.green} strokeWidth={2} fill="url(#smg)" dot={false} name="SM %"/>
                           </AreaChart>
                         </ResponsiveContainer>
                       </div>
                     </div>);
                   })()}
                   <div style={{display:"flex",gap:18,marginTop:8,padding:"5px 8px",background:"#0a0d14",borderRadius:4}}>
-                    {[["OEW CG",`${R.xCGempty} m`,"#64748b"],["MTOW CG",`${R.xCGtotal} m`,C.amber],
-                      ["NP",`${R.xNP} m`,C.blue],["ΔCG travel",`${Math.abs(R.xCGtotal-R.xCGempty).toFixed(3)} m`,C.green]
+                    {[["OEW CG",`${SR.xCGempty} m`,"#64748b"],["MTOW CG",`${SR.xCGtotal} m`,SC.amber],
+                      ["NP",`${SR.xNP} m`,SC.blue],["ΔCG travel",`${Math.abs(SR.xCGtotal-SR.xCGempty).toFixed(3)} m`,SC.green]
                     ].map(([l,v,col])=>(
                       <div key={l} style={{display:"flex",flexDirection:"column",gap:2}}>
                         <span style={{fontSize:8,color:"#64748b",fontFamily:"'DM Mono',monospace"}}>{l}</span>
@@ -2914,25 +2914,25 @@ export default function App(){
                   <Panel title="MTOW Composition" ht={235}>
                     <ResponsiveContainer width="100%" height={190}>
                       <PieChart>
-                        <Pie data={[{name:"Empty",val:R.Wempty},{name:"Battery",val:R.Wbat},{name:"Payload",val:p.payload}]}
+                        <Pie data={[{name:"Empty",val:SR.Wempty},{name:"Battery",val:SR.Wbat},{name:"Payload",val:p.payload}]}
                           dataKey="val" nameKey="name" cx="50%" cy="50%" innerRadius={48} outerRadius={82} paddingAngle={4}>
-                          {[C.blue,C.amber,C.green].map((c,i)=><Cell key={i} fill={c}/>)}
+                          {[SC.blue,SC.amber,SC.green].map((c,i)=><Cell key={i} fill={c}/>)}
                         </Pie>
-                        <Tooltip {...TTP} formatter={(v,n)=>[`${v.toFixed(1)} kg (${(v/R.MTOW*100).toFixed(1)}%)`,n]}/>
-                        <Legend iconSize={8} wrapperStyle={{fontSize:12,color:C.muted}}/>
+                        <Tooltip {...TTP} formatter={(v,n)=>[`${v.toFixed(1)} kg (${(v/SR.MTOW*100).toFixed(1)}%)`,n]}/>
+                        <Legend iconSize={8} wrapperStyle={{fontSize:12,color:SC.muted}}/>
                       </PieChart>
                     </ResponsiveContainer>
                   </Panel>
                   <Panel title="Feasibility Checks" ht={235}>
                     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7,marginTop:4}}>
-                      {R.checks.map((c,i)=>(
-                        <div key={i} style={{background:C.bg,borderRadius:5,padding:"7px 9px",border:`1px solid ${c.ok?C.green+"33":C.red+"33"}`}}>
+                      {SR.checks.map((c,i)=>(
+                        <div key={i} style={{background:SC.bg,borderRadius:5,padding:"7px 9px",border:`1px solid ${c.ok?SC.green+"33":SC.red+"33"}`}}>
                           <div style={{display:"flex",alignItems:"center",gap:4,marginBottom:2}}>
                             <span>{c.ok?"✅":"❌"}</span>
-                            <span style={{fontSize:8,color:c.ok?C.green:C.red,fontWeight:700,fontFamily:"'DM Mono',monospace"}}>{c.ok?"PASS":"FAIL"}</span>
+                            <span style={{fontSize:8,color:c.ok?SC.green:SC.red,fontWeight:700,fontFamily:"'DM Mono',monospace"}}>{c.ok?"PASS":"FAIL"}</span>
                           </div>
-                          <div style={{fontSize:8,color:C.muted,marginBottom:2}}>{c.label}</div>
-                          <div style={{fontSize:9,color:c.ok?C.green:C.red,fontFamily:"'DM Mono',monospace"}}>{c.val}</div>
+                          <div style={{fontSize:8,color:SC.muted,marginBottom:2}}>{c.label}</div>
+                          <div style={{fontSize:9,color:c.ok?SC.green:SC.red,fontFamily:"'DM Mono',monospace"}}>{c.val}</div>
                         </div>
                       ))}
                     </div>
@@ -2946,59 +2946,59 @@ export default function App(){
               <div style={{display:"flex",flexDirection:"column",gap:12}}>
                 {/* KPI row */}
                 <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:10}}>
-                  <KPI label="Total V-Tail Area" value={R.Svt_total} unit="m²" color={C.amber}
-                    sub={`Each panel: ${R.Svt_panel} m²`}/>
-                  <KPI label="Tail / Wing Area" value={(R.tailWingRatio*100).toFixed(1)} unit="%"
-                    color={R.tailWingRatio>=0.20&&R.tailWingRatio<=0.55?C.green:C.red}
+                  <KPI label="Total V-Tail Area" value={SR.Svt_total} unit="m²" color={SC.amber}
+                    sub={`Each panel: ${SR.Svt_panel} m²`}/>
+                  <KPI label="Tail / Wing Area" value={(SR.tailWingRatio*100).toFixed(1)} unit="%"
+                    color={SR.tailWingRatio>=0.20&&SR.tailWingRatio<=0.55?SC.green:SC.red}
                     sub="Target: 25–50%"/>
-                  <KPI label="Optimal Dihedral Γ" value={R.vtGamma_opt} unit="°" color={C.teal}
+                  <KPI label="Optimal Dihedral Γ" value={SR.vtGamma_opt} unit="°" color={SC.teal}
                     sub={`Set: ${p.vtGamma}°`}/>
-                  <KPI label="Static Margin (w/ Vtail)" value={(R.SM_vt*100).toFixed(1)} unit="% MAC"
-                    color={R.SM_vt>=0.05&&R.SM_vt<=0.25?C.green:C.red}
-                    sub={`Baseline: ${(R.SM*100).toFixed(1)}%`}/>
-                  <KPI label="Ruddervator Area" value={R.Srv} unit="m²/panel" color={C.blue}
+                  <KPI label="Static Margin (w/ Vtail)" value={(SR.SM_vt*100).toFixed(1)} unit="% MAC"
+                    color={SR.SM_vt>=0.05&&SR.SM_vt<=0.25?SC.green:SC.red}
+                    sub={`Baseline: ${(SR.SM*100).toFixed(1)}%`}/>
+                  <KPI label="Ruddervator Area" value={SR.Srv} unit="m²/panel" color={SC.blue}
                     sub="30% chord"/>
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
                   {/* Panel Geometry */}
                   <div style={{display:"flex",flexDirection:"column",gap:10}}>
-                    <div style={{background:C.panel,border:`1px solid ${C.border}`,borderRadius:8,padding:"12px 14px"}}>
-                      <div style={{fontSize:9,color:C.muted,textTransform:"uppercase",letterSpacing:"0.12em",
-                        fontFamily:"'DM Mono',monospace",marginBottom:8,borderBottom:`1px solid ${C.border}`,paddingBottom:5}}>
+                    <div style={{background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:8,padding:"12px 14px"}}>
+                      <div style={{fontSize:9,color:SC.muted,textTransform:"uppercase",letterSpacing:"0.12em",
+                        fontFamily:"'DM Mono',monospace",marginBottom:8,borderBottom:`1px solid ${SC.border}`,paddingBottom:5}}>
                         Panel Geometry
                       </div>
-                      {[["Panel span",`${R.bvt_panel} m`],["Root chord",`${R.Cr_vt} m`],
-                        ["Tip chord",`${R.Ct_vt} m`],["MAC",`${R.MAC_vt} m`],
-                        ["LE sweep",`${R.sweep_vt}°`],["Taper ratio","0.40"],
+                      {[["Panel span",`${SR.bvt_panel} m`],["Root chord",`${SR.Cr_vt} m`],
+                        ["Tip chord",`${SR.Ct_vt} m`],["MAC",`${SR.MAC_vt} m`],
+                        ["LE sweep",`${SR.sweep_vt}°`],["Taper ratio","0.40"],
                         ["Airfoil","NACA 0009"],["t/c","9%"],
-                        ["Tail moment arm lv",`${R.lv} m`],["Ruddervator / panel",`${R.Srv} m²`],
-                        ["Lf/b ratio",`${R.fusSpanRatio} (target 0.55–0.70)`],
+                        ["Tail moment arm lv",`${SR.lv} m`],["Ruddervator / panel",`${SR.Srv} m²`],
+                        ["Lf/b ratio",`${SR.fusSpanRatio} (target 0.55–0.70)`],
                       ].map(([k,v],i)=>(
                         <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:`1px solid #0f131a`}}>
                           <span style={{fontSize:10,color:"#64748b"}}>{k}</span>
-                          <span style={{fontSize:10,color:C.amber,fontFamily:"'DM Mono',monospace",fontWeight:600}}>{v}</span>
+                          <span style={{fontSize:10,color:SC.amber,fontFamily:"'DM Mono',monospace",fontWeight:600}}>{v}</span>
                         </div>
                       ))}
                     </div>
-                    <div style={{background:C.panel,border:`1px solid ${C.border}`,borderRadius:8,padding:"12px 14px"}}>
-                      <div style={{fontSize:9,color:C.muted,textTransform:"uppercase",letterSpacing:"0.12em",
-                        fontFamily:"'DM Mono',monospace",marginBottom:8,borderBottom:`1px solid ${C.border}`,paddingBottom:5}}>
+                    <div style={{background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:8,padding:"12px 14px"}}>
+                      <div style={{fontSize:9,color:SC.muted,textTransform:"uppercase",letterSpacing:"0.12em",
+                        fontFamily:"'DM Mono',monospace",marginBottom:8,borderBottom:`1px solid ${SC.border}`,paddingBottom:5}}>
                         Weight & Drag
                       </div>
-                      {[["V-tail total mass",`${R.Wvt_total} kg`],
-                        ["V-tail CD₀ contrib.",`${R.CD0vt.toFixed(5)}`],
-                        ["Ruddervator trim δ",`${R.delta_rv_deg}°`],
+                      {[["V-tail total mass",`${SR.Wvt_total} kg`],
+                        ["V-tail CD₀ contrib.",`${SR.CD0vt.toFixed(5)}`],
+                        ["Ruddervator trim δ",`${SR.delta_rv_deg}°`],
                       ].map(([k,v],i)=>(
                         <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:`1px solid #0f131a`}}>
                           <span style={{fontSize:10,color:"#64748b"}}>{k}</span>
-                          <span style={{fontSize:10,color:C.teal,fontFamily:"'DM Mono',monospace",fontWeight:600}}>{v}</span>
+                          <span style={{fontSize:10,color:SC.teal,fontFamily:"'DM Mono',monospace",fontWeight:600}}>{v}</span>
                         </div>
                       ))}
                     </div>
                     {/* SVG schematic — below Weight & Drag, beside Control Authority */}
-                    <div style={{background:C.panel,border:`1px solid ${C.border}`,borderRadius:8,padding:"12px 14px"}}>
-                      <div style={{fontSize:9,color:C.muted,textTransform:"uppercase",letterSpacing:"0.12em",
-                        fontFamily:"'DM Mono',monospace",marginBottom:8,borderBottom:`1px solid ${C.border}`,paddingBottom:5}}>
+                    <div style={{background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:8,padding:"12px 14px"}}>
+                      <div style={{fontSize:9,color:SC.muted,textTransform:"uppercase",letterSpacing:"0.12em",
+                        fontFamily:"'DM Mono',monospace",marginBottom:8,borderBottom:`1px solid ${SC.border}`,paddingBottom:5}}>
                         Rear View Schematic
                       </div>
                       <svg viewBox="-110 -95 220 130" width="100%" height={160} style={{overflow:"visible"}}>
@@ -3009,20 +3009,20 @@ export default function App(){
                           const panelLen=65;
                           const x2l=-(panelLen*Math.cos(gr)), y2l=-(panelLen*Math.sin(gr));
                           const x2r= (panelLen*Math.cos(gr)), y2r=-(panelLen*Math.sin(gr));
-                          const chordScale=R.Cr_vt*12;
+                          const chordScale=SR.Cr_vt*12;
                           return(<>
-                            <line x1={0} y1={0} x2={x2l} y2={y2l} stroke={C.amber} strokeWidth={2.5} strokeLinecap="round"/>
+                            <line x1={0} y1={0} x2={x2l} y2={y2l} stroke={SC.amber} strokeWidth={2.5} strokeLinecap="round"/>
                             <polygon points={`${x2l},${y2l} ${x2l-chordScale*0.2},${y2l-4} ${x2l+chordScale*0.6},${y2l-4} ${x2l+chordScale*0.4},${y2l}`}
-                              fill={C.amber} opacity={0.25} stroke={C.amber} strokeWidth={0.5}/>
-                            <line x1={0} y1={0} x2={x2r} y2={y2r} stroke={C.amber} strokeWidth={2.5} strokeLinecap="round"/>
+                              fill={SC.amber} opacity={0.25} stroke={SC.amber} strokeWidth={0.5}/>
+                            <line x1={0} y1={0} x2={x2r} y2={y2r} stroke={SC.amber} strokeWidth={2.5} strokeLinecap="round"/>
                             <polygon points={`${x2r},${y2r} ${x2r-chordScale*0.6},${y2r-4} ${x2r+chordScale*0.2},${y2r-4} ${x2r-chordScale*0.4},${y2r}`}
-                              fill={C.amber} opacity={0.25} stroke={C.amber} strokeWidth={0.5}/>
+                              fill={SC.amber} opacity={0.25} stroke={SC.amber} strokeWidth={0.5}/>
                             <path d={`M ${28*Math.cos(Math.PI-gr)},${-28*Math.sin(Math.PI-gr)} A 28 28 0 0 1 ${28*Math.cos(gr)},${-28*Math.sin(gr)}`}
-                              fill="none" stroke={C.teal} strokeWidth={1} strokeDasharray="3 2"/>
-                            <text x={0} y={-31} textAnchor="middle" fill={C.teal} fontSize={10} fontFamily="DM Mono,monospace">Γ={p.vtGamma}°</text>
-                            <text x={0} y={-43} textAnchor="middle" fill={C.green} fontSize={9} fontFamily="DM Mono,monospace">opt={R.vtGamma_opt}°</text>
-                            <text x={x2l-3} y={y2l-7} textAnchor="middle" fill={C.amber} fontSize={8} fontFamily="DM Mono,monospace">{R.bvt_panel}m</text>
-                            <text x={x2r+3} y={y2r-7} textAnchor="middle" fill={C.amber} fontSize={8} fontFamily="DM Mono,monospace">{R.bvt_panel}m</text>
+                              fill="none" stroke={SC.teal} strokeWidth={1} strokeDasharray="3 2"/>
+                            <text x={0} y={-31} textAnchor="middle" fill={SC.teal} fontSize={10} fontFamily="DM Mono,monospace">Γ={p.vtGamma}°</text>
+                            <text x={0} y={-43} textAnchor="middle" fill={SC.green} fontSize={9} fontFamily="DM Mono,monospace">opt={SR.vtGamma_opt}°</text>
+                            <text x={x2l-3} y={y2l-7} textAnchor="middle" fill={SC.amber} fontSize={8} fontFamily="DM Mono,monospace">{SR.bvt_panel}m</text>
+                            <text x={x2r+3} y={y2r-7} textAnchor="middle" fill={SC.amber} fontSize={8} fontFamily="DM Mono,monospace">{SR.bvt_panel}m</text>
                             <line x1={-85} y1={0} x2={85} y2={0} stroke="#1e2a3a" strokeWidth={1} strokeDasharray="4 3"/>
                             <line x1={0} y1={-85} x2={0} y2={18} stroke="#1e2a3a" strokeWidth={1} strokeDasharray="4 3"/>
                             <text x={87} y={4} fill="#334155" fontSize={7} fontFamily="DM Mono,monospace">H</text>
@@ -3034,9 +3034,9 @@ export default function App(){
                   </div>
                   {/* Dihedral trade chart + effectiveness */}
                   <div style={{display:"flex",flexDirection:"column",gap:10}}>
-                    <div style={{background:C.panel,border:`1px solid ${C.border}`,borderRadius:8,padding:"12px 14px"}}>
-                      <div style={{fontSize:9,color:C.muted,textTransform:"uppercase",letterSpacing:"0.12em",
-                        fontFamily:"'DM Mono',monospace",marginBottom:8,borderBottom:`1px solid ${C.border}`,paddingBottom:5}}>
+                    <div style={{background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:8,padding:"12px 14px"}}>
+                      <div style={{fontSize:9,color:SC.muted,textTransform:"uppercase",letterSpacing:"0.12em",
+                        fontFamily:"'DM Mono',monospace",marginBottom:8,borderBottom:`1px solid ${SC.border}`,paddingBottom:5}}>
                         Dihedral Angle Trade — Intrinsic Effectiveness &amp; Required Area
                       </div>
                       {/* Two-panel layout: left = effectiveness curves, right = area cost */}
@@ -3057,20 +3057,20 @@ export default function App(){
                                 };
                               })}
                               margin={{top:4,right:8,left:0,bottom:18}}>
-                              <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
-                              <XAxis dataKey="gamma" tick={{fontSize:10,fill:C.muted}}
-                                label={{value:"Γ (°)",position:"insideBottom",offset:-6,fontSize:11,fill:C.muted}}/>
-                              <YAxis domain={[0,100]} tick={{fontSize:10,fill:C.muted}}
-                                label={{value:"%",angle:-90,position:"insideLeft",offset:8,fontSize:11,fill:C.muted}}/>
+                              <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
+                              <XAxis dataKey="gamma" tick={{fontSize:10,fill:SC.muted}}
+                                label={{value:"Γ (°)",position:"insideBottom",offset:-6,fontSize:11,fill:SC.muted}}/>
+                              <YAxis domain={[0,100]} tick={{fontSize:10,fill:SC.muted}}
+                                label={{value:"%",angle:-90,position:"insideLeft",offset:8,fontSize:11,fill:SC.muted}}/>
                               <Tooltip {...TTP} formatter={(v,n)=>[`${v}%`,n]}/>
-                              <ReferenceLine x={p.vtGamma} stroke={C.amber} strokeDasharray="3 2"
-                                label={{value:"Γ",fill:C.amber,fontSize:10,position:"top"}}/>
-                              <ReferenceLine x={R.vtGamma_opt} stroke={C.green} strokeDasharray="3 2"
-                                label={{value:"opt",fill:C.green,fontSize:10,position:"top"}}/>
-                              <ReferenceLine y={50} stroke={C.dim} strokeDasharray="2 2"/>
-                              <Line type="monotone" dataKey="pitch" stroke={C.blue} strokeWidth={2} dot={false} name="Pitch cos²Γ"/>
-                              <Line type="monotone" dataKey="yaw" stroke={C.red} strokeWidth={2} dot={false} name="Yaw sin²Γ"/>
-                              <Legend iconSize={8} wrapperStyle={{fontSize:10,color:C.muted}}/>
+                              <ReferenceLine x={p.vtGamma} stroke={SC.amber} strokeDasharray="3 2"
+                                label={{value:"Γ",fill:SC.amber,fontSize:10,position:"top"}}/>
+                              <ReferenceLine x={SR.vtGamma_opt} stroke={SC.green} strokeDasharray="3 2"
+                                label={{value:"opt",fill:SC.green,fontSize:10,position:"top"}}/>
+                              <ReferenceLine y={50} stroke={SC.dim} strokeDasharray="2 2"/>
+                              <Line type="monotone" dataKey="pitch" stroke={SC.blue} strokeWidth={2} dot={false} name="Pitch cos²Γ"/>
+                              <Line type="monotone" dataKey="yaw" stroke={SC.red} strokeWidth={2} dot={false} name="Yaw sin²Γ"/>
+                              <Legend iconSize={8} wrapperStyle={{fontSize:10,color:SC.muted}}/>
                             </LineChart>
                           </ResponsiveContainer>
                         </div>
@@ -3086,23 +3086,23 @@ export default function App(){
                                 const c2=Math.cos(gr)**2, s2=Math.sin(gr)**2;
                                 // Avoid divide-by-zero at 0° and 90°
                                 if(gd<=11||gd>=89) return{gamma:gd,area:null};
-                                const Sp=Math.max(R.Sh_req/c2, R.Sv_req/s2);
+                                const Sp=Math.max(SR.Sh_req/c2, SR.Sv_req/s2);
                                 return{gamma:gd, area:+(2*Sp).toFixed(2)};
                               })}
                               margin={{top:4,right:8,left:0,bottom:18}}>
-                              <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
-                              <XAxis dataKey="gamma" tick={{fontSize:10,fill:C.muted}}
-                                label={{value:"Γ (°)",position:"insideBottom",offset:-6,fontSize:11,fill:C.muted}}/>
-                              <YAxis tick={{fontSize:10,fill:C.muted}}
-                                label={{value:"m²",angle:-90,position:"insideLeft",offset:8,fontSize:11,fill:C.muted}}/>
+                              <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
+                              <XAxis dataKey="gamma" tick={{fontSize:10,fill:SC.muted}}
+                                label={{value:"Γ (°)",position:"insideBottom",offset:-6,fontSize:11,fill:SC.muted}}/>
+                              <YAxis tick={{fontSize:10,fill:SC.muted}}
+                                label={{value:"m²",angle:-90,position:"insideLeft",offset:8,fontSize:11,fill:SC.muted}}/>
                               <Tooltip {...TTP} formatter={(v,n)=>[`${v} m²`,n]}/>
-                              <ReferenceLine x={p.vtGamma} stroke={C.amber} strokeDasharray="3 2"
-                                label={{value:"Γ",fill:C.amber,fontSize:10,position:"top"}}/>
-                              <ReferenceLine x={R.vtGamma_opt} stroke={C.green} strokeDasharray="3 2"
-                                label={{value:"opt",fill:C.green,fontSize:10,position:"top"}}/>
-                              <ReferenceLine y={R.Svt_total} stroke={C.teal} strokeDasharray="3 2"
-                                label={{value:"cur",fill:C.teal,fontSize:10,position:"right"}}/>
-                              <Line type="monotone" dataKey="area" stroke={C.amber} strokeWidth={2}
+                              <ReferenceLine x={p.vtGamma} stroke={SC.amber} strokeDasharray="3 2"
+                                label={{value:"Γ",fill:SC.amber,fontSize:10,position:"top"}}/>
+                              <ReferenceLine x={SR.vtGamma_opt} stroke={SC.green} strokeDasharray="3 2"
+                                label={{value:"opt",fill:SC.green,fontSize:10,position:"top"}}/>
+                              <ReferenceLine y={SR.Svt_total} stroke={SC.teal} strokeDasharray="3 2"
+                                label={{value:"cur",fill:SC.teal,fontSize:10,position:"right"}}/>
+                              <Line type="monotone" dataKey="area" stroke={SC.amber} strokeWidth={2}
                                 dot={false} name="Total area" connectNulls={false}/>
                             </LineChart>
                           </ResponsiveContainer>
@@ -3114,26 +3114,26 @@ export default function App(){
                       </div>
                     </div>
                     {/* Control Authority checks */}
-                    <div style={{background:C.panel,border:`1px solid ${C.border}`,borderRadius:8,padding:"12px 14px"}}>
-                      <div style={{fontSize:9,color:C.muted,textTransform:"uppercase",letterSpacing:"0.12em",
-                        fontFamily:"'DM Mono',monospace",marginBottom:8,borderBottom:`1px solid ${C.border}`,paddingBottom:5}}>
+                    <div style={{background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:8,padding:"12px 14px"}}>
+                      <div style={{fontSize:9,color:SC.muted,textTransform:"uppercase",letterSpacing:"0.12em",
+                        fontFamily:"'DM Mono',monospace",marginBottom:8,borderBottom:`1px solid ${SC.border}`,paddingBottom:5}}>
                         Control Authority vs Requirement
                       </div>
                       <div style={{fontSize:9,color:"#64748b",fontFamily:"'DM Mono',monospace",marginBottom:6,padding:"4px 6px",background:"#0a0d14",borderRadius:4}}>
                         Sh_eff = S_panel·cos²Γ &nbsp;|&nbsp; Sv_eff = S_panel·sin²Γ &nbsp;|&nbsp; Panel sized to governing constraint
                       </div>
                       {[
-                        ["Sh_req (pitch needed)",`${R.Sh_req} m²`,"—",C.muted],
-                        ["Sv_req (yaw needed)",`${R.Sv_req} m²`,"—",C.muted],
-                        ["Panel area (per side)",`${R.Svt_panel} m²`,R.governs_pitch?"↑ pitch governs":"↑ yaw governs",C.amber],
-                        ["Sh_eff = S·cos²(Γ)",`${R.Sh_eff} m²`,`${(R.pitch_ratio*100).toFixed(0)}% of req.`,R.pitch_ratio>=1?C.green:C.red],
-                        ["Sv_eff = S·sin²(Γ)",`${R.Sv_eff} m²`,`${(R.yaw_ratio*100).toFixed(0)}% of req.`,R.yaw_ratio>=1?C.green:C.red],
-                        ["Pitch authority",R.pitch_ratio>=1?"✅ Sufficient":"❌ Insufficient","",R.pitch_ratio>=1?C.green:C.red],
-                        ["Yaw authority",R.yaw_ratio>=1?"✅ Sufficient":"❌ Insufficient","",R.yaw_ratio>=1?C.green:C.red],
-                        ["Combined authority",`${(R.ruddervator_combined_auth*100).toFixed(0)}%`,"√(p²+y²)",C.teal],
-                        ["Updated SM (V-tail NP)",`${(R.SM_vt*100).toFixed(1)}% MAC`,"",R.SM_vt>=0.05&&R.SM_vt<=0.25?C.green:C.red],
-                        ["Trim δ ruddervator (pitch)",`${R.delta_rv_deg}°`,"symmetric",C.muted],
-                        ["Trim δ ruddervator (yaw)",`${R.delta_yaw_rv_deg}°`,"differential",C.muted],
+                        ["Sh_req (pitch needed)",`${SR.Sh_req} m²`,"—",SC.muted],
+                        ["Sv_req (yaw needed)",`${SR.Sv_req} m²`,"—",SC.muted],
+                        ["Panel area (per side)",`${SR.Svt_panel} m²`,SR.governs_pitch?"↑ pitch governs":"↑ yaw governs",SC.amber],
+                        ["Sh_eff = S·cos²(Γ)",`${SR.Sh_eff} m²`,`${(SR.pitch_ratio*100).toFixed(0)}% of req.`,SR.pitch_ratio>=1?SC.green:SC.red],
+                        ["Sv_eff = S·sin²(Γ)",`${SR.Sv_eff} m²`,`${(SR.yaw_ratio*100).toFixed(0)}% of req.`,SR.yaw_ratio>=1?SC.green:SC.red],
+                        ["Pitch authority",SR.pitch_ratio>=1?"✅ Sufficient":"❌ Insufficient","",SR.pitch_ratio>=1?SC.green:SC.red],
+                        ["Yaw authority",SR.yaw_ratio>=1?"✅ Sufficient":"❌ Insufficient","",SR.yaw_ratio>=1?SC.green:SC.red],
+                        ["Combined authority",`${(SR.ruddervator_combined_auth*100).toFixed(0)}%`,"√(p²+y²)",SC.teal],
+                        ["Updated SM (V-tail NP)",`${(SR.SM_vt*100).toFixed(1)}% MAC`,"",SR.SM_vt>=0.05&&SR.SM_vt<=0.25?SC.green:SC.red],
+                        ["Trim δ ruddervator (pitch)",`${SR.delta_rv_deg}°`,"symmetric",SC.muted],
+                        ["Trim δ ruddervator (yaw)",`${SR.delta_yaw_rv_deg}°`,"differential",SC.muted],
                       ].map(([k,v,s,col],i)=>(
                         <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 0",borderBottom:`1px solid #0f131a`}}>
                           <span style={{fontSize:10,color:"#64748b"}}>{k}</span>
@@ -3158,28 +3158,28 @@ export default function App(){
                         <LineChart
                           data={Array.from({length:71},(_,i)=>{
                             const gd=15+i, gr=gd*Math.PI/180;
-                            const Sh_eff_g=R.Svt_panel*Math.cos(gr)**2;
+                            const Sh_eff_g=SR.Svt_panel*Math.cos(gr)**2;
                             if(Sh_eff_g<0.01) return{gamma:gd,delta:null};
-                            const CM_ac=R.selAF?.CM||(-0.02);
-                            const de=-(CM_ac*R.Swing*R.MAC)/(0.90*Sh_eff_g*R.lv);
+                            const CM_ac=SR.selAF?.CM||(-0.02);
+                            const de=-(CM_ac*SR.Swing*SR.MAC)/(0.90*Sh_eff_g*SR.lv);
                             const drv=de/Math.cos(gr)*180/Math.PI;
                             return{gamma:gd,delta:+Math.min(Math.max(drv,-35),35).toFixed(2)};
                           })}
                           margin={{top:4,right:8,left:2,bottom:20}}>
-                          <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
-                          <XAxis dataKey="gamma" tick={{fontSize:10,fill:C.muted}}
-                            label={{value:"Γ (°)",position:"insideBottom",offset:-8,fontSize:10,fill:C.muted}}/>
-                          <YAxis tick={{fontSize:10,fill:C.muted}}
-                            label={{value:"δ (°)",angle:-90,position:"insideLeft",offset:10,fontSize:10,fill:C.muted}}/>
+                          <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
+                          <XAxis dataKey="gamma" tick={{fontSize:10,fill:SC.muted}}
+                            label={{value:"Γ (°)",position:"insideBottom",offset:-8,fontSize:10,fill:SC.muted}}/>
+                          <YAxis tick={{fontSize:10,fill:SC.muted}}
+                            label={{value:"δ (°)",angle:-90,position:"insideLeft",offset:10,fontSize:10,fill:SC.muted}}/>
                           <Tooltip {...TTP} formatter={(v)=>[`${v}°`,"δ_rv pitch"]}/>
-                          <ReferenceLine y={20} stroke={C.red} strokeDasharray="3 2"
-                            label={{value:"20° lim",fill:C.red,fontSize:9,position:"right"}}/>
-                          <ReferenceLine y={-20} stroke={C.red} strokeDasharray="3 2"/>
-                          <ReferenceLine x={p.vtGamma} stroke={C.amber} strokeDasharray="3 2"
-                            label={{value:`Γ=${p.vtGamma}°`,fill:C.amber,fontSize:9,position:"top"}}/>
-                          <ReferenceLine y={R.delta_rv_deg} stroke={C.green} strokeDasharray="3 2"
-                            label={{value:`${R.delta_rv_deg}°`,fill:C.green,fontSize:9,position:"right"}}/>
-                          <Line type="monotone" dataKey="delta" stroke={C.blue} strokeWidth={2} dot={false}
+                          <ReferenceLine y={20} stroke={SC.red} strokeDasharray="3 2"
+                            label={{value:"20° lim",fill:SC.red,fontSize:9,position:"right"}}/>
+                          <ReferenceLine y={-20} stroke={SC.red} strokeDasharray="3 2"/>
+                          <ReferenceLine x={p.vtGamma} stroke={SC.amber} strokeDasharray="3 2"
+                            label={{value:`Γ=${p.vtGamma}°`,fill:SC.amber,fontSize:9,position:"top"}}/>
+                          <ReferenceLine y={SR.delta_rv_deg} stroke={SC.green} strokeDasharray="3 2"
+                            label={{value:`${SR.delta_rv_deg}°`,fill:SC.green,fontSize:9,position:"right"}}/>
+                          <Line type="monotone" dataKey="delta" stroke={SC.blue} strokeWidth={2} dot={false}
                             name="δ_rv pitch" connectNulls={false}/>
                         </LineChart>
                       </ResponsiveContainer>
@@ -3195,25 +3195,25 @@ export default function App(){
                             const beta_deg=-10+i*0.5;
                             const beta_rad=beta_deg*Math.PI/180;
                             const CY_beta=-0.30;
-                            const dyaw=(CY_beta*beta_rad*R.Swing)/(2*R.Sv_eff/R.lv)*180/Math.PI*(-1);
+                            const dyaw=(CY_beta*beta_rad*SR.Swing)/(2*SR.Sv_eff/SR.lv)*180/Math.PI*(-1);
                             return{beta:+beta_deg.toFixed(1),delta:+Math.min(Math.max(dyaw,-30),30).toFixed(2)};
                           })}
                           margin={{top:4,right:8,left:2,bottom:20}}>
-                          <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
-                          <XAxis dataKey="beta" tick={{fontSize:10,fill:C.muted}}
-                            label={{value:"β (°)",position:"insideBottom",offset:-8,fontSize:10,fill:C.muted}}/>
-                          <YAxis tick={{fontSize:10,fill:C.muted}}
-                            label={{value:"δ (°)",angle:-90,position:"insideLeft",offset:10,fontSize:10,fill:C.muted}}/>
+                          <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
+                          <XAxis dataKey="beta" tick={{fontSize:10,fill:SC.muted}}
+                            label={{value:"β (°)",position:"insideBottom",offset:-8,fontSize:10,fill:SC.muted}}/>
+                          <YAxis tick={{fontSize:10,fill:SC.muted}}
+                            label={{value:"δ (°)",angle:-90,position:"insideLeft",offset:10,fontSize:10,fill:SC.muted}}/>
                           <Tooltip {...TTP} formatter={(v)=>[`${v}°`,"δ_rv yaw"]}/>
-                          <ReferenceLine y={20} stroke={C.red} strokeDasharray="3 2"
-                            label={{value:"20° lim",fill:C.red,fontSize:9,position:"right"}}/>
-                          <ReferenceLine y={-20} stroke={C.red} strokeDasharray="3 2"/>
+                          <ReferenceLine y={20} stroke={SC.red} strokeDasharray="3 2"
+                            label={{value:"20° lim",fill:SC.red,fontSize:9,position:"right"}}/>
+                          <ReferenceLine y={-20} stroke={SC.red} strokeDasharray="3 2"/>
                           <ReferenceLine x={0} stroke="#334155" strokeWidth={1}/>
-                          <ReferenceLine x={2} stroke={C.amber} strokeDasharray="3 2"
-                            label={{value:"β=2°",fill:C.amber,fontSize:9,position:"top"}}/>
-                          <ReferenceLine y={R.delta_yaw_rv_deg} stroke={C.green} strokeDasharray="3 2"
-                            label={{value:`${R.delta_yaw_rv_deg}°`,fill:C.green,fontSize:9,position:"right"}}/>
-                          <Line type="monotone" dataKey="delta" stroke={C.teal} strokeWidth={2} dot={false} name="δ_rv yaw"/>
+                          <ReferenceLine x={2} stroke={SC.amber} strokeDasharray="3 2"
+                            label={{value:"β=2°",fill:SC.amber,fontSize:9,position:"top"}}/>
+                          <ReferenceLine y={SR.delta_yaw_rv_deg} stroke={SC.green} strokeDasharray="3 2"
+                            label={{value:`${SR.delta_yaw_rv_deg}°`,fill:SC.green,fontSize:9,position:"right"}}/>
+                          <Line type="monotone" dataKey="delta" stroke={SC.teal} strokeWidth={2} dot={false} name="δ_rv yaw"/>
                         </LineChart>
                       </ResponsiveContainer>
                     </div>
@@ -3227,41 +3227,41 @@ export default function App(){
                           data={Array.from({length:51},(_,i)=>{
                             const sm_pct=-5+i*0.6; // SM from -5% to +25%
                             const sm=sm_pct/100;
-                            const xCG_g=R.xNP-sm*R.MAC;
+                            const xCG_g=SR.xNP-sm*SR.MAC;
                             // Pitch moment about AC: CM_ac from airfoil + CL * (xCG-xAC)/MAC
-                            const CL_cr=R.Swing>0?2*R.MTOW*9.81/(1.225*p.vCruise**2*R.Swing):1;
-                            const CM_ac=R.selAF?.CM||(-0.02);
+                            const CL_cr=SR.Swing>0?2*SR.MTOW*9.81/(1.225*p.vCruise**2*SR.Swing):1;
+                            const CM_ac=SR.selAF?.CM||(-0.02);
                             const CM_net=CM_ac+CL_cr*sm;  // net pitch moment
-                            const Sh_eff_cur=R.Sh_eff||0.1;
-                            const de=-CM_net*R.Swing*R.MAC/(0.90*Sh_eff_cur*R.lv);
+                            const Sh_eff_cur=SR.Sh_eff||0.1;
+                            const de=-CM_net*SR.Swing*SR.MAC/(0.90*Sh_eff_cur*SR.lv);
                             const drv=de/Math.cos(p.vtGamma*Math.PI/180)*180/Math.PI;
                             return{sm:+sm_pct.toFixed(1),delta:+Math.min(Math.max(drv,-35),35).toFixed(2)};
                           })}
                           margin={{top:4,right:8,left:2,bottom:20}}>
-                          <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
-                          <XAxis dataKey="sm" tick={{fontSize:10,fill:C.muted}}
-                            label={{value:"SM (%)",position:"insideBottom",offset:-8,fontSize:10,fill:C.muted}}/>
-                          <YAxis tick={{fontSize:10,fill:C.muted}}
-                            label={{value:"δ (°)",angle:-90,position:"insideLeft",offset:10,fontSize:10,fill:C.muted}}/>
+                          <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
+                          <XAxis dataKey="sm" tick={{fontSize:10,fill:SC.muted}}
+                            label={{value:"SM (%)",position:"insideBottom",offset:-8,fontSize:10,fill:SC.muted}}/>
+                          <YAxis tick={{fontSize:10,fill:SC.muted}}
+                            label={{value:"δ (°)",angle:-90,position:"insideLeft",offset:10,fontSize:10,fill:SC.muted}}/>
                           <Tooltip {...TTP} formatter={(v)=>[`${v}°`,"δ_rv"]}/>
-                          <ReferenceLine y={20} stroke={C.red} strokeDasharray="3 2"
-                            label={{value:"20° lim",fill:C.red,fontSize:9,position:"right"}}/>
-                          <ReferenceLine y={-20} stroke={C.red} strokeDasharray="3 2"/>
+                          <ReferenceLine y={20} stroke={SC.red} strokeDasharray="3 2"
+                            label={{value:"20° lim",fill:SC.red,fontSize:9,position:"right"}}/>
+                          <ReferenceLine y={-20} stroke={SC.red} strokeDasharray="3 2"/>
                           <ReferenceLine y={0} stroke="#334155" strokeWidth={1}/>
-                          <ReferenceLine x={R.SM_vt*100} stroke={C.amber} strokeDasharray="3 2"
-                            label={{value:`SM=${(R.SM_vt*100).toFixed(1)}%`,fill:C.amber,fontSize:9,position:"top"}}/>
-                          <Line type="monotone" dataKey="delta" stroke={C.green} strokeWidth={2} dot={false} name="δ_rv vs SM"/>
+                          <ReferenceLine x={SR.SM_vt*100} stroke={SC.amber} strokeDasharray="3 2"
+                            label={{value:`SM=${(SR.SM_vt*100).toFixed(1)}%`,fill:SC.amber,fontSize:9,position:"top"}}/>
+                          <Line type="monotone" dataKey="delta" stroke={SC.green} strokeWidth={2} dot={false} name="δ_rv vs SM"/>
                         </LineChart>
                       </ResponsiveContainer>
                     </div>
                   </div>
                   <div style={{display:"flex",gap:18,marginTop:8,padding:"5px 8px",background:"#0a0d14",borderRadius:4,flexWrap:"wrap"}}>
                     {[
-                      ["Pitch trim δ_rv",`${R.delta_rv_deg}°`,C.blue,"symmetric, cruise"],
-                      ["Yaw trim δ_rv",`${R.delta_yaw_rv_deg}°`,C.teal,"differential, β=2°"],
+                      ["Pitch trim δ_rv",`${SR.delta_rv_deg}°`,SC.blue,"symmetric, cruise"],
+                      ["Yaw trim δ_rv",`${SR.delta_yaw_rv_deg}°`,SC.teal,"differential, β=2°"],
                       ["Authority limit","±20°","#64748b","CS-23 / FAR 23"],
-                      ["Pitch OK",Math.abs(R.delta_rv_deg)<=20?"✅ Within limits":"❌ Exceeds",Math.abs(R.delta_rv_deg)<=20?C.green:C.red,""],
-                      ["Yaw OK",Math.abs(R.delta_yaw_rv_deg)<=20?"✅ Within limits":"❌ Exceeds",Math.abs(R.delta_yaw_rv_deg)<=20?C.green:C.red,""],
+                      ["Pitch OK",Math.abs(SR.delta_rv_deg)<=20?"✅ Within limits":"❌ Exceeds",Math.abs(SR.delta_rv_deg)<=20?SC.green:SC.red,""],
+                      ["Yaw OK",Math.abs(SR.delta_yaw_rv_deg)<=20?"✅ Within limits":"❌ Exceeds",Math.abs(SR.delta_yaw_rv_deg)<=20?SC.green:SC.red,""],
                     ].map(([l,v,col,sub])=>(
                       <div key={l} style={{display:"flex",flexDirection:"column",gap:1}}>
                         <span style={{fontSize:8,color:"#64748b",fontFamily:"'DM Mono',monospace"}}>{l}</span>
@@ -3277,97 +3277,97 @@ export default function App(){
             {tab===8&&(
               <div style={{display:"flex",flexDirection:"column",gap:12}}>
                 <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
-                  <KPI label="Round 1 MTOW" value={R.MTOW1} unit="kg" color={C.muted}/>
-                  <KPI label="Converged MTOW" value={R.MTOW} unit="kg" color={C.green}/>
-                  <KPI label={`R2 Iters @ ε=10^${p.convTolExp}`} value={R.itersR2} unit="" color={R.r2Converged?C.green:C.red} sub={R.r2Converged?"✓ converged":"✗ hit 200-iter cap"}/>
-                  <KPI label="Installed T/W" value={p.twRatio.toFixed(2)} unit="" color={p.twRatio>=1.0&&p.twRatio<=1.4?C.green:C.amber} sub={`Phov = ${R.Phov} kW`}/>
+                  <KPI label="Round 1 MTOW" value={SR.MTOW1} unit="kg" color={SC.muted}/>
+                  <KPI label="Converged MTOW" value={SR.MTOW} unit="kg" color={SC.green}/>
+                  <KPI label={`R2 Iters @ ε=10^${p.convTolExp}`} value={SR.itersR2} unit="" color={SR.r2Converged?SC.green:SC.red} sub={SR.r2Converged?"✓ converged":"✗ hit 200-iter cap"}/>
+                  <KPI label="Installed T/W" value={p.twRatio.toFixed(2)} unit="" color={p.twRatio>=1.0&&p.twRatio<=1.4?SC.green:SC.amber} sub={`Phov = ${SR.Phov} kW`}/>
                 </div>
 
-                {!R.r2Converged&&(
-                  <div style={{background:`${C.red}18`,border:`1px solid ${C.red}55`,borderRadius:6,padding:"10px 14px",fontSize:11,color:C.red}}>
+                {!SR.r2Converged&&(
+                  <div style={{background:`${SC.red}18`,border:`1px solid ${SC.red}55`,borderRadius:6,padding:"10px 14px",fontSize:11,color:SC.red}}>
                     ⚠ R2 loop hit the 200-iteration cap at ε = 10<sup>{p.convTolExp}</sup> without fully converging.
                   </div>
                 )}
 
                 {/* T/W insight banner */}
-                <div style={{background:C.panel,border:`1px solid ${C.border}`,borderRadius:8,padding:"12px 16px",display:"flex",gap:16,flexWrap:"wrap",alignItems:"center"}}>
+                <div style={{background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:8,padding:"12px 16px",display:"flex",gap:16,flexWrap:"wrap",alignItems:"center"}}>
                   <div>
-                    <div style={{fontSize:9,color:C.muted,fontFamily:"'DM Mono',monospace",letterSpacing:"0.12em",marginBottom:3}}>THRUST-TO-WEIGHT ANALYSIS</div>
-                    <div style={{fontSize:11,color:C.text,lineHeight:1.6}}>
-                      At T/W = <span style={{color:C.amber,fontWeight:700}}>{p.twRatio.toFixed(2)}</span>, installed hover thrust = <span style={{color:C.blue,fontWeight:700}}>{(p.twRatio*R.MTOW*9.81/1000).toFixed(1)} kN</span> → hover power = <span style={{color:C.blue,fontWeight:700}}>{R.Phov} kW</span>.
-                      Round 1 gives <span style={{color:C.muted,fontWeight:700}}>{R.MTOW1} kg</span>. Dual-constraint converges to <span style={{color:C.green,fontWeight:700}}>{R.MTOW} kg</span> — a <span style={{color:C.amber,fontWeight:700}}>{((R.MTOW/R.MTOW1-1)*100).toFixed(1)}%</span> increase driven by peak hover power sizing.
+                    <div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace",letterSpacing:"0.12em",marginBottom:3}}>THRUST-TO-WEIGHT ANALYSIS</div>
+                    <div style={{fontSize:11,color:SC.text,lineHeight:1.6}}>
+                      At T/W = <span style={{color:SC.amber,fontWeight:700}}>{p.twRatio.toFixed(2)}</span>, installed hover thrust = <span style={{color:SC.blue,fontWeight:700}}>{(p.twRatio*SR.MTOW*9.81/1000).toFixed(1)} kN</span> → hover power = <span style={{color:SC.blue,fontWeight:700}}>{SR.Phov} kW</span>.
+                      Round 1 gives <span style={{color:SC.muted,fontWeight:700}}>{SR.MTOW1} kg</span>. Dual-constraint converges to <span style={{color:SC.green,fontWeight:700}}>{SR.MTOW} kg</span> — a <span style={{color:SC.amber,fontWeight:700}}>{((SR.MTOW/SR.MTOW1-1)*100).toFixed(1)}%</span> increase driven by peak hover power sizing.
                     </div>
                   </div>
                 </div>
 
                 {/* Tolerance control */}
-                <div style={{background:C.panel,border:`1px solid ${"#22d3ee"}44`,borderRadius:8,padding:"14px 18px"}}>
-                  <div style={{fontSize:9,color:C.muted,fontFamily:"'DM Mono',monospace",letterSpacing:"0.12em",marginBottom:8}}>CONVERGENCE TOLERANCE CONTROL</div>
+                <div style={{background:SC.panel,border:`1px solid ${"#22d3ee"}44`,borderRadius:8,padding:"14px 18px"}}>
+                  <div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace",letterSpacing:"0.12em",marginBottom:8}}>CONVERGENCE TOLERANCE CONTROL</div>
                   <div style={{display:"flex",alignItems:"center",gap:20,flexWrap:"wrap"}}>
                     <div style={{flex:1,minWidth:220}}>
                       <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
-                        <span style={{fontSize:11,color:C.text}}>Tolerance ε = 10<sup>{p.convTolExp}</sup> = <span style={{color:"#22d3ee",fontWeight:700,fontFamily:"'DM Mono',monospace"}}>{R.tol.toExponential(0)}</span></span>
-                        <span style={{fontSize:10,color:C.muted,fontFamily:"'DM Mono',monospace"}}>Range: 10⁻¹ → 10⁻¹⁰</span>
+                        <span style={{fontSize:11,color:SC.text}}>Tolerance ε = 10<sup>{p.convTolExp}</sup> = <span style={{color:"#22d3ee",fontWeight:700,fontFamily:"'DM Mono',monospace"}}>{SR.tol.toExponential(0)}</span></span>
+                        <span style={{fontSize:10,color:SC.muted,fontFamily:"'DM Mono',monospace"}}>Range: 10⁻¹ → 10⁻¹⁰</span>
                       </div>
                       <input type="range" min={-10} max={-1} step={1} value={p.convTolExp}
                         onChange={e=>set("convTolExp")(+e.target.value)}
                         style={{width:"100%",accentColor:"#22d3ee",cursor:"pointer"}}/>
-                      <div style={{display:"flex",justifyContent:"space-between",fontSize:9,color:C.muted,marginTop:2}}>
+                      <div style={{display:"flex",justifyContent:"space-between",fontSize:9,color:SC.muted,marginTop:2}}>
                         <span>10⁻¹⁰ (tightest)</span><span>10⁻¹ (loosest)</span>
                       </div>
                     </div>
                     <div style={{display:"flex",gap:12}}>
-                      {[["R1 Iters",R.itersR1,"#22d3ee"],["R2 Iters",R.itersR2,R.r2Converged?C.amber:C.red],["Total",R.itersR1+R.itersR2,R.r2Converged?C.green:C.red]].map(([l,v,c])=>(
+                      {[["R1 Iters",SR.itersR1,"#22d3ee"],["R2 Iters",SR.itersR2,SR.r2Converged?SC.amber:SC.red],["Total",SR.itersR1+SR.itersR2,SR.r2Converged?SC.green:SC.red]].map(([l,v,c])=>(
                         <div key={l} style={{textAlign:"center",minWidth:60}}>
                           <div style={{fontSize:22,fontWeight:800,color:c,fontFamily:"'DM Mono',monospace",lineHeight:1}}>{v}</div>
-                          <div style={{fontSize:9,color:C.muted,marginTop:2}}>{l}</div>
+                          <div style={{fontSize:9,color:SC.muted,marginTop:2}}>{l}</div>
                         </div>
                       ))}
                     </div>
                   </div>
                 </div>
 
-                <Panel title={`MTOW Convergence History — Actual Run at ε = 10^${p.convTolExp} (${R.itersR2} R2 iters${R.r2Converged?"":", cap hit"})`} ht={280}>
+                <Panel title={`MTOW Convergence History — Actual Run at ε = 10^${p.convTolExp} (${SR.itersR2} R2 iters${SR.r2Converged?"":", cap hit"})`} ht={280}>
                   <ResponsiveContainer width="100%" height={230}>
-                    <LineChart data={R.convData} margin={{top:5,right:20,left:-10,bottom:0}}>
-                      <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
-                      <XAxis dataKey="iter" tick={{fontSize:11,fill:C.muted}} label={{value:"Iteration",position:"insideBottom",fontSize:12,fill:C.muted}}/>
-                      <YAxis tick={{fontSize:11,fill:C.muted}} label={{value:"MTOW (kg)",angle:-90,position:"insideLeft",fontSize:12,fill:C.muted}}/>
+                    <LineChart data={SR.convData} margin={{top:5,right:20,left:-10,bottom:0}}>
+                      <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
+                      <XAxis dataKey="iter" tick={{fontSize:11,fill:SC.muted}} label={{value:"Iteration",position:"insideBottom",fontSize:12,fill:SC.muted}}/>
+                      <YAxis tick={{fontSize:11,fill:SC.muted}} label={{value:"MTOW (kg)",angle:-90,position:"insideLeft",fontSize:12,fill:SC.muted}}/>
                       <Tooltip {...TTP}/>
-                      <ReferenceLine y={R.MTOW1} stroke={C.muted} strokeDasharray="4 3" label={{value:`R1: ${R.MTOW1} kg`,fill:C.muted,fontSize:10,position:"insideTopLeft"}}/>
-                      <Line type="monotone" dataKey="MTOW" stroke={C.amber} strokeWidth={2} dot={{r:3,fill:C.amber}} name="MTOW (kg)"/>
-                      <ReferenceLine y={R.MTOW} stroke={C.green} strokeDasharray="4 3" label={{value:`Converged: ${R.MTOW} kg`,fill:C.green,fontSize:11}}/>
+                      <ReferenceLine y={SR.MTOW1} stroke={SC.muted} strokeDasharray="4 3" label={{value:`R1: ${SR.MTOW1} kg`,fill:SC.muted,fontSize:10,position:"insideTopLeft"}}/>
+                      <Line type="monotone" dataKey="MTOW" stroke={SC.amber} strokeWidth={2} dot={{r:3,fill:SC.amber}} name="MTOW (kg)"/>
+                      <ReferenceLine y={SR.MTOW} stroke={SC.green} strokeDasharray="4 3" label={{value:`Converged: ${SR.MTOW} kg`,fill:SC.green,fontSize:11}}/>
                     </LineChart>
                   </ResponsiveContainer>
                 </Panel>
 
                 <Panel title="Energy Convergence History" ht={255}>
                   <ResponsiveContainer width="100%" height={205}>
-                    <LineChart data={R.convData.filter(d=>d.Energy!=null)} margin={{top:5,right:20,left:-10,bottom:0}}>
-                      <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
-                      <XAxis dataKey="iter" tick={{fontSize:11,fill:C.muted}} label={{value:"Iteration",position:"insideBottom",fontSize:12,fill:C.muted}}/>
-                      <YAxis tick={{fontSize:11,fill:C.muted}} label={{value:"Total Energy (kWh)",angle:-90,position:"insideLeft",fontSize:12,fill:C.muted}}/>
+                    <LineChart data={SR.convData.filter(d=>d.Energy!=null)} margin={{top:5,right:20,left:-10,bottom:0}}>
+                      <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
+                      <XAxis dataKey="iter" tick={{fontSize:11,fill:SC.muted}} label={{value:"Iteration",position:"insideBottom",fontSize:12,fill:SC.muted}}/>
+                      <YAxis tick={{fontSize:11,fill:SC.muted}} label={{value:"Total Energy (kWh)",angle:-90,position:"insideLeft",fontSize:12,fill:SC.muted}}/>
                       <Tooltip {...TTP}/>
-                      <Line type="monotone" dataKey="Energy" stroke={C.teal} strokeWidth={2} dot={{r:3,fill:C.teal}} name="Energy (kWh)"/>
-                      <ReferenceLine y={R.Etot} stroke={C.green} strokeDasharray="4 3" label={{value:"Converged",fill:C.green,fontSize:11}}/>
+                      <Line type="monotone" dataKey="Energy" stroke={SC.teal} strokeWidth={2} dot={{r:3,fill:SC.teal}} name="Energy (kWh)"/>
+                      <ReferenceLine y={SR.Etot} stroke={SC.green} strokeDasharray="4 3" label={{value:"Converged",fill:SC.green,fontSize:11}}/>
                     </LineChart>
                   </ResponsiveContainer>
                 </Panel>
 
                 {/* Residual log plot */}
-                <Panel title={`Residual Convergence — log₁₀(|ΔW₀|) per Iteration  [ε = ${R.tol.toExponential(0)} → log₁₀(ε) = ${p.convTolExp}]`} ht={270}>
-                  <div style={{fontSize:10,color:C.muted,marginBottom:4,paddingLeft:4}}>
+                <Panel title={`Residual Convergence — log₁₀(|ΔW₀|) per Iteration  [ε = ${SR.tol.toExponential(0)} → log₁₀(ε) = ${p.convTolExp}]`} ht={270}>
+                  <div style={{fontSize:10,color:SC.muted,marginBottom:4,paddingLeft:4}}>
                     Each bar shows log₁₀ of the MTOW change per iteration. Convergence when bar drops below the <span style={{color:"#22d3ee"}}>ε threshold line</span>.
                   </div>
                   <ResponsiveContainer width="100%" height={205}>
-                    <ComposedChart data={R.convData.filter(d=>d.logResidual!=null)} margin={{top:5,right:20,left:5,bottom:0}}>
-                      <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
-                      <XAxis dataKey="iter" tick={{fontSize:11,fill:C.muted}} label={{value:"Iteration",position:"insideBottom",fontSize:12,fill:C.muted}}/>
-                      <YAxis tick={{fontSize:11,fill:C.muted}} label={{value:"log₁₀(|ΔW₀| kg)",angle:-90,position:"insideLeft",fontSize:12,fill:C.muted}}/>
+                    <ComposedChart data={SR.convData.filter(d=>d.logResidual!=null)} margin={{top:5,right:20,left:5,bottom:0}}>
+                      <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
+                      <XAxis dataKey="iter" tick={{fontSize:11,fill:SC.muted}} label={{value:"Iteration",position:"insideBottom",fontSize:12,fill:SC.muted}}/>
+                      <YAxis tick={{fontSize:11,fill:SC.muted}} label={{value:"log₁₀(|ΔW₀| kg)",angle:-90,position:"insideLeft",fontSize:12,fill:SC.muted}}/>
                       <Tooltip {...TTP} formatter={(v,n)=>[`10^${v.toFixed(2)} kg`,n]}/>
                       <ReferenceLine y={p.convTolExp} stroke="#22d3ee" strokeDasharray="4 3"
                         label={{value:`ε = 10^${p.convTolExp}`,fill:"#22d3ee",fontSize:10,position:"right"}}/>
-                      <Bar dataKey="logResidual" fill={C.amber} opacity={0.8} name="log₁₀(|ΔW|)" radius={[2,2,0,0]}/>
+                      <Bar dataKey="logResidual" fill={SC.amber} opacity={0.8} name="log₁₀(|ΔW|)" radius={[2,2,0,0]}/>
                     </ComposedChart>
                   </ResponsiveContainer>
                 </Panel>
@@ -3376,25 +3376,25 @@ export default function App(){
                 <Panel title="Tolerance Sensitivity Sweep — All 10 Levels">
                   <table style={{width:"100%",borderCollapse:"collapse",fontSize:11,fontFamily:"'DM Mono',monospace"}}>
                     <thead>
-                      <tr style={{borderBottom:`1px solid ${C.border}`}}>
+                      <tr style={{borderBottom:`1px solid ${SC.border}`}}>
                         {["Tolerance","R1 Iters","R2 Iters","Total","MTOW (kg)","ΔM vs 1e-10"].map(hdr=>(
-                          <th key={hdr} style={{padding:"5px 8px",color:C.muted,fontWeight:600,textAlign:"right",fontSize:10}}>{hdr}</th>
+                          <th key={hdr} style={{padding:"5px 8px",color:SC.muted,fontWeight:600,textAlign:"right",fontSize:10}}>{hdr}</th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
-                      {R.tolSweepData.map((d,i)=>{
+                      {SR.tolSweepData.map((d,i)=>{
                         const isActive=d.exp===p.convTolExp;
-                        const ref=R.tolSweepData[R.tolSweepData.length-1].R2MTOW;
+                        const ref=SR.tolSweepData[SR.tolSweepData.length-1].R2MTOW;
                         const delta=Math.abs((d.R2MTOW-ref)*1000);
                         return(
-                          <tr key={i} style={{borderBottom:`1px solid ${C.border}22`,background:isActive?`${"#22d3ee"}18`:"transparent"}}>
-                            <td style={{padding:"5px 8px",color:isActive?"#22d3ee":C.text,fontWeight:isActive?700:400,textAlign:"right"}}>{d.tol}{isActive?" ◄":""}</td>
+                          <tr key={i} style={{borderBottom:`1px solid ${SC.border}22`,background:isActive?`${"#22d3ee"}18`:"transparent"}}>
+                            <td style={{padding:"5px 8px",color:isActive?"#22d3ee":SC.text,fontWeight:isActive?700:400,textAlign:"right"}}>{d.tol}{isActive?" ◄":""}</td>
                             <td style={{padding:"5px 8px",color:"#22d3ee",textAlign:"right"}}>{d.R1iters}</td>
-                            <td style={{padding:"5px 8px",color:C.amber,textAlign:"right"}}>{d.R2iters}</td>
-                            <td style={{padding:"5px 8px",color:isActive?C.green:C.text,fontWeight:isActive?700:400,textAlign:"right"}}>{d.totalIters}</td>
-                            <td style={{padding:"5px 8px",color:isActive?"#22d3ee":C.green,fontWeight:isActive?700:400,textAlign:"right"}}>{d.R2MTOW.toFixed(2)}</td>
-                            <td style={{padding:"5px 8px",color:delta<1?C.green:delta<100?C.amber:C.red,textAlign:"right"}}>{delta<0.01?"< 0.01":delta.toFixed(2)} g</td>
+                            <td style={{padding:"5px 8px",color:SC.amber,textAlign:"right"}}>{d.R2iters}</td>
+                            <td style={{padding:"5px 8px",color:isActive?SC.green:SC.text,fontWeight:isActive?700:400,textAlign:"right"}}>{d.totalIters}</td>
+                            <td style={{padding:"5px 8px",color:isActive?"#22d3ee":SC.green,fontWeight:isActive?700:400,textAlign:"right"}}>{d.R2MTOW.toFixed(2)}</td>
+                            <td style={{padding:"5px 8px",color:delta<1?SC.green:delta<100?SC.amber:SC.red,textAlign:"right"}}>{delta<0.01?"< 0.01":delta.toFixed(2)} g</td>
                           </tr>
                         );
                       })}
@@ -3404,29 +3404,29 @@ export default function App(){
 
                 {/* T/W vs MTOW Trade Chart */}
                 <Panel title={`T/W Ratio vs MTOW — Round 1 vs Round 2 at T/W = ${p.twRatio.toFixed(2)}`} ht={320}>
-                  <div style={{fontSize:10,color:C.muted,marginBottom:6,paddingLeft:4}}>
+                  <div style={{fontSize:10,color:SC.muted,marginBottom:6,paddingLeft:4}}>
                     Round 1 is flat (T/W doesn't affect energy-only sizing). Round 2 scales as T/W^1.5 — higher thrust margin → higher hover power → heavier battery → higher MTOW.
-                    Current T/W = <span style={{color:C.amber,fontWeight:700}}>{p.twRatio.toFixed(2)}</span> highlighted.
+                    Current T/W = <span style={{color:SC.amber,fontWeight:700}}>{p.twRatio.toFixed(2)}</span> highlighted.
                   </div>
                   <ResponsiveContainer width="100%" height={255}>
-                    <ComposedChart data={R.twSweepData} margin={{top:5,right:20,left:-10,bottom:20}}>
-                      <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
-                      <XAxis dataKey="tw" tick={{fontSize:11,fill:C.muted}}
-                        label={{value:"Installed T/W Ratio",position:"insideBottom",offset:-8,fontSize:12,fill:C.muted}}/>
-                      <YAxis tick={{fontSize:11,fill:C.muted}}
-                        label={{value:"MTOW (kg)",angle:-90,position:"insideLeft",fontSize:12,fill:C.muted}}
+                    <ComposedChart data={SR.twSweepData} margin={{top:5,right:20,left:-10,bottom:20}}>
+                      <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
+                      <XAxis dataKey="tw" tick={{fontSize:11,fill:SC.muted}}
+                        label={{value:"Installed T/W Ratio",position:"insideBottom",offset:-8,fontSize:12,fill:SC.muted}}/>
+                      <YAxis tick={{fontSize:11,fill:SC.muted}}
+                        label={{value:"MTOW (kg)",angle:-90,position:"insideLeft",fontSize:12,fill:SC.muted}}
                         domain={['auto','auto']}/>
                       <Tooltip {...TTP} formatter={(v,n)=>[`${v.toFixed(0)} kg`,n]}/>
-                      <Legend iconSize={9} wrapperStyle={{fontSize:12,color:C.muted,paddingTop:4}}/>
-                      <ReferenceLine x={+p.twRatio.toFixed(2)} stroke={C.amber} strokeWidth={2}
-                        label={{value:`Current T/W=${p.twRatio.toFixed(2)}`,fill:C.amber,fontSize:10,position:"insideTopRight"}}/>
-                      <Line type="monotone" dataKey="R1" stroke={C.muted} strokeWidth={2} strokeDasharray="6 3"
-                        dot={{r:3,fill:C.muted}} name="Round 1 – Energy Only"/>
-                      <Line type="monotone" dataKey="R2" stroke={C.green} strokeWidth={2.5}
+                      <Legend iconSize={9} wrapperStyle={{fontSize:12,color:SC.muted,paddingTop:4}}/>
+                      <ReferenceLine x={+p.twRatio.toFixed(2)} stroke={SC.amber} strokeWidth={2}
+                        label={{value:`Current T/W=${p.twRatio.toFixed(2)}`,fill:SC.amber,fontSize:10,position:"insideTopRight"}}/>
+                      <Line type="monotone" dataKey="R1" stroke={SC.muted} strokeWidth={2} strokeDasharray="6 3"
+                        dot={{r:3,fill:SC.muted}} name="Round 1 – Energy Only"/>
+                      <Line type="monotone" dataKey="R2" stroke={SC.green} strokeWidth={2.5}
                         dot={(props)=>{
                           const {cx,cy,payload}=props;
                           const isActive=Math.abs(payload.tw-p.twRatio)<0.01;
-                          return <circle key={cx} cx={cx} cy={cy} r={isActive?7:3} fill={isActive?C.amber:C.green} stroke={isActive?C.amber:"none"}/>;
+                          return <circle key={cx} cx={cx} cy={cy} r={isActive?7:3} fill={isActive?SC.amber:SC.green} stroke={isActive?SC.amber:"none"}/>;
                         }}
                         name="Round 2 – Dual-Constraint"/>
                     </ComposedChart>
@@ -3437,14 +3437,14 @@ export default function App(){
                 <Panel title="T/W Sensitivity Table — Round 1 vs Round 2 MTOW">
                   <table style={{width:"100%",borderCollapse:"collapse",fontSize:11,fontFamily:"'DM Mono',monospace"}}>
                     <thead>
-                      <tr style={{borderBottom:`1px solid ${C.border}`}}>
+                      <tr style={{borderBottom:`1px solid ${SC.border}`}}>
                         {["T/W","R1 MTOW (kg)","R2 MTOW (kg)","ΔM (kg)","Δ% vs R1","Phov at R2 (kW)"].map(hdr=>(
-                          <th key={hdr} style={{padding:"5px 8px",color:C.muted,fontWeight:600,textAlign:"right",fontSize:10}}>{hdr}</th>
+                          <th key={hdr} style={{padding:"5px 8px",color:SC.muted,fontWeight:600,textAlign:"right",fontSize:10}}>{hdr}</th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
-                      {R.twSweepData.map((d,i)=>{
+                      {SR.twSweepData.map((d,i)=>{
                         const isActive=Math.abs(d.tw-p.twRatio)<0.01;
                         const delta=d.R2-d.R1;
                         const pct=((d.R2/d.R1-1)*100);
@@ -3452,13 +3452,13 @@ export default function App(){
                         const DL2=(W2*d.tw)/(Math.PI*Math.pow(p.propDiam/2,2)*p.nPropHover);
                         const phov2=+(W2*d.tw/p.etaHov*Math.sqrt(DL2/(2*1.225))/1000).toFixed(1);
                         return(
-                          <tr key={i} style={{borderBottom:`1px solid ${C.border}22`,background:isActive?`${C.amber}18`:"transparent"}}>
-                            <td style={{padding:"5px 8px",color:isActive?C.amber:C.text,fontWeight:isActive?700:400,textAlign:"right"}}>{d.tw.toFixed(2)}{isActive?" ◄ current":""}</td>
-                            <td style={{padding:"5px 8px",color:C.muted,textAlign:"right"}}>{d.R1.toFixed(0)}</td>
-                            <td style={{padding:"5px 8px",color:isActive?C.amber:C.green,fontWeight:isActive?700:400,textAlign:"right"}}>{d.R2.toFixed(0)}</td>
-                            <td style={{padding:"5px 8px",color:C.amber,textAlign:"right"}}>+{delta.toFixed(0)}</td>
-                            <td style={{padding:"5px 8px",color:pct>20?C.red:pct>10?C.amber:C.green,textAlign:"right"}}>+{pct.toFixed(1)}%</td>
-                            <td style={{padding:"5px 8px",color:C.blue,textAlign:"right"}}>{phov2}</td>
+                          <tr key={i} style={{borderBottom:`1px solid ${SC.border}22`,background:isActive?`${SC.amber}18`:"transparent"}}>
+                            <td style={{padding:"5px 8px",color:isActive?SC.amber:SC.text,fontWeight:isActive?700:400,textAlign:"right"}}>{d.tw.toFixed(2)}{isActive?" ◄ current":""}</td>
+                            <td style={{padding:"5px 8px",color:SC.muted,textAlign:"right"}}>{d.R1.toFixed(0)}</td>
+                            <td style={{padding:"5px 8px",color:isActive?SC.amber:SC.green,fontWeight:isActive?700:400,textAlign:"right"}}>{d.R2.toFixed(0)}</td>
+                            <td style={{padding:"5px 8px",color:SC.amber,textAlign:"right"}}>+{delta.toFixed(0)}</td>
+                            <td style={{padding:"5px 8px",color:pct>20?SC.red:pct>10?SC.amber:SC.green,textAlign:"right"}}>+{pct.toFixed(1)}%</td>
+                            <td style={{padding:"5px 8px",color:SC.blue,textAlign:"right"}}>{phov2}</td>
                           </tr>
                         );
                       })}
@@ -3468,21 +3468,21 @@ export default function App(){
 
                 <Panel title="Final Converged Design Summary — All Sections">
                   <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6}}>
-                    {[["MTOW",`${R.MTOW} kg`,C.amber],["Empty Wt",`${R.Wempty} kg`,C.amber],
-                      ["Battery",`${R.Wbat} kg`,C.amber],["Payload",`${p.payload} kg`,C.amber],
-                      ["Hover Pwr",`${R.Phov} kW`,C.blue],["Climb Pwr",`${R.Pcl} kW`,C.blue],
-                      ["Cruise Pwr",`${R.Pcr} kW`,C.blue],["Total E",`${R.Etot} kWh`,C.teal],
-                      ["Pack E",`${R.PackkWh} kWh`,C.teal],["Wing Area",`${R.Swing} m²`,C.green],
-                      ["Wing Span",`${R.bWing} m`,C.green],["MAC",`${R.MAC} m`,C.green],
-                      ["Actual L/D",R.LDact,C.green],["Airfoil",R.selAF.name,C.green],
-                      ["Vstall",`${R.Vstall} m/s`,"#8b5cf6"],["Va",`${R.VA} m/s`,"#8b5cf6"],
-                      ["Rotor Diam",`${R.Drotor} m`,"#f97316"],["Tip Mach",R.TipMach,"#f97316"],
-                      ["T/W hover",R.TW_hover.toFixed(3),C.amber],["T/W cruise",R.TW_cruise.toFixed(3),C.teal],
-                      ["SM",`${(R.SM*100).toFixed(1)}%`,R.SM>0.05&&R.SM<0.25?C.green:C.red],
-                      ["Mach",R.Mach,R.Mach<0.45?C.green:C.amber],
+                    {[["MTOW",`${SR.MTOW} kg`,SC.amber],["Empty Wt",`${SR.Wempty} kg`,SC.amber],
+                      ["Battery",`${SR.Wbat} kg`,SC.amber],["Payload",`${p.payload} kg`,SC.amber],
+                      ["Hover Pwr",`${SR.Phov} kW`,SC.blue],["Climb Pwr",`${SR.Pcl} kW`,SC.blue],
+                      ["Cruise Pwr",`${SR.Pcr} kW`,SC.blue],["Total E",`${SR.Etot} kWh`,SC.teal],
+                      ["Pack E",`${SR.PackkWh} kWh`,SC.teal],["Wing Area",`${SR.Swing} m²`,SC.green],
+                      ["Wing Span",`${SR.bWing} m`,SC.green],["MAC",`${SR.MAC} m`,SC.green],
+                      ["Actual L/D",SR.LDact,SC.green],["Airfoil",SR.selAF.name,SC.green],
+                      ["Vstall",`${SR.Vstall} m/s`,"#8b5cf6"],["Va",`${SR.VA} m/s`,"#8b5cf6"],
+                      ["Rotor Diam",`${SR.Drotor} m`,"#f97316"],["Tip Mach",SR.TipMach,"#f97316"],
+                      ["T/W hover",SR.TW_hover.toFixed(3),SC.amber],["T/W cruise",SR.TW_cruise.toFixed(3),SC.teal],
+                      ["SM",`${(SR.SM*100).toFixed(1)}%`,SR.SM>0.05&&SR.SM<0.25?SC.green:SC.red],
+                      ["Mach",SR.Mach,SR.Mach<0.45?SC.green:SC.amber],
                     ].map(([k,v,col],i)=>(
-                      <div key={i} style={{background:C.bg,borderRadius:4,padding:"6px 8px",borderLeft:`2px solid ${col}44`}}>
-                        <div style={{fontSize:7,color:C.muted,fontFamily:"'DM Mono',monospace",marginBottom:1}}>{k}</div>
+                      <div key={i} style={{background:SC.bg,borderRadius:4,padding:"6px 8px",borderLeft:`2px solid ${col}44`}}>
+                        <div style={{fontSize:7,color:SC.muted,fontFamily:"'DM Mono',monospace",marginBottom:1}}>{k}</div>
                         <div style={{fontSize:10,color:col,fontFamily:"'DM Mono',monospace",fontWeight:700}}>{v}</div>
                       </div>
                     ))}
@@ -3496,13 +3496,13 @@ export default function App(){
               <div style={{display:"flex",flexDirection:"column",gap:12}}>
 
                 {/* Header */}
-                <div style={{background:C.panel,
+                <div style={{background:SC.panel,
                   border:`1px solid #7c3aed44`,borderRadius:10,padding:"16px 20px"}}>
-                  <div style={{fontSize:9,color:C.muted,fontFamily:"'DM Mono',monospace",letterSpacing:"0.18em",marginBottom:6}}>UNCERTAINTY QUANTIFICATION — MONTE CARLO METHOD</div>
-                  <div style={{fontSize:18,fontWeight:800,color:C.text,letterSpacing:"-0.02em",marginBottom:6}}>
+                  <div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace",letterSpacing:"0.18em",marginBottom:6}}>UNCERTAINTY QUANTIFICATION — MONTE CARLO METHOD</div>
+                  <div style={{fontSize:18,fontWeight:800,color:SC.text,letterSpacing:"-0.02em",marginBottom:6}}>
                     <span style={{color:"#a78bfa"}}>Monte Carlo</span> Uncertainty Analysis
                   </div>
-                  <div style={{fontSize:11,color:C.muted,lineHeight:1.7,maxWidth:700}}>
+                  <div style={{fontSize:11,color:SC.muted,lineHeight:1.7,maxWidth:700}}>
                     Runs <span style={{color:"#a78bfa",fontWeight:700}}>{mcN.toLocaleString()} simulations</span>, each with parameters randomly sampled from their uncertainty distributions.
                     Produces probability distributions of MTOW, Energy, Hover Power, and Static Margin —
                     giving confidence intervals instead of single-point estimates.
@@ -3512,9 +3512,9 @@ export default function App(){
 
                 {/* Parameter ranges config */}
                 <Panel title="Uncertain Parameter Ranges — Click to Edit">
-                  <div style={{fontSize:10,color:C.muted,fontFamily:"'DM Mono',monospace",marginBottom:12,lineHeight:1.6}}>
+                  <div style={{fontSize:10,color:SC.muted,fontFamily:"'DM Mono',monospace",marginBottom:12,lineHeight:1.6}}>
                     Each parameter is sampled from a <span style={{color:"#a78bfa"}}>Normal distribution</span> (μ = midpoint, σ = range/6 so ±3σ covers full range) or
-                    <span style={{color:C.teal}}> Uniform distribution</span>.
+                    <span style={{color:SC.teal}}> Uniform distribution</span>.
                     Ranges are based on peer-reviewed eVTOL uncertainty literature.
                   </div>
                   <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
@@ -3530,22 +3530,22 @@ export default function App(){
                     ].map(({key,label,unit,note})=>{
                       const r=mcRanges[key];
                       return(
-                        <div key={key} style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,padding:"10px 12px"}}>
+                        <div key={key} style={{background:SC.bg,border:`1px solid ${SC.border}`,borderRadius:8,padding:"10px 12px"}}>
                           <div style={{fontSize:10,fontWeight:700,color:"#a78bfa",fontFamily:"'DM Mono',monospace",marginBottom:6}}>{label}</div>
                           <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:4}}>
                             <div style={{flex:1}}>
-                              <div style={{fontSize:8,color:C.muted,fontFamily:"'DM Mono',monospace",marginBottom:2}}>MIN</div>
+                              <div style={{fontSize:8,color:SC.muted,fontFamily:"'DM Mono',monospace",marginBottom:2}}>MIN</div>
                               <input type="number" value={r.min} step={key==="payload"?5:key==="sedCell"?5:key==="AR"?0.5:0.01}
                                 onChange={e=>setMcRanges(prev=>({...prev,[key]:{...prev[key],min:parseFloat(e.target.value)||prev[key].min}}))}
-                                style={{width:"100%",boxSizing:"border-box",background:C.panel,border:`1px solid ${C.border}`,
-                                  borderRadius:4,color:C.text,fontSize:11,padding:"4px 6px",fontFamily:"'DM Mono',monospace",outline:"none"}}/>
+                                style={{width:"100%",boxSizing:"border-box",background:SC.panel,border:`1px solid ${SC.border}`,
+                                  borderRadius:4,color:SC.text,fontSize:11,padding:"4px 6px",fontFamily:"'DM Mono',monospace",outline:"none"}}/>
                             </div>
                             <div style={{flex:1}}>
-                              <div style={{fontSize:8,color:C.muted,fontFamily:"'DM Mono',monospace",marginBottom:2}}>MAX</div>
+                              <div style={{fontSize:8,color:SC.muted,fontFamily:"'DM Mono',monospace",marginBottom:2}}>MAX</div>
                               <input type="number" value={r.max} step={key==="payload"?5:key==="sedCell"?5:key==="AR"?0.5:0.01}
                                 onChange={e=>setMcRanges(prev=>({...prev,[key]:{...prev[key],max:parseFloat(e.target.value)||prev[key].max}}))}
-                                style={{width:"100%",boxSizing:"border-box",background:C.panel,border:`1px solid ${C.border}`,
-                                  borderRadius:4,color:C.text,fontSize:11,padding:"4px 6px",fontFamily:"'DM Mono',monospace",outline:"none"}}/>
+                                style={{width:"100%",boxSizing:"border-box",background:SC.panel,border:`1px solid ${SC.border}`,
+                                  borderRadius:4,color:SC.text,fontSize:11,padding:"4px 6px",fontFamily:"'DM Mono',monospace",outline:"none"}}/>
                             </div>
                           </div>
                           <div style={{display:"flex",gap:4,marginBottom:4}}>
@@ -3553,22 +3553,22 @@ export default function App(){
                               <button key={d} onClick={()=>setMcRanges(prev=>({...prev,[key]:{...prev[key],dist:d}}))} type="button"
                                 style={{flex:1,padding:"3px 0",fontSize:8,fontFamily:"'DM Mono',monospace",cursor:"pointer",
                                   background:r.dist===d?(d==="normal"?"#4c1d95":"#134e4a"):"transparent",
-                                  border:`1px solid ${r.dist===d?(d==="normal"?"#7c3aed":C.teal):C.border}`,
-                                  color:r.dist===d?(d==="normal"?"#c4b5fd":C.teal):C.muted,borderRadius:3}}>
+                                  border:`1px solid ${r.dist===d?(d==="normal"?"#7c3aed":SC.teal):SC.border}`,
+                                  color:r.dist===d?(d==="normal"?"#c4b5fd":SC.teal):SC.muted,borderRadius:3}}>
                                 {d==="normal"?"𝒩 Normal":"⊡ Uniform"}
                               </button>
                             ))}
                           </div>
-                          <div style={{fontSize:8,color:C.dim,fontFamily:"'DM Mono',monospace"}}>{note}</div>
-                          {unit&&<div style={{fontSize:8,color:C.amber,fontFamily:"'DM Mono',monospace"}}>{unit}</div>}
+                          <div style={{fontSize:8,color:SC.dim,fontFamily:"'DM Mono',monospace"}}>{note}</div>
+                          {unit&&<div style={{fontSize:8,color:SC.amber,fontFamily:"'DM Mono',monospace"}}>{unit}</div>}
                           {/* mini range bar */}
-                          <div style={{marginTop:6,height:4,background:C.border,borderRadius:2,position:"relative"}}>
+                          <div style={{marginTop:6,height:4,background:SC.border,borderRadius:2,position:"relative"}}>
                             <div style={{position:"absolute",left:"10%",right:"10%",top:0,height:"100%",
-                              background:r.dist==="normal"?"#7c3aed":C.teal,borderRadius:2,opacity:0.6}}/>
+                              background:r.dist==="normal"?"#7c3aed":SC.teal,borderRadius:2,opacity:0.6}}/>
                             <div style={{position:"absolute",left:"50%",top:-3,width:2,height:10,
-                              background:C.amber,transform:"translateX(-50%)"}}/>
+                              background:SC.amber,transform:"translateX(-50%)"}}/>
                           </div>
-                          <div style={{display:"flex",justifyContent:"space-between",fontSize:8,color:C.dim,fontFamily:"'DM Mono',monospace",marginTop:2}}>
+                          <div style={{display:"flex",justifyContent:"space-between",fontSize:8,color:SC.dim,fontFamily:"'DM Mono',monospace",marginTop:2}}>
                             <span>{r.min}</span><span>μ={(+((r.min+r.max)/2).toFixed(2))}</span><span>{r.max}</span>
                           </div>
                         </div>
@@ -3578,27 +3578,27 @@ export default function App(){
 
                   {/* N slider + run button */}
                   <div style={{display:"flex",alignItems:"center",gap:16,marginTop:16,padding:"12px 16px",
-                    background:C.bg,borderRadius:8,border:`1px solid ${C.border}`}}>
+                    background:SC.bg,borderRadius:8,border:`1px solid ${SC.border}`}}>
                     <div style={{flex:1}}>
                       <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
-                        <span style={{fontSize:11,color:C.text,fontFamily:"'DM Mono',monospace"}}>
+                        <span style={{fontSize:11,color:SC.text,fontFamily:"'DM Mono',monospace"}}>
                           Simulations: <span style={{color:"#a78bfa",fontWeight:700}}>{mcN.toLocaleString()}</span>
                         </span>
-                        <span style={{fontSize:10,color:C.muted,fontFamily:"'DM Mono',monospace"}}>
+                        <span style={{fontSize:10,color:SC.muted,fontFamily:"'DM Mono',monospace"}}>
                           ~{(mcN*0.06).toFixed(0)}ms runtime
                         </span>
                       </div>
                       <input type="range" min={100} max={5000} step={100} value={mcN}
                         onChange={e=>setMcN(+e.target.value)}
                         style={{width:"100%",accentColor:"#7c3aed",cursor:"pointer"}}/>
-                      <div style={{display:"flex",justifyContent:"space-between",fontSize:9,color:C.muted,marginTop:2}}>
+                      <div style={{display:"flex",justifyContent:"space-between",fontSize:9,color:SC.muted,marginTop:2}}>
                         <span>100 (fast)</span><span>5000 (precise)</span>
                       </div>
                     </div>
                     <button onClick={runMonteCarlo} disabled={mcRunning} type="button"
                       style={{padding:"12px 28px",
                         background:mcRunning?"transparent":`linear-gradient(135deg,#4c1d95,#6d28d9)`,
-                        border:`2px solid #7c3aed`,borderRadius:8,color:mcRunning?C.muted:"#e9d5ff",
+                        border:`2px solid #7c3aed`,borderRadius:8,color:mcRunning?SC.muted:"#e9d5ff",
                         fontSize:13,fontWeight:800,cursor:mcRunning?"not-allowed":"pointer",
                         fontFamily:"'DM Mono',monospace",letterSpacing:"0.05em",
                         boxShadow:mcRunning?"none":"0 0 20px #7c3aed44",
@@ -3610,17 +3610,17 @@ export default function App(){
 
                 {/* Results */}
                 {!mcResults&&!mcRunning&&(
-                  <div style={{textAlign:"center",padding:"48px 0",color:C.muted,fontFamily:"'DM Mono',monospace"}}>
+                  <div style={{textAlign:"center",padding:"48px 0",color:SC.muted,fontFamily:"'DM Mono',monospace"}}>
                     <div style={{fontSize:48,marginBottom:16}}>🎲</div>
-                    <div style={{fontSize:14,fontWeight:600,color:C.text,marginBottom:8}}>No simulation run yet</div>
-                    <div style={{fontSize:12,color:C.muted}}>Configure ranges above and click <span style={{color:"#a78bfa"}}>Run Monte Carlo</span></div>
+                    <div style={{fontSize:14,fontWeight:600,color:SC.text,marginBottom:8}}>No simulation run yet</div>
+                    <div style={{fontSize:12,color:SC.muted}}>Configure ranges above and click <span style={{color:"#a78bfa"}}>Run Monte Carlo</span></div>
                   </div>
                 )}
                 {mcRunning&&(
                   <div style={{textAlign:"center",padding:"48px 0",color:"#a78bfa",fontFamily:"'DM Mono',monospace"}}>
                     <div style={{fontSize:36,marginBottom:12,animation:"spin 1s linear infinite",display:"inline-block"}}>⟳</div>
                     <div style={{fontSize:14,fontWeight:700}}>Running {mcN.toLocaleString()} simulations...</div>
-                    <div style={{fontSize:11,color:C.muted,marginTop:6}}>Each calling the full eVTOL physics engine</div>
+                    <div style={{fontSize:11,color:SC.muted,marginTop:6}}>Each calling the full eVTOL physics engine</div>
                   </div>
                 )}
 
@@ -3629,51 +3629,51 @@ export default function App(){
                     {/* Summary KPIs */}
                     <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
                       <KPI label="Simulations Run" value={mcResults.N.toLocaleString()} unit="" color={"#a78bfa"} sub={`${mcResults.failCount} failed/invalid`}/>
-                      <KPI label="Feasible Designs" value={mcResults.feasRate+"%"} unit="" color={+mcResults.feasRate>70?C.green:+mcResults.feasRate>40?C.amber:C.red} sub="pass all checks"/>
-                      <KPI label="Mean MTOW" value={mcResults.MTOW.stats.mean.toFixed(0)} unit="kg" color={C.amber} sub={`σ = ${mcResults.MTOW.stats.std.toFixed(0)} kg`}/>
-                      <KPI label="P95 MTOW" value={mcResults.MTOW.stats.p95.toFixed(0)} unit="kg" color={C.red} sub="95% of designs below"/>
+                      <KPI label="Feasible Designs" value={mcResults.feasRate+"%"} unit="" color={+mcResults.feasRate>70?SC.green:+mcResults.feasRate>40?SC.amber:SC.red} sub="pass all checks"/>
+                      <KPI label="Mean MTOW" value={mcResults.MTOW.stats.mean.toFixed(0)} unit="kg" color={SC.amber} sub={`σ = ${mcResults.MTOW.stats.std.toFixed(0)} kg`}/>
+                      <KPI label="P95 MTOW" value={mcResults.MTOW.stats.p95.toFixed(0)} unit="kg" color={SC.red} sub="95% of designs below"/>
                     </div>
                     <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
-                      <KPI label="P5 MTOW (best)" value={mcResults.MTOW.stats.p5.toFixed(0)} unit="kg" color={C.green} sub="5th percentile"/>
-                      <KPI label="MTOW Range" value={`${mcResults.MTOW.stats.min.toFixed(0)}–${mcResults.MTOW.stats.max.toFixed(0)}`} unit="kg" color={C.muted}/>
-                      <KPI label="Mean Energy" value={mcResults.Etot.stats.mean.toFixed(2)} unit="kWh" color={C.teal} sub={`σ = ${mcResults.Etot.stats.std.toFixed(2)}`}/>
-                      <KPI label="Mean Hover Pwr" value={mcResults.Phov.stats.mean.toFixed(1)} unit="kW" color={C.blue} sub={`σ = ${mcResults.Phov.stats.std.toFixed(1)}`}/>
+                      <KPI label="P5 MTOW (best)" value={mcResults.MTOW.stats.p5.toFixed(0)} unit="kg" color={SC.green} sub="5th percentile"/>
+                      <KPI label="MTOW Range" value={`${mcResults.MTOW.stats.min.toFixed(0)}–${mcResults.MTOW.stats.max.toFixed(0)}`} unit="kg" color={SC.muted}/>
+                      <KPI label="Mean Energy" value={mcResults.Etot.stats.mean.toFixed(2)} unit="kWh" color={SC.teal} sub={`σ = ${mcResults.Etot.stats.std.toFixed(2)}`}/>
+                      <KPI label="Mean Hover Pwr" value={mcResults.Phov.stats.mean.toFixed(1)} unit="kW" color={SC.blue} sub={`σ = ${mcResults.Phov.stats.std.toFixed(1)}`}/>
                     </div>
 
                     {/* MTOW Probability Distribution */}
                     <Panel title={`MTOW Probability Distribution — ${mcResults.N.toLocaleString()} Monte Carlo Samples`} ht={320}>
-                      <div style={{fontSize:10,color:C.muted,marginBottom:6,paddingLeft:4,fontFamily:"'DM Mono',monospace"}}>
+                      <div style={{fontSize:10,color:SC.muted,marginBottom:6,paddingLeft:4,fontFamily:"'DM Mono',monospace"}}>
                         Each bar = count of designs in that MTOW bin. Bell shape confirms normal convergence.
-                        <span style={{color:C.amber}}> Nominal MTOW = {R.MTOW} kg</span> (deterministic).
+                        <span style={{color:SC.amber}}> Nominal MTOW = {SR.MTOW} kg</span> (deterministic).
                         <span style={{color:"#a78bfa"}}> Mean MC = {mcResults.MTOW.stats.mean.toFixed(0)} kg</span>.
                       </div>
                       <ResponsiveContainer width="100%" height={255}>
                         <ComposedChart data={mcResults.MTOW.hist} margin={{top:5,right:20,left:5,bottom:20}}>
-                          <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
-                          <XAxis dataKey="x" tick={{fontSize:9,fill:C.muted}}
-                            label={{value:"MTOW (kg)",position:"insideBottom",offset:-6,fontSize:11,fill:C.muted}}/>
-                          <YAxis yAxisId="left" tick={{fontSize:9,fill:C.muted}}
-                            label={{value:"Count",angle:-90,position:"insideLeft",fontSize:11,fill:C.muted}}/>
+                          <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
+                          <XAxis dataKey="x" tick={{fontSize:9,fill:SC.muted}}
+                            label={{value:"MTOW (kg)",position:"insideBottom",offset:-6,fontSize:11,fill:SC.muted}}/>
+                          <YAxis yAxisId="left" tick={{fontSize:9,fill:SC.muted}}
+                            label={{value:"Count",angle:-90,position:"insideLeft",fontSize:11,fill:SC.muted}}/>
                           <YAxis yAxisId="right" orientation="right" tick={{fontSize:9,fill:"#a78bfa"}}
                             label={{value:"% of runs",angle:90,position:"insideRight",fontSize:11,fill:"#a78bfa"}}/>
                           <Tooltip {...TTP} formatter={(v,n)=>n==="Count"?[v,n]:[`${v}%`,n]}/>
-                          <Legend iconSize={9} wrapperStyle={{fontSize:11,color:C.muted}}/>
+                          <Legend iconSize={9} wrapperStyle={{fontSize:11,color:SC.muted}}/>
                           <Bar yAxisId="left" dataKey="count" fill="#7c3aed" opacity={0.8} name="Count" radius={[2,2,0,0]}/>
-                          <Line yAxisId="right" type="monotone" dataKey="pct" stroke={C.amber} strokeWidth={2} dot={false} name="% of runs"/>
-                          <ReferenceLine yAxisId="left" x={mcResults.MTOW.stats.mean.toFixed(1)} stroke={C.amber} strokeWidth={2} strokeDasharray="6 3"
-                            label={{value:`μ=${mcResults.MTOW.stats.mean.toFixed(0)}`,fill:C.amber,fontSize:10,position:"top"}}/>
-                          <ReferenceLine yAxisId="left" x={mcResults.MTOW.stats.p95.toFixed(1)} stroke={C.red} strokeWidth={2} strokeDasharray="4 2"
-                            label={{value:`P95=${mcResults.MTOW.stats.p95.toFixed(0)}`,fill:C.red,fontSize:10,position:"top"}}/>
-                          <ReferenceLine yAxisId="left" x={R.MTOW.toFixed(1)} stroke={C.green} strokeWidth={2} strokeDasharray="4 2"
-                            label={{value:`Nominal=${R.MTOW}`,fill:C.green,fontSize:10,position:"top"}}/>
+                          <Line yAxisId="right" type="monotone" dataKey="pct" stroke={SC.amber} strokeWidth={2} dot={false} name="% of runs"/>
+                          <ReferenceLine yAxisId="left" x={mcResults.MTOW.stats.mean.toFixed(1)} stroke={SC.amber} strokeWidth={2} strokeDasharray="6 3"
+                            label={{value:`μ=${mcResults.MTOW.stats.mean.toFixed(0)}`,fill:SC.amber,fontSize:10,position:"top"}}/>
+                          <ReferenceLine yAxisId="left" x={mcResults.MTOW.stats.p95.toFixed(1)} stroke={SC.red} strokeWidth={2} strokeDasharray="4 2"
+                            label={{value:`P95=${mcResults.MTOW.stats.p95.toFixed(0)}`,fill:SC.red,fontSize:10,position:"top"}}/>
+                          <ReferenceLine yAxisId="left" x={SR.MTOW.toFixed(1)} stroke={SC.green} strokeWidth={2} strokeDasharray="4 2"
+                            label={{value:`Nominal=${SR.MTOW}`,fill:SC.green,fontSize:10,position:"top"}}/>
                         </ComposedChart>
                       </ResponsiveContainer>
                     </Panel>
 
                     {/* CDF */}
                     <Panel title="Cumulative Distribution Function (CDF) — MTOW" ht={290}>
-                      <div style={{fontSize:10,color:C.muted,marginBottom:6,paddingLeft:4,fontFamily:"'DM Mono',monospace"}}>
-                        Read as: <span style={{color:C.green}}>P(MTOW ≤ x)</span>. The <span style={{color:C.amber}}>P90 line</span> shows that 90% of all possible designs have MTOW below this value.
+                      <div style={{fontSize:10,color:SC.muted,marginBottom:6,paddingLeft:4,fontFamily:"'DM Mono',monospace"}}>
+                        Read as: <span style={{color:SC.green}}>P(MTOW ≤ x)</span>. The <span style={{color:SC.amber}}>P90 line</span> shows that 90% of all possible designs have MTOW below this value.
                         This is the key output for design margin decisions.
                       </div>
                       <ResponsiveContainer width="100%" height={230}>
@@ -3682,18 +3682,18 @@ export default function App(){
                             <stop offset="5%" stopColor="#7c3aed" stopOpacity={0.4}/>
                             <stop offset="95%" stopColor="#7c3aed" stopOpacity={0.02}/>
                           </linearGradient></defs>
-                          <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
-                          <XAxis dataKey="x" tick={{fontSize:9,fill:C.muted}}
-                            label={{value:"MTOW (kg)",position:"insideBottom",offset:-6,fontSize:11,fill:C.muted}}/>
-                          <YAxis domain={[0,100]} tick={{fontSize:9,fill:C.muted}}
-                            label={{value:"Probability (%)",angle:-90,position:"insideLeft",fontSize:11,fill:C.muted}}/>
+                          <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
+                          <XAxis dataKey="x" tick={{fontSize:9,fill:SC.muted}}
+                            label={{value:"MTOW (kg)",position:"insideBottom",offset:-6,fontSize:11,fill:SC.muted}}/>
+                          <YAxis domain={[0,100]} tick={{fontSize:9,fill:SC.muted}}
+                            label={{value:"Probability (%)",angle:-90,position:"insideLeft",fontSize:11,fill:SC.muted}}/>
                           <Tooltip {...TTP} formatter={(v,n)=>[`${v}%`,"P(MTOW ≤ x)"]}/>
                           <Area type="monotone" dataKey="cdf" stroke="#7c3aed" strokeWidth={2.5} fill="url(#cdfg)" dot={false} name="CDF"/>
-                          <ReferenceLine y={50}  stroke={C.muted}   strokeDasharray="4 2" label={{value:"P50",fill:C.muted,fontSize:9,position:"right"}}/>
-                          <ReferenceLine y={90}  stroke={C.amber}   strokeDasharray="4 2" label={{value:"P90",fill:C.amber,fontSize:9,position:"right"}}/>
-                          <ReferenceLine y={95}  stroke={C.red}     strokeDasharray="4 2" label={{value:"P95",fill:C.red,fontSize:9,position:"right"}}/>
-                          <ReferenceLine x={R.MTOW} stroke={C.green} strokeDasharray="4 2"
-                            label={{value:`Nominal ${R.MTOW}kg`,fill:C.green,fontSize:9,position:"top"}}/>
+                          <ReferenceLine y={50}  stroke={SC.muted}   strokeDasharray="4 2" label={{value:"P50",fill:SC.muted,fontSize:9,position:"right"}}/>
+                          <ReferenceLine y={90}  stroke={SC.amber}   strokeDasharray="4 2" label={{value:"P90",fill:SC.amber,fontSize:9,position:"right"}}/>
+                          <ReferenceLine y={95}  stroke={SC.red}     strokeDasharray="4 2" label={{value:"P95",fill:SC.red,fontSize:9,position:"right"}}/>
+                          <ReferenceLine x={SR.MTOW} stroke={SC.green} strokeDasharray="4 2"
+                            label={{value:`Nominal ${SR.MTOW}kg`,fill:SC.green,fontSize:9,position:"top"}}/>
                         </AreaChart>
                       </ResponsiveContainer>
                     </Panel>
@@ -3703,62 +3703,62 @@ export default function App(){
                       <Panel title="Total Energy Distribution (kWh)" ht={240}>
                         <ResponsiveContainer width="100%" height={195}>
                           <BarChart data={mcResults.Etot.hist} margin={{top:5,right:10,left:-10,bottom:16}}>
-                            <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
-                            <XAxis dataKey="x" tick={{fontSize:9,fill:C.muted}}
-                              label={{value:"Energy (kWh)",position:"insideBottom",offset:-6,fontSize:10,fill:C.muted}}/>
-                            <YAxis tick={{fontSize:9,fill:C.muted}}/>
+                            <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
+                            <XAxis dataKey="x" tick={{fontSize:9,fill:SC.muted}}
+                              label={{value:"Energy (kWh)",position:"insideBottom",offset:-6,fontSize:10,fill:SC.muted}}/>
+                            <YAxis tick={{fontSize:9,fill:SC.muted}}/>
                             <Tooltip {...TTP}/>
-                            <Bar dataKey="count" fill={C.teal} opacity={0.8} radius={[2,2,0,0]}/>
-                            <ReferenceLine x={mcResults.Etot.stats.mean.toFixed(2)} stroke={C.amber} strokeDasharray="4 2"
-                              label={{value:`μ=${mcResults.Etot.stats.mean.toFixed(1)}`,fill:C.amber,fontSize:9,position:"top"}}/>
+                            <Bar dataKey="count" fill={SC.teal} opacity={0.8} radius={[2,2,0,0]}/>
+                            <ReferenceLine x={mcResults.Etot.stats.mean.toFixed(2)} stroke={SC.amber} strokeDasharray="4 2"
+                              label={{value:`μ=${mcResults.Etot.stats.mean.toFixed(1)}`,fill:SC.amber,fontSize:9,position:"top"}}/>
                           </BarChart>
                         </ResponsiveContainer>
                       </Panel>
                       <Panel title="Static Margin Distribution (% MAC)" ht={240}>
                         <ResponsiveContainer width="100%" height={195}>
                           <BarChart data={mcResults.SM.hist} margin={{top:5,right:10,left:-10,bottom:16}}>
-                            <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
-                            <XAxis dataKey="x" tick={{fontSize:9,fill:C.muted}}
-                              label={{value:"SM (% MAC)",position:"insideBottom",offset:-6,fontSize:10,fill:C.muted}}/>
-                            <YAxis tick={{fontSize:9,fill:C.muted}}/>
+                            <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
+                            <XAxis dataKey="x" tick={{fontSize:9,fill:SC.muted}}
+                              label={{value:"SM (% MAC)",position:"insideBottom",offset:-6,fontSize:10,fill:SC.muted}}/>
+                            <YAxis tick={{fontSize:9,fill:SC.muted}}/>
                             <Tooltip {...TTP}/>
                             <Bar dataKey="count" radius={[2,2,0,0]}>
                               {mcResults.SM.hist.map((d,i)=>(
-                                <Cell key={i} fill={d.x>=5&&d.x<=25?C.green:C.red} opacity={0.8}/>
+                                <Cell key={i} fill={d.x>=5&&d.x<=25?SC.green:SC.red} opacity={0.8}/>
                               ))}
                             </Bar>
-                            <ReferenceLine x={5}  stroke={C.green} strokeDasharray="3 2" label={{value:"5%",fill:C.green,fontSize:9}}/>
-                            <ReferenceLine x={25} stroke={C.green} strokeDasharray="3 2" label={{value:"25%",fill:C.green,fontSize:9}}/>
-                            <ReferenceLine x={mcResults.SM.stats.mean.toFixed(1)} stroke={C.amber} strokeDasharray="4 2"
-                              label={{value:`μ=${mcResults.SM.stats.mean.toFixed(1)}%`,fill:C.amber,fontSize:9,position:"top"}}/>
+                            <ReferenceLine x={5}  stroke={SC.green} strokeDasharray="3 2" label={{value:"5%",fill:SC.green,fontSize:9}}/>
+                            <ReferenceLine x={25} stroke={SC.green} strokeDasharray="3 2" label={{value:"25%",fill:SC.green,fontSize:9}}/>
+                            <ReferenceLine x={mcResults.SM.stats.mean.toFixed(1)} stroke={SC.amber} strokeDasharray="4 2"
+                              label={{value:`μ=${mcResults.SM.stats.mean.toFixed(1)}%`,fill:SC.amber,fontSize:9,position:"top"}}/>
                           </BarChart>
                         </ResponsiveContainer>
                       </Panel>
                       <Panel title="Hover Power Distribution (kW)" ht={240}>
                         <ResponsiveContainer width="100%" height={195}>
                           <BarChart data={mcResults.Phov.hist} margin={{top:5,right:10,left:-10,bottom:16}}>
-                            <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
-                            <XAxis dataKey="x" tick={{fontSize:9,fill:C.muted}}
-                              label={{value:"Hover Power (kW)",position:"insideBottom",offset:-6,fontSize:10,fill:C.muted}}/>
-                            <YAxis tick={{fontSize:9,fill:C.muted}}/>
+                            <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
+                            <XAxis dataKey="x" tick={{fontSize:9,fill:SC.muted}}
+                              label={{value:"Hover Power (kW)",position:"insideBottom",offset:-6,fontSize:10,fill:SC.muted}}/>
+                            <YAxis tick={{fontSize:9,fill:SC.muted}}/>
                             <Tooltip {...TTP}/>
-                            <Bar dataKey="count" fill={C.blue} opacity={0.8} radius={[2,2,0,0]}/>
-                            <ReferenceLine x={mcResults.Phov.stats.mean.toFixed(1)} stroke={C.amber} strokeDasharray="4 2"
-                              label={{value:`μ=${mcResults.Phov.stats.mean.toFixed(0)}kW`,fill:C.amber,fontSize:9,position:"top"}}/>
+                            <Bar dataKey="count" fill={SC.blue} opacity={0.8} radius={[2,2,0,0]}/>
+                            <ReferenceLine x={mcResults.Phov.stats.mean.toFixed(1)} stroke={SC.amber} strokeDasharray="4 2"
+                              label={{value:`μ=${mcResults.Phov.stats.mean.toFixed(0)}kW`,fill:SC.amber,fontSize:9,position:"top"}}/>
                           </BarChart>
                         </ResponsiveContainer>
                       </Panel>
                       <Panel title="Battery Mass Distribution (kg)" ht={240}>
                         <ResponsiveContainer width="100%" height={195}>
                           <BarChart data={mcResults.Wbat.hist} margin={{top:5,right:10,left:-10,bottom:16}}>
-                            <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
-                            <XAxis dataKey="x" tick={{fontSize:9,fill:C.muted}}
-                              label={{value:"Battery Mass (kg)",position:"insideBottom",offset:-6,fontSize:10,fill:C.muted}}/>
-                            <YAxis tick={{fontSize:9,fill:C.muted}}/>
+                            <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
+                            <XAxis dataKey="x" tick={{fontSize:9,fill:SC.muted}}
+                              label={{value:"Battery Mass (kg)",position:"insideBottom",offset:-6,fontSize:10,fill:SC.muted}}/>
+                            <YAxis tick={{fontSize:9,fill:SC.muted}}/>
                             <Tooltip {...TTP}/>
-                            <Bar dataKey="count" fill={C.amber} opacity={0.8} radius={[2,2,0,0]}/>
-                            <ReferenceLine x={mcResults.Wbat.stats.mean.toFixed(1)} stroke={C.green} strokeDasharray="4 2"
-                              label={{value:`μ=${mcResults.Wbat.stats.mean.toFixed(0)}kg`,fill:C.green,fontSize:9,position:"top"}}/>
+                            <Bar dataKey="count" fill={SC.amber} opacity={0.8} radius={[2,2,0,0]}/>
+                            <ReferenceLine x={mcResults.Wbat.stats.mean.toFixed(1)} stroke={SC.green} strokeDasharray="4 2"
+                              label={{value:`μ=${mcResults.Wbat.stats.mean.toFixed(0)}kg`,fill:SC.green,fontSize:9,position:"top"}}/>
                           </BarChart>
                         </ResponsiveContainer>
                       </Panel>
@@ -3766,39 +3766,39 @@ export default function App(){
 
                     {/* Statistics Table */}
                     <Panel title="Full Statistical Summary — All Output Quantities">
-                      <div style={{fontSize:10,color:C.muted,fontFamily:"'DM Mono',monospace",marginBottom:10}}>
+                      <div style={{fontSize:10,color:SC.muted,fontFamily:"'DM Mono',monospace",marginBottom:10}}>
                         P5/P50/P95 = 5th, 50th, 95th percentile. σ = standard deviation. CV = coefficient of variation (σ/μ) — lower is more robust.
                       </div>
                       <div style={{overflowX:"auto"}}>
                         <table style={{width:"100%",borderCollapse:"collapse",fontSize:10,fontFamily:"'DM Mono',monospace"}}>
                           <thead>
-                            <tr style={{background:C.panel}}>
+                            <tr style={{background:SC.panel}}>
                               {["Quantity","Unit","Min","P5","P25","Median","P75","P95","Max","Mean","σ","CV %"].map(hdr=>(
-                                <th key={hdr} style={{padding:"5px 8px",color:C.muted,fontWeight:600,textAlign:"right",
+                                <th key={hdr} style={{padding:"5px 8px",color:SC.muted,fontWeight:600,textAlign:"right",
                                   fontSize:9,letterSpacing:"0.04em"}}>{hdr}</th>
                               ))}
                             </tr>
                           </thead>
                           <tbody>
                             {[
-                              ["MTOW","kg",mcResults.MTOW.stats,C.amber],
-                              ["Total Energy","kWh",mcResults.Etot.stats,C.teal],
-                              ["Hover Power","kW",mcResults.Phov.stats,C.blue],
-                              ["Battery Mass","kg",mcResults.Wbat.stats,C.amber],
-                              ["Actual L/D","",mcResults.LDact.stats,C.green],
-                              ["Static Margin","%",mcResults.SM.stats,C.green],
+                              ["MTOW","kg",mcResults.MTOW.stats,SC.amber],
+                              ["Total Energy","kWh",mcResults.Etot.stats,SC.teal],
+                              ["Hover Power","kW",mcResults.Phov.stats,SC.blue],
+                              ["Battery Mass","kg",mcResults.Wbat.stats,SC.amber],
+                              ["Actual L/D","",mcResults.LDact.stats,SC.green],
+                              ["Static Margin","%",mcResults.SM.stats,SC.green],
                             ].map(([name,unit,s,col],i)=>{
                               const cv=(s.std/Math.abs(s.mean)*100);
                               return(
-                                <tr key={i} style={{borderTop:`1px solid ${C.border}`,background:i%2?"#0a0d14":C.bg}}>
+                                <tr key={i} style={{borderTop:`1px solid ${SC.border}`,background:i%2?"#0a0d14":SC.bg}}>
                                   <td style={{padding:"5px 8px",color:col,fontWeight:700}}>{name}</td>
-                                  <td style={{padding:"5px 8px",color:C.muted,textAlign:"right"}}>{unit}</td>
+                                  <td style={{padding:"5px 8px",color:SC.muted,textAlign:"right"}}>{unit}</td>
                                   {[s.min,s.p5,s.p25,s.p50,s.p75,s.p95,s.max,s.mean,s.std].map((v,j)=>(
-                                    <td key={j} style={{padding:"5px 8px",color:j===7?col:C.text,
+                                    <td key={j} style={{padding:"5px 8px",color:j===7?col:SC.text,
                                       fontWeight:j===7?700:400,textAlign:"right"}}>{v?.toFixed(j>=7?2:1)}</td>
                                   ))}
                                   <td style={{padding:"5px 8px",textAlign:"right",
-                                    color:cv<5?C.green:cv<15?C.amber:C.red,fontWeight:700}}>
+                                    color:cv<5?SC.green:cv<15?SC.amber:SC.red,fontWeight:700}}>
                                     {cv.toFixed(1)}%
                                   </td>
                                 </tr>
@@ -3813,7 +3813,7 @@ export default function App(){
                         📊 <strong>Key insight:</strong> There is a <strong>{(mcResults.MTOW.stats.p95/mcResults.MTOW.stats.mean*100-100).toFixed(1)}% mass growth risk</strong> from
                         P50→P95. Design your structure and battery for the <strong>P90 MTOW = {mcResults.MTOW.stats.p95.toFixed(0)} kg</strong> to cover
                         95% of all possible technology combinations within the given uncertainty bounds.
-                        Feasibility rate: <strong style={{color:+mcResults.feasRate>70?C.green:C.red}}>{mcResults.feasRate}%</strong> of designs pass all constraints.
+                        Feasibility rate: <strong style={{color:+mcResults.feasRate>70?SC.green:SC.red}}>{mcResults.feasRate}%</strong> of designs pass all constraints.
                       </div>
                     </Panel>
                   </>
@@ -3823,37 +3823,37 @@ export default function App(){
 
 
             {/* ──── TAB 10: CERTIFICATION COMPLIANCE CHECKER ──── */}
-            {tab===10&&R&&(()=>{
+            {tab===10&&SR&&(()=>{
               // ═══════════════════════════════════════════════════════
               // COMPUTED CERTIFICATION PARAMETERS
               // ═══════════════════════════════════════════════════════
-              const MTOW_kg  = R.MTOW;
+              const MTOW_kg  = SR.MTOW;
               const MTOW_lb  = MTOW_kg * 2.20462;
               const nPax     = Math.floor(p.payload / 90);
-              const batFrac  = R.Wbat / MTOW_kg;
+              const batFrac  = SR.Wbat / MTOW_kg;
               const socFloor = p.socMin / (1 + p.socMin);
-              const reserve_pct = (1 - R.Etot / R.PackkWh) * 100;
+              const reserve_pct = (1 - SR.Etot / SR.PackkWh) * 100;
 
               // Use noise values computed in physics engine (BPF + broadband model)
-              const BPF = R.BPF;
-              const dBA_hover = R.dBA_150m;  // A-weighted at 150m from physics engine
+              const BPF = SR.BPF;
+              const dBA_hover = SR.dBA_150m;  // A-weighted at 150m from physics engine
               const r_ref = 150;
 
               // Reserve energy margin
-              const reserveE_pct = (R.Eres / R.PackkWh) * 100;
+              const reserveE_pct = (SR.Eres / SR.PackkWh) * 100;
 
               // Structural load factor (from V-n diagram)
               const n_pos = 3.5; // limit load from V-n diagram
               const n_ult = n_pos * 1.5; // ultimate = 1.5 × limit (FAR 21.17 / CS-23)
 
               // CG range check — allowed range ±15% MAC from NP
-              const cgRange = Math.abs(R.xNP - R.xCGtotal) / R.MAC * 100;
+              const cgRange = Math.abs(SR.xNP - SR.xCGtotal) / SR.MAC * 100;
 
               // Battery C-rate under hover
-              const C_hover = R.CrateHov;
+              const C_hover = SR.CrateHov;
 
               // Wing loading for stall compliance
-              const Vstall_stall = R.Vstall;
+              const Vstall_stall = SR.Vstall;
 
               // ═══════════════════════════════════════════════════════
               // RULE DEFINITIONS — all sourced from actual regulations
@@ -3907,8 +3907,8 @@ export default function App(){
                     category:"Structural Integrity",
                     title:"Rotor Tip Mach — Aeroelastic Stability",
                     desc:"Tip Mach must stay below 0.70 to avoid compressibility effects and flutter risk per AC 21.17-4.",
-                    check: R.TipMach < 0.70,
-                    value: `Mtip = ${R.TipMach}`,
+                    check: SR.TipMach < 0.70,
+                    value: `Mtip = ${SR.TipMach}`,
                     limit: "< 0.70",
                     severity:"critical",
                   },
@@ -3918,8 +3918,8 @@ export default function App(){
                     category:"Flight Performance",
                     title:"Reserve Energy Margin",
                     desc:"Must carry energy for ≥ 20 min reserve flight at best-range speed after completing mission.",
-                    check: R.tres >= 1200,
-                    value: `${R.tres}s = ${(R.tres/60).toFixed(1)} min`,
+                    check: SR.tres >= 1200,
+                    value: `${SR.tres}s = ${(SR.tres/60).toFixed(1)} min`,
                     limit: "≥ 20 min (1,200 s)",
                     severity:"critical",
                   },
@@ -3938,8 +3938,8 @@ export default function App(){
                     category:"Flight Performance",
                     title:"Static Margin — Longitudinal Stability",
                     desc:"Aircraft must be statically stable longitudinally. SM must be positive (5–25% MAC target for FBW eVTOL).",
-                    check: R.SM_vt >= 0.05 && R.SM_vt <= 0.25,
-                    value: `SM = ${(R.SM_vt*100).toFixed(1)}% MAC`,
+                    check: SR.SM_vt >= 0.05 && SR.SM_vt <= 0.25,
+                    value: `SM = ${(SR.SM_vt*100).toFixed(1)}% MAC`,
                     limit: "5–25% MAC",
                     severity:"critical",
                   },
@@ -3959,8 +3959,8 @@ export default function App(){
                     category:"Noise (FAR Part 36)",
                     title:"Rotor Tip Speed — Noise Driver",
                     desc:"Lower tip speed directly reduces BPF tonal noise. Tip speeds > 200 m/s significantly increase community noise. Target: ≤ 200 m/s.",
-                    check: R.TipSpd <= 200,
-                    value: `${R.TipSpd} m/s`,
+                    check: SR.TipSpd <= 200,
+                    value: `${SR.TipSpd} m/s`,
                     limit: "≤ 200 m/s",
                     severity:"major",
                   },
@@ -3970,7 +3970,7 @@ export default function App(){
                     title:"Blade Passing Frequency",
                     desc:"BPF should remain below 150 Hz to minimize tonal noise impact in residential areas (psychoacoustic threshold).",
                     check: BPF <= 150,
-                    value: `BPF = ${BPF.toFixed(1)} Hz (${R.Nbld} blades × ${R.RPM.toFixed(0)} RPM/60)`,
+                    value: `BPF = ${BPF.toFixed(1)} Hz (${SR.Nbld} blades × ${SR.RPM.toFixed(0)} RPM/60)`,
                     limit: "≤ 150 Hz",
                     severity:"advisory",
                   },
@@ -4001,8 +4001,8 @@ export default function App(){
                     category:"Aerodynamics",
                     title:"Actual Lift-to-Drag Ratio",
                     desc:"Minimum aerodynamic efficiency requirement. L/D > 10 required for range and energy compliance.",
-                    check: R.LDact > 10,
-                    value: `L/D = ${R.LDact}`,
+                    check: SR.LDact > 10,
+                    value: `L/D = ${SR.LDact}`,
                     limit: "> 10",
                     severity:"major",
                   },
@@ -4011,8 +4011,8 @@ export default function App(){
                     category:"Aerodynamics",
                     title:"Cruise Mach Number",
                     desc:"Must remain below Mach 0.45 for subsonic aerodynamic assumptions to remain valid in conceptual design.",
-                    check: R.Mach < 0.45,
-                    value: `M = ${R.Mach}`,
+                    check: SR.Mach < 0.45,
+                    value: `M = ${SR.Mach}`,
                     limit: "< 0.45",
                     severity:"major",
                   },
@@ -4065,8 +4065,8 @@ export default function App(){
                     category:"Structural Integrity",
                     title:"Aeromechanical Stability",
                     desc:"Aircraft must be free from dangerous oscillations. Tip Mach < 0.70 required for aeromechanical stability compliance.",
-                    check: R.TipMach < 0.70,
-                    value: `Mtip = ${R.TipMach}`,
+                    check: SR.TipMach < 0.70,
+                    value: `Mtip = ${SR.TipMach}`,
                     limit: "< 0.70",
                     severity:"critical",
                   },
@@ -4076,8 +4076,8 @@ export default function App(){
                     category:"Flight Performance",
                     title:"Category Classification",
                     desc:"Category Basic: controlled emergency landing after critical failure. Category Enhanced: continued safe flight and landing. SM > 5% required for both.",
-                    check: R.SM_vt > 0.05,
-                    value: `SM = ${(R.SM_vt*100).toFixed(1)}% | Category: ${R.SM_vt>0.10?"Enhanced-eligible":"Basic"}`,
+                    check: SR.SM_vt > 0.05,
+                    value: `SM = ${(SR.SM_vt*100).toFixed(1)}% | Category: ${SR.SM_vt>0.10?"Enhanced-eligible":"Basic"}`,
                     limit: "SM > 5% MAC",
                     severity:"critical",
                   },
@@ -4086,8 +4086,8 @@ export default function App(){
                     category:"Flight Performance",
                     title:"Reserve Energy (30 min IFR / 20 min VFR)",
                     desc:"SC-VTOL requires 20 min VFR reserve (1,200s). IFR operations require 30 min (1,800s).",
-                    check: R.tres >= 1200,
-                    value: `${R.tres}s = ${(R.tres/60).toFixed(1)} min`,
+                    check: SR.tres >= 1200,
+                    value: `${SR.tres}s = ${(SR.tres/60).toFixed(1)} min`,
                     limit: "≥ 1,200s VFR / 1,800s IFR",
                     severity:"critical",
                   },
@@ -4096,8 +4096,8 @@ export default function App(){
                     category:"Flight Performance",
                     title:"Fus/Span Ratio — Fuselage-Wing Proportions",
                     desc:"Fuselage/span ratio must remain within 0.50–0.72 for realistic eVTOL proportions per EASA SC-VTOL design guidance.",
-                    check: R.fusSpanRatio >= 0.50 && R.fusSpanRatio <= 0.72,
-                    value: `${R.fusSpanRatio?.toFixed(3) || "—"}`,
+                    check: SR.fusSpanRatio >= 0.50 && SR.fusSpanRatio <= 0.72,
+                    value: `${SR.fusSpanRatio?.toFixed(3) || "—"}`,
                     limit: "0.50–0.72",
                     severity:"advisory",
                   },
@@ -4117,8 +4117,8 @@ export default function App(){
                     category:"Noise (EASA CS-36 / UAM)",
                     title:"Tip Speed — Urban Noise Compliance",
                     desc:"EASA CS-36 noise evaluation: lower tip speeds required for urban operations. Target ≤ 180 m/s for enhanced community acceptance.",
-                    check: R.TipSpd <= 180,
-                    value: `${R.TipSpd} m/s`,
+                    check: SR.TipSpd <= 180,
+                    value: `${SR.TipSpd} m/s`,
                     limit: "≤ 180 m/s (EASA enhanced target)",
                     severity:"major",
                   },
@@ -4159,8 +4159,8 @@ export default function App(){
                     category:"Control Surfaces",
                     title:"V-tail Pitch Authority",
                     desc:"Control surfaces must provide adequate pitch authority. Sh_eff/Sh_req ≥ 1.0 ensures pitch stability margin.",
-                    check: R.pitch_ratio >= 1.0,
-                    value: `${(R.pitch_ratio*100).toFixed(0)}% of requirement`,
+                    check: SR.pitch_ratio >= 1.0,
+                    value: `${(SR.pitch_ratio*100).toFixed(0)}% of requirement`,
                     limit: "≥ 100%",
                     severity:"critical",
                   },
@@ -4169,8 +4169,8 @@ export default function App(){
                     category:"Control Surfaces",
                     title:"V-tail Yaw Authority",
                     desc:"Differential ruddervator must provide adequate yaw authority. Sv_eff/Sv_req ≥ 1.0.",
-                    check: R.yaw_ratio >= 1.0,
-                    value: `${(R.yaw_ratio*100).toFixed(0)}% of requirement`,
+                    check: SR.yaw_ratio >= 1.0,
+                    value: `${(SR.yaw_ratio*100).toFixed(0)}% of requirement`,
                     limit: "≥ 100%",
                     severity:"critical",
                   },
@@ -4189,42 +4189,42 @@ export default function App(){
               const easaScore=score(rules.EASA);
               const allScore=score([...rules.FAA,...rules.EASA]);
 
-              const sevColor={critical:C.red,major:C.amber,advisory:"#22d3ee"};
+              const sevColor={critical:SC.red,major:SC.amber,advisory:"#22d3ee"};
               const sevLabel={critical:"CRITICAL",major:"MAJOR",advisory:"ADVISORY"};
 
               return(
               <div style={{display:"flex",flexDirection:"column",gap:12}}>
 
                 {/* Header */}
-                <div style={{background:C.panel,
+                <div style={{background:SC.panel,
                   border:`1px solid #3b82f644`,borderRadius:10,padding:"16px 20px"}}>
-                  <div style={{fontSize:9,color:C.muted,fontFamily:"'DM Mono',monospace",letterSpacing:"0.18em",marginBottom:6}}>REGULATORY COMPLIANCE — CONCEPTUAL DESIGN PHASE</div>
-                  <div style={{fontSize:18,fontWeight:800,color:C.text,marginBottom:6}}>
-                    <span style={{color:C.blue}}>Certification</span> Compliance Checker
+                  <div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace",letterSpacing:"0.18em",marginBottom:6}}>REGULATORY COMPLIANCE — CONCEPTUAL DESIGN PHASE</div>
+                  <div style={{fontSize:18,fontWeight:800,color:SC.text,marginBottom:6}}>
+                    <span style={{color:SC.blue}}>Certification</span> Compliance Checker
                   </div>
-                  <div style={{fontSize:11,color:C.muted,lineHeight:1.7,maxWidth:760}}>
-                    Auto-checks your design against <span style={{color:C.blue,fontWeight:700}}>FAA AC 21.17-4</span> (Type Certification — Powered-lift, July 2025) and
+                  <div style={{fontSize:11,color:SC.muted,lineHeight:1.7,maxWidth:760}}>
+                    Auto-checks your design against <span style={{color:SC.blue,fontWeight:700}}>FAA AC 21.17-4</span> (Type Certification — Powered-lift, July 2025) and
                     <span style={{color:"#f59e0b",fontWeight:700}}> EASA SC-VTOL Issue 2</span> (Special Condition for VTOL-capable aircraft).
                     Results are <em>conceptual-phase guidance only</em> — actual certification requires full compliance documentation with the regulatory authority.
-                    Severity: <span style={{color:C.red}}>■ Critical</span> = must fix · <span style={{color:C.amber}}>■ Major</span> = significant risk · <span style={{color:"#22d3ee"}}>■ Advisory</span> = recommended.
+                    Severity: <span style={{color:SC.red}}>■ Critical</span> = must fix · <span style={{color:SC.amber}}>■ Major</span> = significant risk · <span style={{color:"#22d3ee"}}>■ Advisory</span> = recommended.
                   </div>
                 </div>
 
                 {/* Score cards */}
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
                   {[
-                    ["FAA AC 21.17-4",faaScore,C.blue,"🇺🇸"],
-                    ["EASA SC-VTOL",easaScore,C.amber,"🇪🇺"],
-                    ["Combined",allScore,allScore.critical_fail===0?C.green:C.red,"🌐"],
+                    ["FAA AC 21.17-4",faaScore,SC.blue,"🇺🇸"],
+                    ["EASA SC-VTOL",easaScore,SC.amber,"🇪🇺"],
+                    ["Combined",allScore,allScore.critical_fail===0?SC.green:SC.red,"🌐"],
                   ].map(([title,s,col,flag])=>(
-                    <div key={title} style={{background:C.panel,border:`2px solid ${col}44`,borderRadius:10,padding:"16px 18px"}}>
-                      <div style={{fontSize:9,color:C.muted,fontFamily:"'DM Mono',monospace",letterSpacing:"0.1em",marginBottom:6}}>{flag} {title}</div>
+                    <div key={title} style={{background:SC.panel,border:`2px solid ${col}44`,borderRadius:10,padding:"16px 18px"}}>
+                      <div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace",letterSpacing:"0.1em",marginBottom:6}}>{flag} {title}</div>
                       {/* Score circle */}
                       <div style={{display:"flex",alignItems:"center",gap:14}}>
                         <div style={{width:64,height:64,borderRadius:"50%",flexShrink:0,
-                          background:`conic-gradient(${col} ${s.pct*3.6}deg, ${C.border} 0deg)`,
+                          background:`conic-gradient(${col} ${s.pct*3.6}deg, ${SC.border} 0deg)`,
                           display:"flex",alignItems:"center",justifyContent:"center",position:"relative"}}>
-                          <div style={{width:50,height:50,borderRadius:"50%",background:C.panel,
+                          <div style={{width:50,height:50,borderRadius:"50%",background:SC.panel,
                             display:"flex",alignItems:"center",justifyContent:"center",
                             fontSize:14,fontWeight:800,color:col,fontFamily:"'DM Mono',monospace"}}>
                             {s.pct}%
@@ -4234,12 +4234,12 @@ export default function App(){
                           <div style={{fontSize:13,fontWeight:700,color:col,fontFamily:"'DM Mono',monospace"}}>
                             {s.passed}/{s.total} passed
                           </div>
-                          {s.critical_fail>0&&<div style={{fontSize:10,color:C.red,fontFamily:"'DM Mono',monospace"}}>⛔ {s.critical_fail} critical fail{s.critical_fail>1?"s":""}</div>}
-                          {s.major_fail>0&&<div style={{fontSize:10,color:C.amber,fontFamily:"'DM Mono',monospace"}}>⚠ {s.major_fail} major fail{s.major_fail>1?"s":""}</div>}
-                          {s.critical_fail===0&&s.major_fail===0&&<div style={{fontSize:10,color:C.green,fontFamily:"'DM Mono',monospace"}}>✓ No critical/major issues</div>}
+                          {s.critical_fail>0&&<div style={{fontSize:10,color:SC.red,fontFamily:"'DM Mono',monospace"}}>⛔ {s.critical_fail} critical fail{s.critical_fail>1?"s":""}</div>}
+                          {s.major_fail>0&&<div style={{fontSize:10,color:SC.amber,fontFamily:"'DM Mono',monospace"}}>⚠ {s.major_fail} major fail{s.major_fail>1?"s":""}</div>}
+                          {s.critical_fail===0&&s.major_fail===0&&<div style={{fontSize:10,color:SC.green,fontFamily:"'DM Mono',monospace"}}>✓ No critical/major issues</div>}
                         </div>
                       </div>
-                      <div style={{marginTop:10,height:4,background:C.border,borderRadius:2}}>
+                      <div style={{marginTop:10,height:4,background:SC.border,borderRadius:2}}>
                         <div style={{width:`${s.pct}%`,height:"100%",background:col,borderRadius:2,transition:"width 0.5s"}}/>
                       </div>
                     </div>
@@ -4247,23 +4247,23 @@ export default function App(){
                 </div>
 
                 {/* Key parameters used */}
-                <div style={{background:C.panel,border:`1px solid ${C.border}`,borderRadius:8,padding:"12px 16px"}}>
-                  <div style={{fontSize:9,color:C.muted,fontFamily:"'DM Mono',monospace",letterSpacing:"0.1em",marginBottom:10,textTransform:"uppercase"}}>Design Parameters Used in Compliance Check</div>
+                <div style={{background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:8,padding:"12px 16px"}}>
+                  <div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace",letterSpacing:"0.1em",marginBottom:10,textTransform:"uppercase"}}>Design Parameters Used in Compliance Check</div>
                   <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
                     {[
-                      ["MTOW",`${MTOW_kg.toFixed(0)} kg / ${MTOW_lb.toFixed(0)} lb`,C.amber],
-                      ["Passengers",`~${nPax} pax`,C.teal],
-                      ["Battery Frac",`${(batFrac*100).toFixed(1)}%`,batFrac<0.55?C.green:C.red],
-                      ["Hover C-rate",`${C_hover.toFixed(2)}C`,C_hover<5?C.green:C.red],
-                      ["SM w/Vtail",`${(R.SM_vt*100).toFixed(1)}%`,R.SM_vt>0.05&&R.SM_vt<0.25?C.green:C.red],
-                      ["Tip Mach",R.TipMach,R.TipMach<0.70?C.green:C.red],
-                      ["Tip Speed",`${R.TipSpd} m/s`,R.TipSpd<180?C.green:R.TipSpd<200?C.amber:C.red],
-                      ["BPF",`${BPF.toFixed(0)} Hz`,BPF<150?C.green:C.amber],
-                      ["Est. Noise",`${dBA_hover.toFixed(0)} dBA`,dBA_hover<65?C.green:dBA_hover<75?C.amber:C.red],
-                      ["Reserve",`${(R.tres/60).toFixed(1)} min`,R.tres>=1200?C.green:C.red],
+                      ["MTOW",`${MTOW_kg.toFixed(0)} kg / ${MTOW_lb.toFixed(0)} lb`,SC.amber],
+                      ["Passengers",`~${nPax} pax`,SC.teal],
+                      ["Battery Frac",`${(batFrac*100).toFixed(1)}%`,batFrac<0.55?SC.green:SC.red],
+                      ["Hover C-rate",`${C_hover.toFixed(2)}C`,C_hover<5?SC.green:SC.red],
+                      ["SM w/Vtail",`${(SR.SM_vt*100).toFixed(1)}%`,SR.SM_vt>0.05&&SR.SM_vt<0.25?SC.green:SC.red],
+                      ["Tip Mach",SR.TipMach,SR.TipMach<0.70?SC.green:SC.red],
+                      ["Tip Speed",`${SR.TipSpd} m/s`,SR.TipSpd<180?SC.green:SR.TipSpd<200?SC.amber:SC.red],
+                      ["BPF",`${BPF.toFixed(0)} Hz`,BPF<150?SC.green:SC.amber],
+                      ["Est. Noise",`${dBA_hover.toFixed(0)} dBA`,dBA_hover<65?SC.green:dBA_hover<75?SC.amber:SC.red],
+                      ["Reserve",`${(SR.tres/60).toFixed(1)} min`,SR.tres>=1200?SC.green:SC.red],
                     ].map(([lbl,val,col])=>(
-                      <div key={lbl} style={{background:C.bg,border:`1px solid ${col}33`,borderRadius:6,padding:"6px 10px"}}>
-                        <div style={{fontSize:8,color:C.muted,fontFamily:"'DM Mono',monospace"}}>{lbl}</div>
+                      <div key={lbl} style={{background:SC.bg,border:`1px solid ${col}33`,borderRadius:6,padding:"6px 10px"}}>
+                        <div style={{fontSize:8,color:SC.muted,fontFamily:"'DM Mono',monospace"}}>{lbl}</div>
                         <div style={{fontSize:11,color:col,fontFamily:"'DM Mono',monospace",fontWeight:700}}>{val}</div>
                       </div>
                     ))}
@@ -4271,34 +4271,34 @@ export default function App(){
                 </div>
 
                 {/* FAA Rules */}
-                <div style={{background:C.panel,border:`1px solid ${C.blue}33`,borderRadius:8,padding:"14px 16px"}}>
-                  <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12,borderBottom:`1px solid ${C.border}`,paddingBottom:10}}>
+                <div style={{background:SC.panel,border:`1px solid ${SC.blue}33`,borderRadius:8,padding:"14px 16px"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12,borderBottom:`1px solid ${SC.border}`,paddingBottom:10}}>
                     <span style={{fontSize:20}}>🇺🇸</span>
                     <div>
-                      <div style={{fontSize:13,fontWeight:800,color:C.blue,fontFamily:"'DM Mono',monospace"}}>FAA AC 21.17-4</div>
-                      <div style={{fontSize:10,color:C.muted,fontFamily:"'DM Mono',monospace"}}>Type Certification — Powered-lift (July 2025) · 14 CFR §21.17(b)</div>
+                      <div style={{fontSize:13,fontWeight:800,color:SC.blue,fontFamily:"'DM Mono',monospace"}}>FAA AC 21.17-4</div>
+                      <div style={{fontSize:10,color:SC.muted,fontFamily:"'DM Mono',monospace"}}>Type Certification — Powered-lift (July 2025) · 14 CFR §21.17(b)</div>
                     </div>
                     <div style={{marginLeft:"auto",textAlign:"right"}}>
-                      <div style={{fontSize:18,fontWeight:800,color:faaScore.pct>=80?C.green:faaScore.pct>=60?C.amber:C.red,fontFamily:"'DM Mono',monospace"}}>{faaScore.pct}%</div>
-                      <div style={{fontSize:9,color:C.muted,fontFamily:"'DM Mono',monospace"}}>{faaScore.passed}/{faaScore.total} checks</div>
+                      <div style={{fontSize:18,fontWeight:800,color:faaScore.pct>=80?SC.green:faaScore.pct>=60?SC.amber:SC.red,fontFamily:"'DM Mono',monospace"}}>{faaScore.pct}%</div>
+                      <div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace"}}>{faaScore.passed}/{faaScore.total} checks</div>
                     </div>
                   </div>
                   {/* Group by category */}
                   {[...new Set(rules.FAA.map(r=>r.category))].map(cat=>(
                     <div key={cat} style={{marginBottom:14}}>
-                      <div style={{fontSize:9,color:C.muted,fontFamily:"'DM Mono',monospace",letterSpacing:"0.12em",
+                      <div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace",letterSpacing:"0.12em",
                         textTransform:"uppercase",marginBottom:6,paddingLeft:2}}>{cat}</div>
                       {rules.FAA.filter(r=>r.category===cat).map(rule=>(
                         <div key={rule.id} style={{
-                          background:rule.check?`${C.green}08`:`${sevColor[rule.severity]}0c`,
-                          border:`1px solid ${rule.check?C.green+"22":sevColor[rule.severity]+"44"}`,
+                          background:rule.check?`${SC.green}08`:`${sevColor[rule.severity]}0c`,
+                          border:`1px solid ${rule.check?SC.green+"22":sevColor[rule.severity]+"44"}`,
                           borderRadius:6,padding:"10px 14px",marginBottom:6,
-                          borderLeft:`3px solid ${rule.check?C.green:sevColor[rule.severity]}`}}>
+                          borderLeft:`3px solid ${rule.check?SC.green:sevColor[rule.severity]}`}}>
                           <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:12}}>
                             <div style={{flex:1}}>
                               <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
                                 <span style={{fontSize:14}}>{rule.check?"✅":"❌"}</span>
-                                <span style={{fontSize:11,fontWeight:700,color:C.text,fontFamily:"'DM Mono',monospace"}}>{rule.title}</span>
+                                <span style={{fontSize:11,fontWeight:700,color:SC.text,fontFamily:"'DM Mono',monospace"}}>{rule.title}</span>
                                 {!rule.check&&(
                                   <span style={{fontSize:8,padding:"2px 6px",borderRadius:3,fontWeight:700,
                                     fontFamily:"'DM Mono',monospace",
@@ -4307,12 +4307,12 @@ export default function App(){
                                   </span>
                                 )}
                               </div>
-                              <div style={{fontSize:10,color:C.muted,fontFamily:"'DM Mono',monospace",marginBottom:4,lineHeight:1.5}}>{rule.desc}</div>
-                              <div style={{fontSize:9,color:C.muted,fontFamily:"'DM Mono',monospace"}}>Ref: {rule.ref}</div>
+                              <div style={{fontSize:10,color:SC.muted,fontFamily:"'DM Mono',monospace",marginBottom:4,lineHeight:1.5}}>{rule.desc}</div>
+                              <div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace"}}>Ref: {rule.ref}</div>
                             </div>
                             <div style={{textAlign:"right",flexShrink:0,minWidth:130}}>
-                              <div style={{fontSize:11,color:rule.check?C.green:sevColor[rule.severity],fontFamily:"'DM Mono',monospace",fontWeight:700}}>{rule.value}</div>
-                              <div style={{fontSize:9,color:C.dim,fontFamily:"'DM Mono',monospace",marginTop:2}}>Limit: {rule.limit}</div>
+                              <div style={{fontSize:11,color:rule.check?SC.green:sevColor[rule.severity],fontFamily:"'DM Mono',monospace",fontWeight:700}}>{rule.value}</div>
+                              <div style={{fontSize:9,color:SC.dim,fontFamily:"'DM Mono',monospace",marginTop:2}}>Limit: {rule.limit}</div>
                             </div>
                           </div>
                         </div>
@@ -4322,33 +4322,33 @@ export default function App(){
                 </div>
 
                 {/* EASA Rules */}
-                <div style={{background:C.panel,border:`1px solid ${C.amber}33`,borderRadius:8,padding:"14px 16px"}}>
-                  <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12,borderBottom:`1px solid ${C.border}`,paddingBottom:10}}>
+                <div style={{background:SC.panel,border:`1px solid ${SC.amber}33`,borderRadius:8,padding:"14px 16px"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12,borderBottom:`1px solid ${SC.border}`,paddingBottom:10}}>
                     <span style={{fontSize:20}}>🇪🇺</span>
                     <div>
-                      <div style={{fontSize:13,fontWeight:800,color:C.amber,fontFamily:"'DM Mono',monospace"}}>EASA SC-VTOL Issue 2</div>
-                      <div style={{fontSize:10,color:C.muted,fontFamily:"'DM Mono',monospace"}}>Special Condition for VTOL-capable aircraft · MOC-3 SC-VTOL Battery Safety</div>
+                      <div style={{fontSize:13,fontWeight:800,color:SC.amber,fontFamily:"'DM Mono',monospace"}}>EASA SC-VTOL Issue 2</div>
+                      <div style={{fontSize:10,color:SC.muted,fontFamily:"'DM Mono',monospace"}}>Special Condition for VTOL-capable aircraft · MOC-3 SC-VTOL Battery Safety</div>
                     </div>
                     <div style={{marginLeft:"auto",textAlign:"right"}}>
-                      <div style={{fontSize:18,fontWeight:800,color:easaScore.pct>=80?C.green:easaScore.pct>=60?C.amber:C.red,fontFamily:"'DM Mono',monospace"}}>{easaScore.pct}%</div>
-                      <div style={{fontSize:9,color:C.muted,fontFamily:"'DM Mono',monospace"}}>{easaScore.passed}/{easaScore.total} checks</div>
+                      <div style={{fontSize:18,fontWeight:800,color:easaScore.pct>=80?SC.green:easaScore.pct>=60?SC.amber:SC.red,fontFamily:"'DM Mono',monospace"}}>{easaScore.pct}%</div>
+                      <div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace"}}>{easaScore.passed}/{easaScore.total} checks</div>
                     </div>
                   </div>
                   {[...new Set(rules.EASA.map(r=>r.category))].map(cat=>(
                     <div key={cat} style={{marginBottom:14}}>
-                      <div style={{fontSize:9,color:C.muted,fontFamily:"'DM Mono',monospace",letterSpacing:"0.12em",
+                      <div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace",letterSpacing:"0.12em",
                         textTransform:"uppercase",marginBottom:6,paddingLeft:2}}>{cat}</div>
                       {rules.EASA.filter(r=>r.category===cat).map(rule=>(
                         <div key={rule.id} style={{
-                          background:rule.check?`${C.green}08`:`${sevColor[rule.severity]}0c`,
-                          border:`1px solid ${rule.check?C.green+"22":sevColor[rule.severity]+"44"}`,
+                          background:rule.check?`${SC.green}08`:`${sevColor[rule.severity]}0c`,
+                          border:`1px solid ${rule.check?SC.green+"22":sevColor[rule.severity]+"44"}`,
                           borderRadius:6,padding:"10px 14px",marginBottom:6,
-                          borderLeft:`3px solid ${rule.check?C.green:sevColor[rule.severity]}`}}>
+                          borderLeft:`3px solid ${rule.check?SC.green:sevColor[rule.severity]}`}}>
                           <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:12}}>
                             <div style={{flex:1}}>
                               <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
                                 <span style={{fontSize:14}}>{rule.check?"✅":"❌"}</span>
-                                <span style={{fontSize:11,fontWeight:700,color:C.text,fontFamily:"'DM Mono',monospace"}}>{rule.title}</span>
+                                <span style={{fontSize:11,fontWeight:700,color:SC.text,fontFamily:"'DM Mono',monospace"}}>{rule.title}</span>
                                 {!rule.check&&(
                                   <span style={{fontSize:8,padding:"2px 6px",borderRadius:3,fontWeight:700,
                                     fontFamily:"'DM Mono',monospace",
@@ -4357,12 +4357,12 @@ export default function App(){
                                   </span>
                                 )}
                               </div>
-                              <div style={{fontSize:10,color:C.muted,fontFamily:"'DM Mono',monospace",marginBottom:4,lineHeight:1.5}}>{rule.desc}</div>
-                              <div style={{fontSize:9,color:C.muted,fontFamily:"'DM Mono',monospace"}}>Ref: {rule.ref}</div>
+                              <div style={{fontSize:10,color:SC.muted,fontFamily:"'DM Mono',monospace",marginBottom:4,lineHeight:1.5}}>{rule.desc}</div>
+                              <div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace"}}>Ref: {rule.ref}</div>
                             </div>
                             <div style={{textAlign:"right",flexShrink:0,minWidth:130}}>
-                              <div style={{fontSize:11,color:rule.check?C.green:sevColor[rule.severity],fontFamily:"'DM Mono',monospace",fontWeight:700}}>{rule.value}</div>
-                              <div style={{fontSize:9,color:C.dim,fontFamily:"'DM Mono',monospace",marginTop:2}}>Limit: {rule.limit}</div>
+                              <div style={{fontSize:11,color:rule.check?SC.green:sevColor[rule.severity],fontFamily:"'DM Mono',monospace",fontWeight:700}}>{rule.value}</div>
+                              <div style={{fontSize:9,color:SC.dim,fontFamily:"'DM Mono',monospace",marginTop:2}}>Limit: {rule.limit}</div>
                             </div>
                           </div>
                         </div>
@@ -4372,9 +4372,9 @@ export default function App(){
                 </div>
 
                 {/* Disclaimer */}
-                <div style={{padding:"10px 14px",background:`${C.blue}0a`,border:`1px solid ${C.blue}22`,
-                  borderRadius:6,fontSize:10,color:C.muted,fontFamily:"'DM Mono',monospace",lineHeight:1.7}}>
-                  ⓘ <strong style={{color:C.text}}>Important:</strong> This checker provides <em>conceptual-design phase guidance</em> based on publicly available FAA AC 21.17-4 (July 2025),
+                <div style={{padding:"10px 14px",background:`${SC.blue}0a`,border:`1px solid ${SC.blue}22`,
+                  borderRadius:6,fontSize:10,color:SC.muted,fontFamily:"'DM Mono',monospace",lineHeight:1.7}}>
+                  ⓘ <strong style={{color:SC.text}}>Important:</strong> This checker provides <em>conceptual-design phase guidance</em> based on publicly available FAA AC 21.17-4 (July 2025),
                   EASA SC-VTOL Issue 2, and MOC-3 SC-VTOL. It is <strong>not a substitute for formal compliance documentation</strong>.
                   Actual type certification requires full qualification testing, G-1/G-2 issue papers, and regulatory authority approval.
                   Noise estimates use a simplified Pegg-type model (±5 dB accuracy); actual certification requires flight testing per 14 CFR Part 36 / EASA CS-36.
@@ -4385,37 +4385,37 @@ export default function App(){
             })()}
 
             {/* ──── TAB 11: NOISE ESTIMATION ──── */}
-            {tab===11&&R&&(
+            {tab===11&&SR&&(
               <div style={{display:"flex",flexDirection:"column",gap:12}}>
 
                 {/* Header */}
-                <div style={{background:C.panel,
+                <div style={{background:SC.panel,
                   border:`1px solid #8b5cf644`,borderRadius:10,padding:"16px 20px"}}>
-                  <div style={{fontSize:9,color:C.muted,fontFamily:"'DM Mono',monospace",letterSpacing:"0.18em",marginBottom:6}}>ROTOR ACOUSTICS — BPF TONAL + BROADBAND MODEL</div>
-                  <div style={{fontSize:18,fontWeight:800,color:C.text,marginBottom:6}}>
+                  <div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace",letterSpacing:"0.18em",marginBottom:6}}>ROTOR ACOUSTICS — BPF TONAL + BROADBAND MODEL</div>
+                  <div style={{fontSize:18,fontWeight:800,color:SC.text,marginBottom:6}}>
                     <span style={{color:"#a78bfa"}}>Noise</span> Estimation & dB Contour Map
                   </div>
-                  <div style={{fontSize:11,color:C.muted,lineHeight:1.7,maxWidth:760}}>
+                  <div style={{fontSize:11,color:SC.muted,lineHeight:1.7,maxWidth:760}}>
                     Semi-empirical model combining <strong style={{color:"#a78bfa"}}>BPF tonal loading noise</strong> (Gutin/Deming),
-                    <strong style={{color:C.teal}}> thickness noise</strong>, and <strong style={{color:C.blue}}> broadband self-noise</strong> (BPM-simplified).
+                    <strong style={{color:SC.teal}}> thickness noise</strong>, and <strong style={{color:SC.blue}}> broadband self-noise</strong> (BPM-simplified).
                     Based on Fleming et al. (VFS 2022), Tinney &amp; Valdez (JASA 2020).
                     A-weighted at BPF. Multi-rotor incoherent summation +10·log₁₀(N).
-                    <strong style={{color:C.amber}}> Same values used in FAA/EASA compliance checker.</strong>
+                    <strong style={{color:SC.amber}}> Same values used in FAA/EASA compliance checker.</strong>
                   </div>
                 </div>
 
                 {/* KPI row */}
                 <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
-                  <KPI label="BPF (Blade Pass Freq)" value={R.BPF.toFixed(1)} unit="Hz"
-                    color={R.BPF<150?C.green:C.amber}
-                    sub={`${R.Nbld} blades × ${R.RPM.toFixed(0)} RPM / 60`}/>
-                  <KPI label="OASPL at 1m" value={R.OASPL_total_1m} unit="dB"
-                    color={C.muted} sub="unweighted, all rotors"/>
-                  <KPI label="A-weighted at 150m" value={R.dBA_150m} unit="dBA"
-                    color={R.dBA_150m<=65?C.green:R.dBA_150m<=75?C.amber:C.red}
+                  <KPI label="BPF (Blade Pass Freq)" value={SR.BPF.toFixed(1)} unit="Hz"
+                    color={SR.BPF<150?SC.green:SC.amber}
+                    sub={`${SR.Nbld} blades × ${SR.RPM.toFixed(0)} RPM / 60`}/>
+                  <KPI label="OASPL at 1m" value={SR.OASPL_total_1m} unit="dB"
+                    color={SC.muted} sub="unweighted, all rotors"/>
+                  <KPI label="A-weighted at 150m" value={SR.dBA_150m} unit="dBA"
+                    color={SR.dBA_150m<=65?SC.green:SR.dBA_150m<=75?SC.amber:SC.red}
                     sub="EASA UAM limit: 65 dBA"/>
-                  <KPI label="65 dBA Contour Radius" value={R.dist_65dBA} unit="m"
-                    color={R.dist_65dBA<200?C.green:R.dist_65dBA<500?C.amber:C.red}
+                  <KPI label="65 dBA Contour Radius" value={SR.dist_65dBA} unit="m"
+                    color={SR.dist_65dBA<200?SC.green:SR.dist_65dBA<500?SC.amber:SC.red}
                     sub="community noise footprint"/>
                 </div>
 
@@ -4425,21 +4425,21 @@ export default function App(){
                     <ResponsiveContainer width="100%" height={260}>
                       <LineChart
                         data={[1,5,10,25,50,100,150,200,300,500].map(r=>({
-                          r, dBA:+(R.dBA_1m-20*Math.log10(r)).toFixed(1)
+                          r, dBA:+(SR.dBA_1m-20*Math.log10(r)).toFixed(1)
                         }))}
                         margin={{top:5,right:20,left:5,bottom:20}}>
-                        <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
-                        <XAxis dataKey="r" tick={{fontSize:9,fill:C.muted}}
-                          label={{value:"Distance (m)",position:"insideBottom",offset:-6,fontSize:11,fill:C.muted}}/>
-                        <YAxis tick={{fontSize:9,fill:C.muted}}
-                          label={{value:"dBA",angle:-90,position:"insideLeft",fontSize:11,fill:C.muted}}/>
+                        <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
+                        <XAxis dataKey="r" tick={{fontSize:9,fill:SC.muted}}
+                          label={{value:"Distance (m)",position:"insideBottom",offset:-6,fontSize:11,fill:SC.muted}}/>
+                        <YAxis tick={{fontSize:9,fill:SC.muted}}
+                          label={{value:"dBA",angle:-90,position:"insideLeft",fontSize:11,fill:SC.muted}}/>
                         <Tooltip {...TTP} formatter={(v)=>[`${v} dBA`,"SPL"]}/>
-                        <ReferenceLine y={65} stroke={C.green}  strokeDasharray="5 3"
-                          label={{value:"65 dBA (EASA UAM)",fill:C.green,fontSize:9,position:"right"}}/>
-                        <ReferenceLine y={75} stroke={C.amber}  strokeDasharray="5 3"
-                          label={{value:"75 dBA (FAA op.)",fill:C.amber,fontSize:9,position:"right"}}/>
-                        <ReferenceLine y={85} stroke={C.red}    strokeDasharray="5 3"
-                          label={{value:"85 dBA (hearing)",fill:C.red,fontSize:9,position:"right"}}/>
+                        <ReferenceLine y={65} stroke={SC.green}  strokeDasharray="5 3"
+                          label={{value:"65 dBA (EASA UAM)",fill:SC.green,fontSize:9,position:"right"}}/>
+                        <ReferenceLine y={75} stroke={SC.amber}  strokeDasharray="5 3"
+                          label={{value:"75 dBA (FAA op.)",fill:SC.amber,fontSize:9,position:"right"}}/>
+                        <ReferenceLine y={85} stroke={SC.red}    strokeDasharray="5 3"
+                          label={{value:"85 dBA (hearing)",fill:SC.red,fontSize:9,position:"right"}}/>
                         <Line type="monotone" dataKey="dBA" stroke="#a78bfa" strokeWidth={2.5}
                           dot={{r:3,fill:"#a78bfa"}} name="A-wtd SPL (dBA)"/>
                       </LineChart>
@@ -4450,21 +4450,21 @@ export default function App(){
                   <Panel title="SPL at Key Reference Distances">
                     <div style={{marginBottom:12}}>
                       {[
-                        {dist:1,   val:R.dBA_1m,   label:"1 m (near field)"},
-                        {dist:25,  val:R.dBA_25m,  label:"25 m (helipad edge)"},
-                        {dist:50,  val:R.dBA_50m,  label:"50 m (building setback)"},
-                        {dist:100, val:R.dBA_100m, label:"100 m (residential)"},
-                        {dist:150, val:R.dBA_150m, label:"150 m (EASA UAM ref)"},
-                        {dist:300, val:R.dBA_300m, label:"300 m (community)"},
-                        {dist:500, val:R.dBA_500m, label:"500 m (far field)"},
+                        {dist:1,   val:SR.dBA_1m,   label:"1 m (near field)"},
+                        {dist:25,  val:SR.dBA_25m,  label:"25 m (helipad edge)"},
+                        {dist:50,  val:SR.dBA_50m,  label:"50 m (building setback)"},
+                        {dist:100, val:SR.dBA_100m, label:"100 m (residential)"},
+                        {dist:150, val:SR.dBA_150m, label:"150 m (EASA UAM ref)"},
+                        {dist:300, val:SR.dBA_300m, label:"300 m (community)"},
+                        {dist:500, val:SR.dBA_500m, label:"500 m (far field)"},
                       ].map(({dist,val,label})=>{
-                        const col=val<=55?C.green:val<=65?C.teal:val<=75?C.amber:C.red;
+                        const col=val<=55?SC.green:val<=65?SC.teal:val<=75?SC.amber:SC.red;
                         const pct=Math.min(100,Math.max(0,(val-40)/60*100));
                         return(
                           <div key={dist} style={{display:"flex",alignItems:"center",gap:8,
-                            padding:"5px 0",borderBottom:`1px solid ${C.border}`}}>
-                            <span style={{fontSize:9,color:C.muted,fontFamily:"'DM Mono',monospace",minWidth:160}}>{label}</span>
-                            <div style={{flex:1,height:6,background:C.border,borderRadius:3}}>
+                            padding:"5px 0",borderBottom:`1px solid ${SC.border}`}}>
+                            <span style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace",minWidth:160}}>{label}</span>
+                            <div style={{flex:1,height:6,background:SC.border,borderRadius:3}}>
                               <div style={{width:`${pct}%`,height:"100%",background:col,borderRadius:3,transition:"width 0.4s"}}/>
                             </div>
                             <span style={{fontSize:11,color:col,fontFamily:"'DM Mono',monospace",fontWeight:700,minWidth:52,textAlign:"right"}}>{val} dBA</span>
@@ -4473,18 +4473,18 @@ export default function App(){
                       })}
                     </div>
                     {/* Contour table */}
-                    <div style={{fontSize:9,color:C.muted,fontFamily:"'DM Mono',monospace",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.1em"}}>Noise Contour Radii</div>
+                    <div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.1em"}}>Noise Contour Radii</div>
                     {[
-                      ["55 dBA",R.dist_55dBA,"m","near-quiet"],
-                      ["65 dBA",R.dist_65dBA,"m","EASA UAM limit"],
-                      ["70 dBA",R.dist_70dBA,"m","annoyance threshold"],
-                      ["75 dBA",R.dist_75dBA,"m","FAA operational limit"],
+                      ["55 dBA",SR.dist_55dBA,"m","near-quiet"],
+                      ["65 dBA",SR.dist_65dBA,"m","EASA UAM limit"],
+                      ["70 dBA",SR.dist_70dBA,"m","annoyance threshold"],
+                      ["75 dBA",SR.dist_75dBA,"m","FAA operational limit"],
                     ].map(([lbl,val,unit,note])=>(
                       <div key={lbl} style={{display:"flex",justifyContent:"space-between",
-                        padding:"4px 0",borderBottom:`1px solid ${C.border}22`}}>
-                        <span style={{fontSize:10,color:C.text,fontFamily:"'DM Mono',monospace"}}>{lbl}</span>
-                        <span style={{fontSize:10,color:C.muted,fontFamily:"'DM Mono',monospace"}}>{note}</span>
-                        <span style={{fontSize:11,color:val<200?C.green:val<500?C.amber:C.red,
+                        padding:"4px 0",borderBottom:`1px solid ${SC.border}22`}}>
+                        <span style={{fontSize:10,color:SC.text,fontFamily:"'DM Mono',monospace"}}>{lbl}</span>
+                        <span style={{fontSize:10,color:SC.muted,fontFamily:"'DM Mono',monospace"}}>{note}</span>
+                        <span style={{fontSize:11,color:val<200?SC.green:val<500?SC.amber:SC.red,
                           fontFamily:"'DM Mono',monospace",fontWeight:700}}>{val} {unit}</span>
                       </div>
                     ))}
@@ -4493,34 +4493,34 @@ export default function App(){
 
                 {/* BPF Harmonics spectrum */}
                 <Panel title="BPF Tonal Spectrum — First 4 Harmonics (A-weighted)" ht={270}>
-                  <div style={{fontSize:10,color:C.muted,fontFamily:"'DM Mono',monospace",marginBottom:8}}>
-                    Tonal noise at integer multiples of BPF = {R.BPF.toFixed(1)} Hz.
+                  <div style={{fontSize:10,color:SC.muted,fontFamily:"'DM Mono',monospace",marginBottom:8}}>
+                    Tonal noise at integer multiples of BPF = {SR.BPF.toFixed(1)} Hz.
                     Higher harmonics attenuate at ~6 dB/octave. A-weighting penalises low frequencies.
                   </div>
                   <ResponsiveContainer width="100%" height={210}>
-                    <BarChart data={R.bpfHarmonics} margin={{top:5,right:20,left:5,bottom:20}}>
-                      <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
-                      <XAxis dataKey="freq" tick={{fontSize:10,fill:C.muted}}
+                    <BarChart data={SR.bpfHarmonics} margin={{top:5,right:20,left:5,bottom:20}}>
+                      <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
+                      <XAxis dataKey="freq" tick={{fontSize:10,fill:SC.muted}}
                         tickFormatter={v=>`${v} Hz`}
-                        label={{value:"Frequency (Hz)",position:"insideBottom",offset:-6,fontSize:11,fill:C.muted}}/>
-                      <YAxis tick={{fontSize:9,fill:C.muted}}
-                        label={{value:"SPL (dBA at 150m)",angle:-90,position:"insideLeft",fontSize:11,fill:C.muted}}/>
+                        label={{value:"Frequency (Hz)",position:"insideBottom",offset:-6,fontSize:11,fill:SC.muted}}/>
+                      <YAxis tick={{fontSize:9,fill:SC.muted}}
+                        label={{value:"SPL (dBA at 150m)",angle:-90,position:"insideLeft",fontSize:11,fill:SC.muted}}/>
                       <Tooltip {...TTP} formatter={(v)=>[`${v} dBA`,"SPL"]}
-                        labelFormatter={f=>`BPF×${R.bpfHarmonics.findIndex(harm=>harm.freq===f)+1} = ${f} Hz`}/>
+                        labelFormatter={f=>`BPF×${SR.bpfHarmonics.findIndex(harm=>harm.freq===f)+1} = ${f} Hz`}/>
                       <Bar dataKey="SPL" radius={[4,4,0,0]} name="dBA at 150m">
-                        {R.bpfHarmonics.map((harm,i)=>(
+                        {SR.bpfHarmonics.map((harm,i)=>(
                           <Cell key={i} fill={harm.SPL<=65?"#22c55e":harm.SPL<=75?"#f59e0b":"#ef4444"}/>
                         ))}
                       </Bar>
-                      <ReferenceLine y={65} stroke={C.green} strokeDasharray="4 3"
-                        label={{value:"65 dBA",fill:C.green,fontSize:9,position:"right"}}/>
+                      <ReferenceLine y={65} stroke={SC.green} strokeDasharray="4 3"
+                        label={{value:"65 dBA",fill:SC.green,fontSize:9,position:"right"}}/>
                     </BarChart>
                   </ResponsiveContainer>
                 </Panel>
 
                 {/* SVG dB Contour Map */}
                 <Panel title="dB Noise Contour Map — Top View (hover condition, all rotors)">
-                  <div style={{fontSize:10,color:C.muted,fontFamily:"'DM Mono',monospace",marginBottom:8}}>
+                  <div style={{fontSize:10,color:SC.muted,fontFamily:"'DM Mono',monospace",marginBottom:8}}>
                     Concentric contours show A-weighted noise level at ground level below hovering aircraft.
                     Aircraft positioned at center. Distances to scale.
                   </div>
@@ -4544,7 +4544,7 @@ export default function App(){
                         ))}
                         {/* Noise contour rings */}
                         {contours.map(({dBA,col,label})=>{
-                          const r=(R.dBA_1m-dBA)>0?Math.pow(10,(R.dBA_1m-dBA)/20)*scale:0;
+                          const r=(SR.dBA_1m-dBA)>0?Math.pow(10,(SR.dBA_1m-dBA)/20)*scale:0;
                           if(r<=0||r>W) return null;
                           return(
                             <g key={dBA}>
@@ -4555,15 +4555,15 @@ export default function App(){
                           );
                         })}
                         {/* Aircraft icon at center */}
-                        <circle cx={cx} cy={cy} r={6} fill={C.amber} opacity={0.9}/>
+                        <circle cx={cx} cy={cy} r={6} fill={SC.amber} opacity={0.9}/>
                         <text x={cx} y={cy-12} textAnchor="middle" fontSize={18}>✈️</text>
-                        <text x={cx} y={cy+22} textAnchor="middle" fontSize={9} fill={C.amber} fontFamily="DM Mono,monospace">Aircraft</text>
+                        <text x={cx} y={cy+22} textAnchor="middle" fontSize={9} fill={SC.amber} fontFamily="DM Mono,monospace">Aircraft</text>
                         {/* Rotor positions */}
                         {Array.from({length:p.nPropHover}).map((_,i)=>{
                           const ang=i*2*Math.PI/p.nPropHover-Math.PI/2;
-                          const rr=R.bWing/4*scale;
+                          const rr=SR.bWing/4*scale;
                           return <circle key={i} cx={cx+rr*Math.cos(ang)} cy={cy+rr*Math.sin(ang)}
-                            r={R.Drotor/2*scale} fill="#3b82f611" stroke="#3b82f6" strokeWidth={1}/>;
+                            r={SR.Drotor/2*scale} fill="#3b82f611" stroke="#3b82f6" strokeWidth={1}/>;
                         })}
                         {/* Scale bar */}
                         <line x1={W-90} y1={H-20} x2={W-90+100*scale} y2={H-20} stroke={darkMode?"#94a3b8":"#64748b"} strokeWidth={2}/>
@@ -4571,7 +4571,7 @@ export default function App(){
                         <text x={W-90+100*scale} y={H-8} fontSize={9} fill={darkMode?"#94a3b8":"#64748b"} fontFamily="DM Mono,monospace">100m</text>
                         {/* Legend */}
                         <text x={10} y={20} fontSize={10} fill={darkMode?"#94a3b8":"#64748b"} fontFamily="DM Mono,monospace">Hover noise contours</text>
-                        <text x={10} y={34} fontSize={9} fill={darkMode?"#64748b":"#94a3b8"} fontFamily="DM Mono,monospace">BPF={R.BPF.toFixed(0)}Hz · Vtip={R.TipSpd}m/s · {p.nPropHover} rotors</text>
+                        <text x={10} y={34} fontSize={9} fill={darkMode?"#64748b":"#94a3b8"} fontFamily="DM Mono,monospace">BPF={SR.BPF.toFixed(0)}Hz · Vtip={SR.TipSpd}m/s · {p.nPropHover} rotors</text>
                       </svg>
                     );
                   })()}
@@ -4581,24 +4581,24 @@ export default function App(){
                 <Panel title="Design Sensitivity — How to Reduce Noise">
                   <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>
                     {[
-                      {title:"↓ Tip Speed",icon:"🔄",current:`${R.TipSpd} m/s`,
-                        impact:`−${(R.noise_sensitivity?.tipSpeed_1pct||0.4).toFixed(2)} dBA per 1% reduction`,
+                      {title:"↓ Tip Speed",icon:"🔄",current:`${SR.TipSpd} m/s`,
+                        impact:`−${(SR.noise_sensitivity?.tipSpeed_1pct||0.4).toFixed(2)} dBA per 1% reduction`,
                         action:"Reduce RPM or rotor diameter",
-                        col:C.green},
-                      {title:"↑ Rotor Diameter",icon:"⭕",current:`${R.Drotor} m`,
+                        col:SC.green},
+                      {title:"↑ Rotor Diameter",icon:"⭕",current:`${SR.Drotor} m`,
                         impact:`Larger disk → lower disk loading → quieter`,
                         action:"Increase propDiam slider",
-                        col:C.teal},
-                      {title:"↑ Blade Count",icon:"🍃",current:`${R.Nbld} blades`,
-                        impact:`${(R.noise_sensitivity?.bladeCount_1more||(-1.76)).toFixed(1)} dBA per extra blade`,
+                        col:SC.teal},
+                      {title:"↑ Blade Count",icon:"🍃",current:`${SR.Nbld} blades`,
+                        impact:`${(SR.noise_sensitivity?.bladeCount_1more||(-1.76)).toFixed(1)} dBA per extra blade`,
                         action:"More blades spread tonal energy",
-                        col:C.blue},
+                        col:SC.blue},
                     ].map(({title,icon,current,impact,action,col})=>(
-                      <div key={title} style={{background:C.bg,border:`1px solid ${col}33`,borderRadius:8,padding:"12px 14px",borderLeft:`3px solid ${col}`}}>
+                      <div key={title} style={{background:SC.bg,border:`1px solid ${col}33`,borderRadius:8,padding:"12px 14px",borderLeft:`3px solid ${col}`}}>
                         <div style={{fontSize:13,marginBottom:4}}>{icon} <span style={{fontSize:11,fontWeight:700,color:col,fontFamily:"'DM Mono',monospace"}}>{title}</span></div>
-                        <div style={{fontSize:10,color:C.muted,fontFamily:"'DM Mono',monospace",marginBottom:3}}>Current: {current}</div>
-                        <div style={{fontSize:10,color:C.text,fontFamily:"'DM Mono',monospace",marginBottom:3}}>{impact}</div>
-                        <div style={{fontSize:9,color:C.dim,fontFamily:"'DM Mono',monospace"}}>→ {action}</div>
+                        <div style={{fontSize:10,color:SC.muted,fontFamily:"'DM Mono',monospace",marginBottom:3}}>Current: {current}</div>
+                        <div style={{fontSize:10,color:SC.text,fontFamily:"'DM Mono',monospace",marginBottom:3}}>{impact}</div>
+                        <div style={{fontSize:9,color:SC.dim,fontFamily:"'DM Mono',monospace"}}>→ {action}</div>
                       </div>
                     ))}
                   </div>
@@ -4614,7 +4614,7 @@ export default function App(){
             )}
 
             {/* ──── TAB 12: COST ESTIMATOR ──── */}
-            {tab===12&&R&&(()=>{
+            {tab===12&&SR&&(()=>{
               // ═══════════════════════════════════════════════════
               // COST MODEL — energy economics + lifecycle
               // Based on: NREL eVTOL cost studies, Joby/Archer investor docs
@@ -4625,32 +4625,32 @@ export default function App(){
               const tripDist_km      = p.range;
 
               // Energy cost per flight
-              const energyPerFlight_kWh = R.Etot;
+              const energyPerFlight_kWh = SR.Etot;
               const electricityRate_kWh = 0.12; // $/kWh (US commercial avg 2025)
               const chargingLoss        = 0.10;  // 10% charging efficiency loss
               const energyCost_per_flight = energyPerFlight_kWh * (1+chargingLoss) * electricityRate_kWh;
 
               // Battery lifecycle cost
               const batteryCycles  = 800;   // NMC LiIon ~800 full cycles to 80% SoH
-              const batteryReplace = R.Wbat * 120; // $120/kg for NMC pack (2025 cell cost ~$80/kWh + integration)
-              const chargeDepth    = R.Etot / R.PackkWh; // depth of discharge per flight
+              const batteryReplace = SR.Wbat * 120; // $120/kg for NMC pack (2025 cell cost ~$80/kWh + integration)
+              const chargeDepth    = SR.Etot / SR.PackkWh; // depth of discharge per flight
               const cyclesPerFlight = chargeDepth;
               const flightsPerBattery = Math.floor(batteryCycles / cyclesPerFlight);
               const battCost_per_flight = batteryReplace / flightsPerBattery;
 
               // Motor replacement
               const motorLifeHours    = 3000;  // hrs MTBF for aviation PMSM
-              const flightDuration_hr = R.Tend / 3600;
-              const motorCost_each    = R.PmotKW * 80;   // ~$80/kW for aviation-grade motor
+              const flightDuration_hr = SR.Tend / 3600;
+              const motorCost_each    = SR.PmotKW * 80;   // ~$80/kW for aviation-grade motor
               const motorCount        = p.nPropHover;
               const flightsPerMotor   = Math.floor(motorLifeHours / flightDuration_hr);
               const motorCost_per_flight = (motorCost_each * motorCount) / flightsPerMotor;
 
               // Maintenance (airframe, avionics, misc)
-              const maintenanceCost_per_flight = R.MTOW * 0.0015; // ~$0.15/kg/flight (per NREL UAM cost study)
+              const maintenanceCost_per_flight = SR.MTOW * 0.0015; // ~$0.15/kg/flight (per NREL UAM cost study)
 
               // Insurance (liability, hull)
-              const aircraft_value   = R.MTOW * 800; // ~$800/kg for eVTOL (vs $2000/kg helicopter)
+              const aircraft_value   = SR.MTOW * 800; // ~$800/kg for eVTOL (vs $2000/kg helicopter)
               const insuranceAnnual  = aircraft_value * 0.06; // 6% hull + liability annual
               const insuranceCost_per_flight = insuranceAnnual / flightsPerYear;
 
@@ -4679,7 +4679,7 @@ export default function App(){
               const profitMargin    = (annualProfit / annualRevenue) * 100;
 
               // Break-even
-              const aircraftCost    = R.MTOW * 800;
+              const aircraftCost    = SR.MTOW * 800;
               const paybackYears    = aircraftCost / Math.max(1, annualProfit);
 
               // Helicopter comparison (Robinson R66: ~$4/km operating cost)
@@ -4691,7 +4691,7 @@ export default function App(){
                 const cycles=i*batteryCycles/10;
                 const SoH=Math.max(0.6, 1 - 0.20*(cycles/batteryCycles)**0.8);
                 return{cycles:+cycles.toFixed(0),SoH:+(SoH*100).toFixed(1),
-                  capacity:+(SoH*R.PackkWh).toFixed(2)};
+                  capacity:+(SoH*SR.PackkWh).toFixed(2)};
               });
 
               // Cost breakdown for pie
@@ -4709,15 +4709,15 @@ export default function App(){
               <div style={{display:"flex",flexDirection:"column",gap:12}}>
 
                 {/* Header */}
-                <div style={{background:darkMode?"linear-gradient(135deg,#0d1a0d,#0a1f14)":C.panel,
+                <div style={{background:darkMode?"linear-gradient(135deg,#0d1a0d,#0a1f14)":SC.panel,
                   border:`1px solid #22c55e44`,borderRadius:10,padding:"16px 20px"}}>
-                  <div style={{fontSize:9,color:C.muted,fontFamily:"'DM Mono',monospace",letterSpacing:"0.18em",marginBottom:6}}>$/FLIGHT ECONOMICS — LIFECYCLE COST MODEL</div>
-                  <div style={{fontSize:18,fontWeight:800,color:C.text,marginBottom:6}}>
-                    <span style={{color:C.green}}>Cost</span> Estimator & ROI Analysis
+                  <div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace",letterSpacing:"0.18em",marginBottom:6}}>$/FLIGHT ECONOMICS — LIFECYCLE COST MODEL</div>
+                  <div style={{fontSize:18,fontWeight:800,color:SC.text,marginBottom:6}}>
+                    <span style={{color:SC.green}}>Cost</span> Estimator & ROI Analysis
                   </div>
-                  <div style={{fontSize:11,color:C.muted,lineHeight:1.7}}>
+                  <div style={{fontSize:11,color:SC.muted,lineHeight:1.7}}>
                     Full lifecycle cost model based on NREL UAM cost studies and Joby/Archer investor disclosures.
-                    Assumes <strong style={{color:C.green}}>{flightsPerDay} flights/day · {daysPerYear} days/year · {tripDist_km} km trip</strong>.
+                    Assumes <strong style={{color:SC.green}}>{flightsPerDay} flights/day · {daysPerYear} days/year · {tripDist_km} km trip</strong>.
                     All figures in 2025 USD. Click sliders on sidebar to see cost sensitivity.
                   </div>
                 </div>
@@ -4725,26 +4725,26 @@ export default function App(){
                 {/* Top KPIs */}
                 <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
                   <KPI label="Total Cost / Flight" value={`$${totalCost_per_flight.toFixed(0)}`} unit=""
-                    color={C.amber} sub={`$${cost_per_km.toFixed(2)}/km`}/>
+                    color={SC.amber} sub={`$${cost_per_km.toFixed(2)}/km`}/>
                   <KPI label="vs Helicopter" value={`${savings_vs_heli_pct.toFixed(0)}% cheaper`} unit=""
-                    color={savings_vs_heli_pct>0?C.green:C.red}
+                    color={savings_vs_heli_pct>0?SC.green:SC.red}
                     sub={`Heli: $${helicopter_cost_per_km}/km`}/>
                   <KPI label="Annual Profit" value={`$${(annualProfit/1000).toFixed(0)}k`} unit=""
-                    color={annualProfit>0?C.green:C.red}
+                    color={annualProfit>0?SC.green:SC.red}
                     sub={`Margin: ${profitMargin.toFixed(1)}%`}/>
                   <KPI label="Payback Period" value={`${Math.min(99,paybackYears).toFixed(1)} yrs`} unit=""
-                    color={paybackYears<5?C.green:paybackYears<10?C.amber:C.red}
+                    color={paybackYears<5?SC.green:paybackYears<10?SC.amber:SC.red}
                     sub={`Aircraft: $${(aircraftCost/1000).toFixed(0)}k`}/>
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
                   <KPI label="Energy Cost/Flight" value={`$${energyCost_per_flight.toFixed(2)}`} unit=""
-                    color={C.teal} sub={`${energyPerFlight_kWh} kWh × $${electricityRate_kWh}`}/>
+                    color={SC.teal} sub={`${energyPerFlight_kWh} kWh × $${electricityRate_kWh}`}/>
                   <KPI label="Battery Cost/Flight" value={`$${battCost_per_flight.toFixed(2)}`} unit=""
-                    color={C.amber} sub={`${flightsPerBattery.toFixed(0)} flights/pack`}/>
+                    color={SC.amber} sub={`${flightsPerBattery.toFixed(0)} flights/pack`}/>
                   <KPI label="Flights/Battery Pack" value={flightsPerBattery.toFixed(0)} unit=""
-                    color={C.blue} sub={`${(chargeDepth*100).toFixed(0)}% DoD/flight`}/>
+                    color={SC.blue} sub={`${(chargeDepth*100).toFixed(0)}% DoD/flight`}/>
                   <KPI label="Revenue/Flight" value={`$${revenuePerFlight.toFixed(0)}`} unit=""
-                    color={C.green} sub={`$${farePerKm}/km · ${(loadFactor*100).toFixed(0)}% LF`}/>
+                    color={SC.green} sub={`$${farePerKm}/km · ${(loadFactor*100).toFixed(0)}% LF`}/>
                 </div>
 
                 {/* Cost breakdown + battery degradation */}
@@ -4757,7 +4757,7 @@ export default function App(){
                           {costParts.map((c,i)=><Cell key={i} fill={c.col}/>)}
                         </Pie>
                         <Tooltip {...TTP} formatter={(v)=>[`$${v}`,""]}/>
-                        <Legend iconSize={8} wrapperStyle={{fontSize:10,color:C.muted}}/>
+                        <Legend iconSize={8} wrapperStyle={{fontSize:10,color:SC.muted}}/>
                       </PieChart>
                     </ResponsiveContainer>
                   </Panel>
@@ -4765,18 +4765,18 @@ export default function App(){
                     <ResponsiveContainer width="100%" height={235}>
                       <AreaChart data={degradationData} margin={{top:5,right:15,left:-10,bottom:0}}>
                         <defs><linearGradient id="dg" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor={C.amber} stopOpacity={0.4}/>
-                          <stop offset="95%" stopColor={C.amber} stopOpacity={0.02}/>
+                          <stop offset="5%" stopColor={SC.amber} stopOpacity={0.4}/>
+                          <stop offset="95%" stopColor={SC.amber} stopOpacity={0.02}/>
                         </linearGradient></defs>
-                        <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
-                        <XAxis dataKey="cycles" tick={{fontSize:9,fill:C.muted}}
-                          label={{value:"Cycles",position:"insideBottom",fontSize:10,fill:C.muted}}/>
-                        <YAxis domain={[50,105]} tick={{fontSize:9,fill:C.muted}}
-                          label={{value:"SoH (%)",angle:-90,position:"insideLeft",fontSize:10,fill:C.muted}}/>
+                        <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
+                        <XAxis dataKey="cycles" tick={{fontSize:9,fill:SC.muted}}
+                          label={{value:"Cycles",position:"insideBottom",fontSize:10,fill:SC.muted}}/>
+                        <YAxis domain={[50,105]} tick={{fontSize:9,fill:SC.muted}}
+                          label={{value:"SoH (%)",angle:-90,position:"insideLeft",fontSize:10,fill:SC.muted}}/>
                         <Tooltip {...TTP} formatter={(v,n)=>[`${v}%`,n]}/>
-                        <ReferenceLine y={80} stroke={C.red} strokeDasharray="4 3"
-                          label={{value:"80% SoH (replace)",fill:C.red,fontSize:9,position:"right"}}/>
-                        <Area type="monotone" dataKey="SoH" stroke={C.amber} strokeWidth={2.5}
+                        <ReferenceLine y={80} stroke={SC.red} strokeDasharray="4 3"
+                          label={{value:"80% SoH (replace)",fill:SC.red,fontSize:9,position:"right"}}/>
+                        <Area type="monotone" dataKey="SoH" stroke={SC.amber} strokeWidth={2.5}
                           fill="url(#dg)" dot={false} name="State of Health (%)"/>
                       </AreaChart>
                     </ResponsiveContainer>
@@ -4787,7 +4787,7 @@ export default function App(){
                 <Panel title="Annual Economics — P&L Summary">
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
                     <div>
-                      <div style={{fontSize:9,color:C.muted,fontFamily:"'DM Mono',monospace",textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:8}}>Annual Costs</div>
+                      <div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace",textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:8}}>Annual Costs</div>
                       {[
                         ["Energy",          energyCost_per_flight*flightsPerYear],
                         ["Battery",         battCost_per_flight*flightsPerYear],
@@ -4799,34 +4799,34 @@ export default function App(){
                       ].map(([k,v])=>{
                         const pct=v/annualCost*100;
                         return(
-                          <div key={k} style={{display:"flex",alignItems:"center",gap:8,padding:"4px 0",borderBottom:`1px solid ${C.border}22`}}>
-                            <span style={{fontSize:10,color:C.text,fontFamily:"'DM Mono',monospace",minWidth:110}}>{k}</span>
-                            <div style={{flex:1,height:5,background:C.border,borderRadius:2}}>
-                              <div style={{width:`${pct}%`,height:"100%",background:C.amber,borderRadius:2}}/>
+                          <div key={k} style={{display:"flex",alignItems:"center",gap:8,padding:"4px 0",borderBottom:`1px solid ${SC.border}22`}}>
+                            <span style={{fontSize:10,color:SC.text,fontFamily:"'DM Mono',monospace",minWidth:110}}>{k}</span>
+                            <div style={{flex:1,height:5,background:SC.border,borderRadius:2}}>
+                              <div style={{width:`${pct}%`,height:"100%",background:SC.amber,borderRadius:2}}/>
                             </div>
-                            <span style={{fontSize:10,color:C.amber,fontFamily:"'DM Mono',monospace",minWidth:60,textAlign:"right"}}>${(v/1000).toFixed(0)}k</span>
+                            <span style={{fontSize:10,color:SC.amber,fontFamily:"'DM Mono',monospace",minWidth:60,textAlign:"right"}}>${(v/1000).toFixed(0)}k</span>
                           </div>
                         );
                       })}
-                      <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderTop:`2px solid ${C.border}`,marginTop:4}}>
-                        <span style={{fontSize:11,fontWeight:700,color:C.text,fontFamily:"'DM Mono',monospace"}}>Total Annual Cost</span>
-                        <span style={{fontSize:11,fontWeight:700,color:C.red,fontFamily:"'DM Mono',monospace"}}>${(annualCost/1000).toFixed(0)}k</span>
+                      <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderTop:`2px solid ${SC.border}`,marginTop:4}}>
+                        <span style={{fontSize:11,fontWeight:700,color:SC.text,fontFamily:"'DM Mono',monospace"}}>Total Annual Cost</span>
+                        <span style={{fontSize:11,fontWeight:700,color:SC.red,fontFamily:"'DM Mono',monospace"}}>${(annualCost/1000).toFixed(0)}k</span>
                       </div>
                     </div>
                     <div>
-                      <div style={{fontSize:9,color:C.muted,fontFamily:"'DM Mono',monospace",textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:8}}>Revenue & Profit</div>
+                      <div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace",textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:8}}>Revenue & Profit</div>
                       {[
-                        ["Flights/year",`${flightsPerYear.toLocaleString()}`,C.muted],
-                        ["Revenue/flight",`$${revenuePerFlight.toFixed(0)}`,C.teal],
-                        ["Annual Revenue",`$${(annualRevenue/1000).toFixed(0)}k`,C.green],
-                        ["Annual Cost",   `$${(annualCost/1000).toFixed(0)}k`,C.red],
-                        ["Annual Profit", `$${(annualProfit/1000).toFixed(0)}k`,annualProfit>0?C.green:C.red],
-                        ["Profit Margin", `${profitMargin.toFixed(1)}%`,profitMargin>20?C.green:profitMargin>5?C.amber:C.red],
-                        ["Payback Period",`${Math.min(99,paybackYears).toFixed(1)} years`,paybackYears<5?C.green:C.amber],
-                        ["Cost vs Heli",  `${savings_vs_heli_pct.toFixed(0)}% cheaper`,savings_vs_heli_pct>0?C.green:C.red],
+                        ["Flights/year",`${flightsPerYear.toLocaleString()}`,SC.muted],
+                        ["Revenue/flight",`$${revenuePerFlight.toFixed(0)}`,SC.teal],
+                        ["Annual Revenue",`$${(annualRevenue/1000).toFixed(0)}k`,SC.green],
+                        ["Annual Cost",   `$${(annualCost/1000).toFixed(0)}k`,SC.red],
+                        ["Annual Profit", `$${(annualProfit/1000).toFixed(0)}k`,annualProfit>0?SC.green:SC.red],
+                        ["Profit Margin", `${profitMargin.toFixed(1)}%`,profitMargin>20?SC.green:profitMargin>5?SC.amber:SC.red],
+                        ["Payback Period",`${Math.min(99,paybackYears).toFixed(1)} years`,paybackYears<5?SC.green:SC.amber],
+                        ["Cost vs Heli",  `${savings_vs_heli_pct.toFixed(0)}% cheaper`,savings_vs_heli_pct>0?SC.green:SC.red],
                       ].map(([k,v,col])=>(
-                        <div key={k} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}22`}}>
-                          <span style={{fontSize:10,color:C.muted,fontFamily:"'DM Mono',monospace"}}>{k}</span>
+                        <div key={k} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${SC.border}22`}}>
+                          <span style={{fontSize:10,color:SC.muted,fontFamily:"'DM Mono',monospace"}}>{k}</span>
                           <span style={{fontSize:11,color:col,fontFamily:"'DM Mono',monospace",fontWeight:700}}>{v}</span>
                         </div>
                       ))}
@@ -4841,19 +4841,19 @@ export default function App(){
                       layout="vertical"
                       data={costParts.map(c=>({...c,pct:+(c.val/totalCost_per_flight*100).toFixed(1)})).sort((a,b)=>b.pct-a.pct)}
                       margin={{top:5,right:60,left:60,bottom:5}}>
-                      <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
-                      <XAxis type="number" tick={{fontSize:9,fill:C.muted}}
-                        label={{value:"% of total cost",position:"insideBottom",fontSize:10,fill:C.muted}}/>
-                      <YAxis type="category" dataKey="name" tick={{fontSize:10,fill:C.muted}} width={80}/>
+                      <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
+                      <XAxis type="number" tick={{fontSize:9,fill:SC.muted}}
+                        label={{value:"% of total cost",position:"insideBottom",fontSize:10,fill:SC.muted}}/>
+                      <YAxis type="category" dataKey="name" tick={{fontSize:10,fill:SC.muted}} width={80}/>
                       <Tooltip {...TTP} formatter={(v)=>[`${v}%`,"Share"]}/>
                       <Bar dataKey="pct" radius={[0,4,4,0]} name="% of cost">
                         {costParts.sort((a,b)=>b.val-a.val).map((c,i)=><Cell key={i} fill={c.col}/>)}
                       </Bar>
                     </BarChart>
                   </ResponsiveContainer>
-                  <div style={{marginTop:8,padding:"8px 12px",background:`${C.green}11`,
-                    border:`1px solid ${C.green}33`,borderRadius:6,fontSize:10,
-                    color:C.green,fontFamily:"'DM Mono',monospace",lineHeight:1.7}}>
+                  <div style={{marginTop:8,padding:"8px 12px",background:`${SC.green}11`,
+                    border:`1px solid ${SC.green}33`,borderRadius:6,fontSize:10,
+                    color:SC.green,fontFamily:"'DM Mono',monospace",lineHeight:1.7}}>
                     💡 <strong>Key lever:</strong> Battery replacement is typically the largest cost driver (
                     {(battCost_per_flight/totalCost_per_flight*100).toFixed(0)}% of total).
                     Increasing battery SED (Cell SED slider) reduces {"\u0057"}bat → fewer replacements → lower operating cost.
@@ -4869,13 +4869,13 @@ export default function App(){
               <div style={{display:"flex",flexDirection:"column",gap:12}}>
 
                 {/* Header */}
-                <div style={{background:C.panel,
+                <div style={{background:SC.panel,
                   border:`1px solid #06d6a044`,borderRadius:10,padding:"16px 20px"}}>
-                  <div style={{fontSize:9,color:C.muted,fontFamily:"'DM Mono',monospace",letterSpacing:"0.18em",marginBottom:6}}>CUSTOM MISSION PROFILE — DRAG & DROP PHASES</div>
-                  <div style={{fontSize:18,fontWeight:800,color:C.text,marginBottom:6}}>
+                  <div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace",letterSpacing:"0.18em",marginBottom:6}}>CUSTOM MISSION PROFILE — DRAG & DROP PHASES</div>
+                  <div style={{fontSize:18,fontWeight:800,color:SC.text,marginBottom:6}}>
                     <span style={{color:"#06d6a0"}}>Mission Builder</span>
                   </div>
-                  <div style={{fontSize:11,color:C.muted,lineHeight:1.7}}>
+                  <div style={{fontSize:11,color:SC.muted,lineHeight:1.7}}>
                     Build any mission profile by dragging phases into order. Add hover-at-destination, emergency divert, wind correction segments, loiter patterns.
                     Click <strong style={{color:"#06d6a0"}}>▶ Compute Mission</strong> to run the physics engine on your custom profile.
                   </div>
@@ -4894,7 +4894,7 @@ export default function App(){
                           display:"flex",alignItems:"center",gap:6}}>
                         <span style={{fontSize:14}}>{pt.icon}</span>
                         <span style={{fontSize:11,color:pt.col,fontFamily:"'DM Mono',monospace",fontWeight:700}}>{pt.label}</span>
-                        <span style={{fontSize:10,color:C.muted}}>+</span>
+                        <span style={{fontSize:10,color:SC.muted}}>+</span>
                       </button>
                     ))}
                   </div>
@@ -4923,14 +4923,14 @@ export default function App(){
                           }}
                           onDragEnd={()=>{setDragIdx(null);setDragOverIdx(null);}}
                           style={{
-                            background:isDragging?`${pt.col}22`:isOver?`${pt.col}15`:C.bg,
+                            background:isDragging?`${pt.col}22`:isOver?`${pt.col}15`:SC.bg,
                             border:`1px solid ${isOver?pt.col:pt.col+"44"}`,
                             borderLeft:`3px solid ${pt.col}`,
                             borderRadius:8,padding:"10px 14px",cursor:"grab",
                             opacity:isDragging?0.5:1,transition:"all 0.15s",
                             display:"flex",alignItems:"center",gap:12}}>
                           {/* Drag handle */}
-                          <span style={{fontSize:14,color:C.dim,cursor:"grab",userSelect:"none"}}>⠿</span>
+                          <span style={{fontSize:14,color:SC.dim,cursor:"grab",userSelect:"none"}}>⠿</span>
                           <span style={{fontSize:16}}>{pt.icon}</span>
                           {/* Label */}
                           <input value={ph.label} onChange={e=>{
@@ -4945,32 +4945,32 @@ export default function App(){
                                 angle:"Angle (°)",speed:"Speed (m/s)",windSpeed:"Wind (m/s)"};
                               return(
                                 <div key={field} style={{display:"flex",alignItems:"center",gap:4}}>
-                                  <span style={{fontSize:9,color:C.muted,fontFamily:"'DM Mono',monospace"}}>{fieldLabels[field]}:</span>
+                                  <span style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace"}}>{fieldLabels[field]}:</span>
                                   <input type="number" value={ph[field]||0}
                                     onChange={e=>{
                                       const v=parseFloat(e.target.value)||0;
                                       setCustomPhases(prev=>prev.map((x,j)=>j===i?{...x,[field]:v}:x));
                                     }}
-                                    style={{width:60,background:C.panel,border:`1px solid ${C.border}`,
-                                      borderRadius:4,color:C.text,fontSize:11,padding:"3px 6px",
+                                    style={{width:60,background:SC.panel,border:`1px solid ${SC.border}`,
+                                      borderRadius:4,color:SC.text,fontSize:11,padding:"3px 6px",
                                       fontFamily:"'DM Mono',monospace",outline:"none"}}
                                     onFocus={e=>e.target.style.borderColor=pt.col}
-                                    onBlur={e=>e.target.style.borderColor=C.border}/>
+                                    onBlur={e=>e.target.style.borderColor=SC.border}/>
                                 </div>
                               );
                             })}
                           </div>
                           {/* Delete */}
                           <button onClick={()=>setCustomPhases(prev=>prev.filter((_,j)=>j!==i))} type="button"
-                            style={{background:"transparent",border:`1px solid ${C.red}44`,borderRadius:4,
-                              color:C.red,fontSize:10,cursor:"pointer",padding:"3px 8px",fontFamily:"'DM Mono',monospace",flexShrink:0}}>
+                            style={{background:"transparent",border:`1px solid ${SC.red}44`,borderRadius:4,
+                              color:SC.red,fontSize:10,cursor:"pointer",padding:"3px 8px",fontFamily:"'DM Mono',monospace",flexShrink:0}}>
                             ✕
                           </button>
                         </div>
                       );
                     })}
                     {customPhases.length===0&&(
-                      <div style={{textAlign:"center",padding:"32px",color:C.muted,fontFamily:"'DM Mono',monospace",fontSize:12}}>
+                      <div style={{textAlign:"center",padding:"32px",color:SC.muted,fontFamily:"'DM Mono',monospace",fontSize:12}}>
                         No phases. Click a phase type above to add one.
                       </div>
                     )}
@@ -4991,8 +4991,8 @@ export default function App(){
                         {id:uid2(),type:"hover", duration:30, altitude:15,label:"Landing Hover"},
                         {id:uid2(),type:"reserve",distance:40,speed:47,   label:"Reserve"},
                       ]);setMbResults(null);}} type="button"
-                      style={{padding:"10px 16px",background:"transparent",border:`1px solid ${C.border}`,
-                        borderRadius:6,color:C.muted,fontSize:11,cursor:"pointer",fontFamily:"'DM Mono',monospace"}}>
+                      style={{padding:"10px 16px",background:"transparent",border:`1px solid ${SC.border}`,
+                        borderRadius:6,color:SC.muted,fontSize:11,cursor:"pointer",fontFamily:"'DM Mono',monospace"}}>
                       ↺ Reset to Default
                     </button>
                   </div>
@@ -5003,13 +5003,13 @@ export default function App(){
                   <>
                     <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
                       <KPI label="Total Energy" value={mbResults.totalE} unit="kWh"
-                        color={mbResults.totalE<=R.PackkWh?C.green:C.red}
-                        sub={`Pack: ${R.PackkWh} kWh`}/>
+                        color={mbResults.totalE<=SR.PackkWh?SC.green:SC.red}
+                        sub={`Pack: ${SR.PackkWh} kWh`}/>
                       <KPI label="Mission Time" value={`${(mbResults.totalT/60).toFixed(1)} min`} unit=""
-                        color={C.blue} sub={`${mbResults.totalT}s total`}/>
-                      <KPI label="Total Range" value={mbResults.totalRange} unit="km" color={C.teal}/>
+                        color={SC.blue} sub={`${mbResults.totalT}s total`}/>
+                      <KPI label="Total Range" value={mbResults.totalRange} unit="km" color={SC.teal}/>
                       <KPI label="Final SoC" value={`${mbResults.finalSoC.toFixed(1)}%`} unit=""
-                        color={mbResults.finalSoC>20?C.green:mbResults.finalSoC>10?C.amber:C.red}
+                        color={mbResults.finalSoC>20?SC.green:mbResults.finalSoC>10?SC.amber:SC.red}
                         sub={mbResults.feasible?"✓ Feasible":"✗ Battery depleted"}/>
                     </div>
 
@@ -5018,20 +5018,20 @@ export default function App(){
                       <ResponsiveContainer width="100%" height={235}>
                         <BarChart data={mbResults.phases.map(ph=>({
                             name:ph.label,power:ph.power,energy:ph.energy,
-                            fill:PHASE_TYPES[ph.type]?.col||C.muted}))}
+                            fill:PHASE_TYPES[ph.type]?.col||SC.muted}))}
                           margin={{top:5,right:20,left:5,bottom:20}}>
-                          <CartesianGrid strokeDasharray="2 2" stroke={C.border}/>
-                          <XAxis dataKey="name" tick={{fontSize:9,fill:C.muted}} angle={-20} textAnchor="end"/>
-                          <YAxis yAxisId="left" tick={{fontSize:10,fill:C.amber}}
-                            label={{value:"Power (kW)",angle:-90,position:"insideLeft",fontSize:10,fill:C.amber}}/>
-                          <YAxis yAxisId="right" orientation="right" tick={{fontSize:10,fill:C.teal}}
-                            label={{value:"Energy (kWh)",angle:90,position:"insideRight",fontSize:10,fill:C.teal}}/>
+                          <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
+                          <XAxis dataKey="name" tick={{fontSize:9,fill:SC.muted}} angle={-20} textAnchor="end"/>
+                          <YAxis yAxisId="left" tick={{fontSize:10,fill:SC.amber}}
+                            label={{value:"Power (kW)",angle:-90,position:"insideLeft",fontSize:10,fill:SC.amber}}/>
+                          <YAxis yAxisId="right" orientation="right" tick={{fontSize:10,fill:SC.teal}}
+                            label={{value:"Energy (kWh)",angle:90,position:"insideRight",fontSize:10,fill:SC.teal}}/>
                           <Tooltip {...TTP}/>
                           <Legend iconSize={9} wrapperStyle={{fontSize:11}}/>
                           <Bar yAxisId="left" dataKey="power" name="Power (kW)" radius={[3,3,0,0]} maxBarSize={30}>
-                            {mbResults.phases.map((ph,i)=><Cell key={i} fill={PHASE_TYPES[ph.type]?.col||C.muted}/>)}
+                            {mbResults.phases.map((ph,i)=><Cell key={i} fill={PHASE_TYPES[ph.type]?.col||SC.muted}/>)}
                           </Bar>
-                          <Bar yAxisId="right" dataKey="energy" name="Energy (kWh)" fill={C.teal} radius={[3,3,0,0]} maxBarSize={30} opacity={0.7}/>
+                          <Bar yAxisId="right" dataKey="energy" name="Energy (kWh)" fill={SC.teal} radius={[3,3,0,0]} maxBarSize={30} opacity={0.7}/>
                         </BarChart>
                       </ResponsiveContainer>
                     </Panel>
@@ -5040,25 +5040,25 @@ export default function App(){
                     <Panel title="Phase-by-Phase Results">
                       <div style={{overflowX:"auto"}}>
                         <table style={{width:"100%",borderCollapse:"collapse",fontSize:10,fontFamily:"'DM Mono',monospace"}}>
-                          <thead><tr style={{background:C.panel}}>
+                          <thead><tr style={{background:SC.panel}}>
                             {["Phase","Type","Power (kW)","Energy (kWh)","Time (s)","Distance (km)","% Total E"].map(hdr=>(
-                              <th key={hdr} style={{padding:"5px 8px",color:C.muted,fontSize:9,fontWeight:600,textAlign:"right"}}>{hdr}</th>
+                              <th key={hdr} style={{padding:"5px 8px",color:SC.muted,fontSize:9,fontWeight:600,textAlign:"right"}}>{hdr}</th>
                             ))}
                           </tr></thead>
                           <tbody>
                             {mbResults.phases.map((ph,i)=>{
-                              const col=PHASE_TYPES[ph.type]?.col||C.muted;
+                              const col=PHASE_TYPES[ph.type]?.col||SC.muted;
                               return(
-                                <tr key={i} style={{borderTop:`1px solid ${C.border}`,background:i%2?"#0a0d14":C.bg}}>
+                                <tr key={i} style={{borderTop:`1px solid ${SC.border}`,background:i%2?"#0a0d14":SC.bg}}>
                                   <td style={{padding:"5px 8px",color:col,fontWeight:700}}>{ph.label}</td>
-                                  <td style={{padding:"5px 8px",color:C.muted,textAlign:"right"}}>{PHASE_TYPES[ph.type]?.icon} {PHASE_TYPES[ph.type]?.label}</td>
-                                  <td style={{padding:"5px 8px",color:C.amber,textAlign:"right"}}>{ph.power}</td>
-                                  <td style={{padding:"5px 8px",color:C.teal,textAlign:"right"}}>{ph.energy}</td>
-                                  <td style={{padding:"5px 8px",color:C.blue,textAlign:"right"}}>{ph.time}</td>
-                                  <td style={{padding:"5px 8px",color:C.muted,textAlign:"right"}}>{(ph.distance/1000).toFixed(1)}</td>
+                                  <td style={{padding:"5px 8px",color:SC.muted,textAlign:"right"}}>{PHASE_TYPES[ph.type]?.icon} {PHASE_TYPES[ph.type]?.label}</td>
+                                  <td style={{padding:"5px 8px",color:SC.amber,textAlign:"right"}}>{ph.power}</td>
+                                  <td style={{padding:"5px 8px",color:SC.teal,textAlign:"right"}}>{ph.energy}</td>
+                                  <td style={{padding:"5px 8px",color:SC.blue,textAlign:"right"}}>{ph.time}</td>
+                                  <td style={{padding:"5px 8px",color:SC.muted,textAlign:"right"}}>{(ph.distance/1000).toFixed(1)}</td>
                                   <td style={{padding:"5px 8px",textAlign:"right"}}>
                                     <div style={{display:"inline-flex",alignItems:"center",gap:6}}>
-                                      <div style={{width:36,height:4,background:C.border,borderRadius:2}}>
+                                      <div style={{width:36,height:4,background:SC.border,borderRadius:2}}>
                                         <div style={{width:`${(ph.energy/mbResults.totalE*100).toFixed(0)}%`,height:"100%",background:col,borderRadius:2}}/>
                                       </div>
                                       <span style={{color:col}}>{(ph.energy/mbResults.totalE*100).toFixed(1)}%</span>
@@ -5067,13 +5067,13 @@ export default function App(){
                                 </tr>
                               );
                             })}
-                            <tr style={{borderTop:`2px solid ${C.border}`,background:C.panel,fontWeight:700}}>
-                              <td style={{padding:"6px 8px",color:C.text}} colSpan={2}>TOTAL</td>
-                              <td style={{padding:"6px 8px",color:C.amber,textAlign:"right"}}>—</td>
-                              <td style={{padding:"6px 8px",color:C.teal,textAlign:"right"}}>{mbResults.totalE}</td>
-                              <td style={{padding:"6px 8px",color:C.blue,textAlign:"right"}}>{mbResults.totalT}</td>
-                              <td style={{padding:"6px 8px",color:C.muted,textAlign:"right"}}>{mbResults.totalRange}</td>
-                              <td style={{padding:"6px 8px",color:C.muted,textAlign:"right"}}>100%</td>
+                            <tr style={{borderTop:`2px solid ${SC.border}`,background:SC.panel,fontWeight:700}}>
+                              <td style={{padding:"6px 8px",color:SC.text}} colSpan={2}>TOTAL</td>
+                              <td style={{padding:"6px 8px",color:SC.amber,textAlign:"right"}}>—</td>
+                              <td style={{padding:"6px 8px",color:SC.teal,textAlign:"right"}}>{mbResults.totalE}</td>
+                              <td style={{padding:"6px 8px",color:SC.blue,textAlign:"right"}}>{mbResults.totalT}</td>
+                              <td style={{padding:"6px 8px",color:SC.muted,textAlign:"right"}}>{mbResults.totalRange}</td>
+                              <td style={{padding:"6px 8px",color:SC.muted,textAlign:"right"}}>100%</td>
                             </tr>
                           </tbody>
                         </table>
@@ -5089,14 +5089,14 @@ export default function App(){
               <div style={{display:"flex",flexDirection:"column",gap:12}}>
 
                 {/* Header */}
-                <div style={{background:C.panel,
+                <div style={{background:SC.panel,
                   border:`1px solid #3b82f644`,borderRadius:10,padding:"16px 20px"}}>
-                  <div style={{fontSize:9,color:C.muted,fontFamily:"'DM Mono',monospace",letterSpacing:"0.18em",marginBottom:6}}>REAL-TIME ATMOSPHERIC CONDITIONS — OPEN-METEO API</div>
-                  <div style={{fontSize:18,fontWeight:800,color:C.text,marginBottom:6}}>
-                    <span style={{color:C.blue}}>Weather</span> & Atmosphere Integration
+                  <div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace",letterSpacing:"0.18em",marginBottom:6}}>REAL-TIME ATMOSPHERIC CONDITIONS — OPEN-METEO API</div>
+                  <div style={{fontSize:18,fontWeight:800,color:SC.text,marginBottom:6}}>
+                    <span style={{color:SC.blue}}>Weather</span> & Atmosphere Integration
                   </div>
-                  <div style={{fontSize:11,color:C.muted,lineHeight:1.7}}>
-                    Pulls real weather data for any city using <span style={{color:C.blue,fontWeight:700}}>Open-Meteo API</span> (no API key, completely free).
+                  <div style={{fontSize:11,color:SC.muted,lineHeight:1.7}}>
+                    Pulls real weather data for any city using <span style={{color:SC.blue,fontWeight:700}}>Open-Meteo API</span> (no API key, completely free).
                     Calculates how actual temperature, pressure, and density affect hover power, stall speed, cruise Mach, and range vs ISA standard conditions.
                   </div>
                 </div>
@@ -5107,33 +5107,33 @@ export default function App(){
                     <input value={wxSearch} onChange={e=>setWxSearch(e.target.value)}
                       onKeyDown={e=>e.key==="Enter"&&searchCity()}
                       placeholder="Type any city, e.g. Denver, Dubai, Singapore..."
-                      style={{flex:1,background:C.bg,border:`1px solid ${C.border}`,borderRadius:6,
-                        color:C.text,fontSize:12,padding:"9px 14px",fontFamily:"'DM Mono',monospace",outline:"none"}}
-                      onFocus={e=>e.target.style.borderColor=C.blue}
-                      onBlur={e=>e.target.style.borderColor=C.border}/>
+                      style={{flex:1,background:SC.bg,border:`1px solid ${SC.border}`,borderRadius:6,
+                        color:SC.text,fontSize:12,padding:"9px 14px",fontFamily:"'DM Mono',monospace",outline:"none"}}
+                      onFocus={e=>e.target.style.borderColor=SC.blue}
+                      onBlur={e=>e.target.style.borderColor=SC.border}/>
                     <button onClick={searchCity} disabled={wxLoading} type="button"
                       style={{padding:"9px 20px",background:`linear-gradient(135deg,#1e3a5f,#1e40af)`,
-                        border:`1px solid ${C.blue}`,borderRadius:6,color:"#93c5fd",fontSize:12,
+                        border:`1px solid ${SC.blue}`,borderRadius:6,color:"#93c5fd",fontSize:12,
                         fontWeight:700,cursor:wxLoading?"not-allowed":"pointer",fontFamily:"'DM Mono',monospace"}}>
                       {wxLoading?"⟳ Fetching...":"🔍 Get Weather"}
                     </button>
                   </div>
                   {wxError&&(
-                    <div style={{padding:"8px 12px",background:`${C.red}15`,border:`1px solid ${C.red}44`,
-                      borderRadius:6,color:C.red,fontSize:11,fontFamily:"'DM Mono',monospace",marginBottom:8}}>
+                    <div style={{padding:"8px 12px",background:`${SC.red}15`,border:`1px solid ${SC.red}44`,
+                      borderRadius:6,color:SC.red,fontSize:11,fontFamily:"'DM Mono',monospace",marginBottom:8}}>
                       ✗ {wxError}
                     </div>
                   )}
                   {/* Quick presets */}
-                  <div style={{fontSize:9,color:C.muted,fontFamily:"'DM Mono',monospace",marginBottom:6,letterSpacing:"0.1em"}}>QUICK ACCESS — REFERENCE CITIES</div>
+                  <div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace",marginBottom:6,letterSpacing:"0.1em"}}>QUICK ACCESS — REFERENCE CITIES</div>
                   <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
                     {WX_PRESETS.map(city=>(
                       <button key={city.name} onClick={()=>fetchWeather(city.lat,city.lon,city.name,city.alt)} type="button"
-                        style={{padding:"5px 10px",background:C.bg,border:`1px solid ${C.border}`,
+                        style={{padding:"5px 10px",background:SC.bg,border:`1px solid ${SC.border}`,
                           borderRadius:5,cursor:"pointer",fontSize:10,fontFamily:"'DM Mono',monospace",
-                          color:C.text,display:"flex",alignItems:"center",gap:4}}
-                        onMouseEnter={e=>e.currentTarget.style.borderColor=C.blue}
-                        onMouseLeave={e=>e.currentTarget.style.borderColor=C.border}>
+                          color:SC.text,display:"flex",alignItems:"center",gap:4}}
+                        onMouseEnter={e=>e.currentTarget.style.borderColor=SC.blue}
+                        onMouseLeave={e=>e.currentTarget.style.borderColor=SC.border}>
                         <span>{city.flag}</span>{city.name}
                       </button>
                     ))}
@@ -5148,17 +5148,17 @@ export default function App(){
                       <Panel title={`📍 ${wxData.cityName} — Current Conditions`}>
                         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
                           {[
-                            ["Temperature",`${wxData.T_C.toFixed(1)}°C`,wxData.T_C>35||wxData.T_C<-10?C.red:C.text],
-                            ["Condition",wxData.wx_desc,C.teal],
-                            ["Pressure",`${wxData.P_hPa.toFixed(0)} hPa`,C.muted],
-                            ["Humidity",`${wxData.humidity}%`,C.muted],
-                            ["Wind Speed",`${(wxData.wind_ms*3.6).toFixed(1)} km/h (${wxData.wind_ms.toFixed(1)} m/s)`,C.blue],
-                            ["Wind Dir",`${wxData.wind_dir}°`,C.muted],
-                            ["Elevation",`${wxData.elevation.toFixed(0)} m AMSL`,C.amber],
-                            ["ΔT from ISA",`${wxData.deltaT>0?"+":""}${wxData.deltaT.toFixed(1)}°C`,wxData.deltaT>10||wxData.deltaT<-10?C.red:C.amber],
+                            ["Temperature",`${wxData.T_C.toFixed(1)}°C`,wxData.T_C>35||wxData.T_C<-10?SC.red:SC.text],
+                            ["Condition",wxData.wx_desc,SC.teal],
+                            ["Pressure",`${wxData.P_hPa.toFixed(0)} hPa`,SC.muted],
+                            ["Humidity",`${wxData.humidity}%`,SC.muted],
+                            ["Wind Speed",`${(wxData.wind_ms*3.6).toFixed(1)} km/h (${wxData.wind_ms.toFixed(1)} m/s)`,SC.blue],
+                            ["Wind Dir",`${wxData.wind_dir}°`,SC.muted],
+                            ["Elevation",`${wxData.elevation.toFixed(0)} m AMSL`,SC.amber],
+                            ["ΔT from ISA",`${wxData.deltaT>0?"+":""}${wxData.deltaT.toFixed(1)}°C`,wxData.deltaT>10||wxData.deltaT<-10?SC.red:SC.amber],
                           ].map(([lbl,val,col])=>(
-                            <div key={lbl} style={{background:C.bg,borderRadius:6,padding:"8px 10px",border:`1px solid ${C.border}`}}>
-                              <div style={{fontSize:8,color:C.muted,fontFamily:"'DM Mono',monospace",marginBottom:2}}>{lbl}</div>
+                            <div key={lbl} style={{background:SC.bg,borderRadius:6,padding:"8px 10px",border:`1px solid ${SC.border}`}}>
+                              <div style={{fontSize:8,color:SC.muted,fontFamily:"'DM Mono',monospace",marginBottom:2}}>{lbl}</div>
                               <div style={{fontSize:11,color:col,fontFamily:"'DM Mono',monospace",fontWeight:700}}>{val}</div>
                             </div>
                           ))}
@@ -5166,28 +5166,28 @@ export default function App(){
                       </Panel>
                       <Panel title="🌡️ Atmosphere vs ISA Standard">
                         {[
-                          ["Air Density ρ",`${wxData.rho_actual} kg/m³`,"ISA SL: 1.225 kg/m³",wxData.rho_actual>1.15?C.green:wxData.rho_actual>1.0?C.amber:C.red],
-                          ["Density Ratio σ",`${wxData.sigma}`,wxData.sigma>0.95?"Near sea-level":wxData.sigma>0.85?"Moderate alt":"High alt",wxData.sigma>0.95?C.green:wxData.sigma>0.85?C.amber:C.red],
-                          ["Speed of Sound",`${wxData.a_actual.toFixed(1)} m/s`,`ISA SL: 340.3 m/s`,C.teal],
+                          ["Air Density ρ",`${wxData.rho_actual} kg/m³`,"ISA SL: 1.225 kg/m³",wxData.rho_actual>1.15?SC.green:wxData.rho_actual>1.0?SC.amber:SC.red],
+                          ["Density Ratio σ",`${wxData.sigma}`,wxData.sigma>0.95?"Near sea-level":wxData.sigma>0.85?"Moderate alt":"High alt",wxData.sigma>0.95?SC.green:wxData.sigma>0.85?SC.amber:SC.red],
+                          ["Speed of Sound",`${wxData.a_actual.toFixed(1)} m/s`,`ISA SL: 340.3 m/s`,SC.teal],
                         ].map(([lbl,val,sub,col])=>(
                           <div key={lbl} style={{display:"flex",alignItems:"center",justifyContent:"space-between",
-                            padding:"10px 0",borderBottom:`1px solid ${C.border}`}}>
+                            padding:"10px 0",borderBottom:`1px solid ${SC.border}`}}>
                             <div>
-                              <div style={{fontSize:11,color:C.text,fontFamily:"'DM Mono',monospace",fontWeight:600}}>{lbl}</div>
-                              <div style={{fontSize:9,color:C.muted,fontFamily:"'DM Mono',monospace"}}>{sub}</div>
+                              <div style={{fontSize:11,color:SC.text,fontFamily:"'DM Mono',monospace",fontWeight:600}}>{lbl}</div>
+                              <div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace"}}>{sub}</div>
                             </div>
                             <div style={{fontSize:14,fontWeight:800,color:col,fontFamily:"'DM Mono',monospace"}}>{val}</div>
                           </div>
                         ))}
                         {/* Density ratio bar */}
                         <div style={{marginTop:10}}>
-                          <div style={{fontSize:9,color:C.muted,fontFamily:"'DM Mono',monospace",marginBottom:4}}>Density ratio σ = {wxData.sigma.toFixed(3)}</div>
-                          <div style={{height:8,background:C.border,borderRadius:4,overflow:"hidden"}}>
+                          <div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace",marginBottom:4}}>Density ratio σ = {wxData.sigma.toFixed(3)}</div>
+                          <div style={{height:8,background:SC.border,borderRadius:4,overflow:"hidden"}}>
                             <div style={{width:`${wxData.sigma*100}%`,height:"100%",
-                              background:`linear-gradient(90deg,${C.red},${C.amber},${C.green})`,
+                              background:`linear-gradient(90deg,${SC.red},${SC.amber},${SC.green})`,
                               borderRadius:4,transition:"width 0.5s"}}/>
                           </div>
-                          <div style={{display:"flex",justifyContent:"space-between",fontSize:8,color:C.dim,marginTop:2,fontFamily:"'DM Mono',monospace"}}>
+                          <div style={{display:"flex",justifyContent:"space-between",fontSize:8,color:SC.dim,marginTop:2,fontFamily:"'DM Mono',monospace"}}>
                             <span>0 (vacuum)</span><span>0.5</span><span>1.0 (ISA SL)</span>
                           </div>
                         </div>
@@ -5197,51 +5197,51 @@ export default function App(){
                     {/* Performance impacts */}
                     {wxResults&&(
                       <Panel title={`⚡ Performance Impact vs ISA Standard — at ${wxData.cityName}`}>
-                        <div style={{fontSize:10,color:C.muted,fontFamily:"'DM Mono',monospace",marginBottom:12,lineHeight:1.6}}>
-                          Showing how <span style={{color:C.blue}}>actual atmospheric conditions</span> change your aircraft's performance
+                        <div style={{fontSize:10,color:SC.muted,fontFamily:"'DM Mono',monospace",marginBottom:12,lineHeight:1.6}}>
+                          Showing how <span style={{color:SC.blue}}>actual atmospheric conditions</span> change your aircraft's performance
                           vs the ISA standard day (T=15°C, P=1013.25 hPa, ρ=1.225 kg/m³) used in the main physics engine.
                         </div>
                         <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:12}}>
                           {[
-                            {label:"Hover Power",isa:`${R.Phov} kW`,actual:`${wxResults.P_hov_wx} kW`,delta:wxResults.P_hov_delta_pct,unit:"kW",
+                            {label:"Hover Power",isa:`${SR.Phov} kW`,actual:`${wxResults.P_hov_wx} kW`,delta:wxResults.P_hov_delta_pct,unit:"kW",
                               note:wxResults.P_hov_delta_pct>0?"Lower density → more power needed":"Denser air → less power needed"},
-                            {label:"Cruise Power",isa:`${R.Pcr} kW`,actual:`${wxResults.P_cr_wx} kW`,delta:wxResults.P_cr_delta_pct,unit:"kW",
+                            {label:"Cruise Power",isa:`${SR.Pcr} kW`,actual:`${wxResults.P_cr_wx} kW`,delta:wxResults.P_cr_delta_pct,unit:"kW",
                               note:wxResults.P_cr_delta_pct>0?"Less dense → higher cruise power":"Denser air → less cruise power"},
-                            {label:"Stall Speed",isa:`${R.Vstall} m/s`,actual:`${wxResults.V_stall_wx} m/s`,delta:((wxResults.V_stall_wx/R.Vstall-1)*100),unit:"m/s",
-                              note:wxResults.V_stall_wx>R.Vstall?"Higher stall speed — lower density":"Lower stall speed — higher density"},
-                            {label:"Cruise Mach",isa:`M ${R.Mach}`,actual:`M ${wxResults.Mach_wx}`,delta:((wxResults.Mach_wx/R.Mach-1)*100),unit:"",
-                              note:wxResults.Mach_wx>R.Mach?"Warmer air → higher Mach for same TAS":"Cooler air → slightly higher Mach"},
+                            {label:"Stall Speed",isa:`${SR.Vstall} m/s`,actual:`${wxResults.V_stall_wx} m/s`,delta:((wxResults.V_stall_wx/SR.Vstall-1)*100),unit:"m/s",
+                              note:wxResults.V_stall_wx>SR.Vstall?"Higher stall speed — lower density":"Lower stall speed — higher density"},
+                            {label:"Cruise Mach",isa:`M ${SR.Mach}`,actual:`M ${wxResults.Mach_wx}`,delta:((wxResults.Mach_wx/SR.Mach-1)*100),unit:"",
+                              note:wxResults.Mach_wx>SR.Mach?"Warmer air → higher Mach for same TAS":"Cooler air → slightly higher Mach"},
                             {label:"Ground Speed",isa:`${p.vCruise} m/s (no wind)`,actual:`${wxResults.Vg.toFixed(1)} m/s`,delta:wxResults.range_wind_pct,unit:"m/s",
                               note:wxResults.headwind_component>0?`Headwind ${wxResults.headwind_component.toFixed(1)} m/s — reduces range`:`Tailwind ${Math.abs(wxResults.headwind_component).toFixed(1)} m/s — boosts range`},
                             {label:"Air Density",isa:"1.225 kg/m³",actual:`${wxResults.rho_actual} kg/m³`,delta:((wxResults.rho_actual/1.225-1)*100),unit:"kg/m³",
                               note:`σ = ${wxResults.sigma} — ${wxResults.sigma>1?"denser than ISA":"less dense than ISA"}`},
                           ].map(({label,isa,actual,delta,note})=>(
-                            <div key={label} style={{background:C.bg,border:`1px solid ${Math.abs(delta)>10?C.amber:C.border}`,
-                              borderRadius:8,padding:"12px 14px",borderLeft:`3px solid ${delta>5?C.red:delta<-2?C.green:C.amber}`}}>
-                              <div style={{fontSize:10,fontWeight:700,color:C.text,fontFamily:"'DM Mono',monospace",marginBottom:6}}>{label}</div>
+                            <div key={label} style={{background:SC.bg,border:`1px solid ${Math.abs(delta)>10?SC.amber:SC.border}`,
+                              borderRadius:8,padding:"12px 14px",borderLeft:`3px solid ${delta>5?SC.red:delta<-2?SC.green:SC.amber}`}}>
+                              <div style={{fontSize:10,fontWeight:700,color:SC.text,fontFamily:"'DM Mono',monospace",marginBottom:6}}>{label}</div>
                               <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
-                                <span style={{fontSize:10,color:C.muted,fontFamily:"'DM Mono',monospace"}}>ISA: {isa}</span>
-                                <span style={{fontSize:10,color:C.blue,fontFamily:"'DM Mono',monospace",fontWeight:700}}>→ {actual}</span>
+                                <span style={{fontSize:10,color:SC.muted,fontFamily:"'DM Mono',monospace"}}>ISA: {isa}</span>
+                                <span style={{fontSize:10,color:SC.blue,fontFamily:"'DM Mono',monospace",fontWeight:700}}>→ {actual}</span>
                               </div>
                               <div style={{fontSize:13,fontWeight:800,fontFamily:"'DM Mono',monospace",
-                                color:delta>5?C.red:delta>2?C.amber:delta<-2?C.green:C.muted,marginBottom:4}}>
+                                color:delta>5?SC.red:delta>2?SC.amber:delta<-2?SC.green:SC.muted,marginBottom:4}}>
                                 {delta>0?"+":""}{delta.toFixed(1)}%
                               </div>
-                              <div style={{fontSize:9,color:C.dim,fontFamily:"'DM Mono',monospace",lineHeight:1.4}}>{note}</div>
+                              <div style={{fontSize:9,color:SC.dim,fontFamily:"'DM Mono',monospace",lineHeight:1.4}}>{note}</div>
                             </div>
                           ))}
                         </div>
 
                         {/* Summary insight */}
-                        <div style={{padding:"10px 14px",background:`${C.blue}11`,border:`1px solid ${C.blue}33`,
-                          borderRadius:6,fontSize:11,color:C.text,fontFamily:"'DM Mono',monospace",lineHeight:1.7}}>
-                          <strong style={{color:C.blue}}>📊 Summary for {wxData.cityName}:</strong>{" "}
-                          Air density is <strong style={{color:wxResults.sigma>1?C.green:wxResults.sigma<0.9?C.red:C.amber}}>
+                        <div style={{padding:"10px 14px",background:`${SC.blue}11`,border:`1px solid ${SC.blue}33`,
+                          borderRadius:6,fontSize:11,color:SC.text,fontFamily:"'DM Mono',monospace",lineHeight:1.7}}>
+                          <strong style={{color:SC.blue}}>📊 Summary for {wxData.cityName}:</strong>{" "}
+                          Air density is <strong style={{color:wxResults.sigma>1?SC.green:wxResults.sigma<0.9?SC.red:SC.amber}}>
                             {wxResults.sigma>1?"higher":"lower"} than ISA</strong> (σ={wxResults.sigma}).
-                          Hover power is <strong style={{color:wxResults.P_hov_delta_pct>5?C.red:C.green}}>
+                          Hover power is <strong style={{color:wxResults.P_hov_delta_pct>5?SC.red:SC.green}}>
                             {wxResults.P_hov_delta_pct>0?"+":""}{wxResults.P_hov_delta_pct.toFixed(1)}%</strong> vs standard day.
                           {Math.abs(wxResults.headwind_component)>2&&(
-                            <span> Wind component: <strong style={{color:wxResults.headwind_component>0?C.red:C.green}}>
+                            <span> Wind component: <strong style={{color:wxResults.headwind_component>0?SC.red:SC.green}}>
                               {wxResults.headwind_component>0?"headwind":"tailwind"} {Math.abs(wxResults.headwind_component).toFixed(1)} m/s
                             </strong> — range {wxResults.range_wind_pct>0?"increases":"decreases"} by{" "}
                             <strong>{Math.abs(wxResults.range_wind_pct).toFixed(1)}%</strong>.</span>
@@ -5253,10 +5253,10 @@ export default function App(){
                 )}
 
                 {!wxData&&!wxLoading&&(
-                  <div style={{textAlign:"center",padding:"48px 0",color:C.muted,fontFamily:"'DM Mono',monospace"}}>
+                  <div style={{textAlign:"center",padding:"48px 0",color:SC.muted,fontFamily:"'DM Mono',monospace"}}>
                     <div style={{fontSize:48,marginBottom:16}}>🌤️</div>
-                    <div style={{fontSize:14,fontWeight:600,color:C.text,marginBottom:8}}>No location selected</div>
-                    <div style={{fontSize:12,color:C.muted}}>Search a city or click a preset above</div>
+                    <div style={{fontSize:14,fontWeight:600,color:SC.text,marginBottom:8}}>No location selected</div>
+                    <div style={{fontSize:12,color:SC.muted}}>Search a city or click a preset above</div>
                   </div>
                 )}
               </div>
@@ -5266,13 +5266,13 @@ export default function App(){
             {tab===15&&(
               <div style={{display:"flex",flexDirection:"column",gap:12}}>
                 {/* Header banner */}
-                <div style={{background:C.panel,
-                  border:`1px solid ${C.border}`,borderRadius:8,padding:"16px 20px",
+                <div style={{background:SC.panel,
+                  border:`1px solid ${SC.border}`,borderRadius:8,padding:"16px 20px",
                   display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
                   <div>
-                    <div style={{fontSize:9,color:C.muted,fontFamily:"'DM Mono',monospace",letterSpacing:"0.15em",marginBottom:4}}>GEOMETRY EXPORT</div>
-                    <div style={{fontSize:22,fontWeight:800,color:C.amber,letterSpacing:"-0.03em"}}>OpenVSP Script Generator</div>
-                    <div style={{fontSize:10,color:C.muted,marginTop:2,fontFamily:"'DM Mono',monospace"}}>
+                    <div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace",letterSpacing:"0.15em",marginBottom:4}}>GEOMETRY EXPORT</div>
+                    <div style={{fontSize:22,fontWeight:800,color:SC.amber,letterSpacing:"-0.03em"}}>OpenVSP Script Generator</div>
+                    <div style={{fontSize:10,color:SC.muted,marginTop:2,fontFamily:"'DM Mono',monospace"}}>
                       Generates a .vspscript that builds fuselage · wing · V-tail · {p.nPropHover} hover rotors · CG & NP  inside your OpenVSP
                     </div>
                   </div>
@@ -5280,18 +5280,18 @@ export default function App(){
                     <AuthGate user={user} onAuth={handleAuth}>
                     <button
                       onClick={()=>{
-                        const xml=generateVSPScript(p,R);
+                        const xml=generateVSPScript(p,SR);
                         const blob=new Blob([xml],{type:"text/plain"});
                         const url=URL.createObjectURL(blob);
                         const a=document.createElement("a");
                         a.href=url; a.download="Trail1_eVTOL.vspscript"; a.click();
                         URL.revokeObjectURL(url);
-                        if(user) addNotif(user.id,{title:"VSP Script Downloaded",body:`Trail1_eVTOL.vspscript generated — MTOW=${R.MTOW} kg, b=${R.bWing} m.`,type:"success"});
+                        if(user) addNotif(user.id,{title:"VSP Script Downloaded",body:`Trail1_eVTOL.vspscript generated — MTOW=${SR.MTOW} kg, b=${SR.bWing} m.`,type:"success"});
                       }}
-                      style={{padding:"10px 22px",background:`linear-gradient(135deg,${C.amber},#f97316)`,
+                      style={{padding:"10px 22px",background:`linear-gradient(135deg,${SC.amber},#f97316)`,
                         border:"none",borderRadius:6,color:"#07090f",fontSize:13,fontWeight:800,
                         cursor:"pointer",letterSpacing:"0.05em",fontFamily:"'DM Mono',monospace",
-                        boxShadow:`0 0 20px ${C.amber}55`,display:"flex",alignItems:"center",gap:6}}>
+                        boxShadow:`0 0 20px ${SC.amber}55`,display:"flex",alignItems:"center",gap:6}}>
                       {!user&&<span>🔒</span>}⬇  Download .vspscript
                     </button>
                     </AuthGate>
@@ -5302,16 +5302,16 @@ export default function App(){
                 <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:8}}>
                   {[
                     ["Fuselage","Body","L "+p.fusLen+" m  Ø "+p.fusDiam+" m","#64748b"],
-                    ["Main Wing","WING_GEOM","S="+R.Swing+" m²  b="+R.bWing+" m","#3b82f6"],
-                    ["V-Tail","WING_GEOM","Γ="+p.vtGamma+"°  S="+R.Svt_total.toFixed(2)+" m²","#8b5cf6"],
-                    ["Hover Rotors","PROP_GEOM × "+p.nPropHover,"D="+R.Drotor+" m  "+R.Nbld+" blades","#22c55e"],
-                    ["CG + NP","Markers","CG="+R.xCGtotal+"m  NP="+R.xNP+"m","#f59e0b"],
+                    ["Main Wing","WING_GEOM","S="+SR.Swing+" m²  b="+SR.bWing+" m","#3b82f6"],
+                    ["V-Tail","WING_GEOM","Γ="+p.vtGamma+"°  S="+SR.Svt_total.toFixed(2)+" m²","#8b5cf6"],
+                    ["Hover Rotors","PROP_GEOM × "+p.nPropHover,"D="+SR.Drotor+" m  "+SR.Nbld+" blades","#22c55e"],
+                    ["CG + NP","Markers","CG="+SR.xCGtotal+"m  NP="+SR.xNP+"m","#f59e0b"],
                   ].map(([title,type,detail,col])=>(
-                    <div key={title} style={{background:C.panel,border:`1px solid ${col}33`,
+                    <div key={title} style={{background:SC.panel,border:`1px solid ${col}33`,
                       borderLeft:`3px solid ${col}`,borderRadius:6,padding:"10px 12px"}}>
                       <div style={{fontSize:11,fontWeight:700,color:col,fontFamily:"'DM Mono',monospace",marginBottom:3}}>{title}</div>
-                      <div style={{fontSize:8,color:C.muted,fontFamily:"'DM Mono',monospace",marginBottom:4}}>{type}</div>
-                      <div style={{fontSize:9,color:C.text,fontFamily:"'DM Mono',monospace"}}>{detail}</div>
+                      <div style={{fontSize:8,color:SC.muted,fontFamily:"'DM Mono',monospace",marginBottom:4}}>{type}</div>
+                      <div style={{fontSize:9,color:SC.text,fontFamily:"'DM Mono',monospace"}}>{detail}</div>
                     </div>
                   ))}
                 </div>
@@ -5321,18 +5321,18 @@ export default function App(){
                   <Panel title="Geometry Placement — OpenVSP Coordinates (X: nose→tail, Y: port→stbd, Z: up)">
                     <table style={{width:"100%",borderCollapse:"collapse",fontSize:10,fontFamily:"'DM Mono',monospace"}}>
                       <thead>
-                        <tr style={{borderBottom:`1px solid ${C.border}`}}>
+                        <tr style={{borderBottom:`1px solid ${SC.border}`}}>
                           {["Component","x_LE (m)","y (m)","z (m)","Dihedral"].map(hdr=>(
-                            <th key={hdr} style={{textAlign:"left",padding:"3px 6px",fontSize:8,color:C.muted,
+                            <th key={hdr} style={{textAlign:"left",padding:"3px 6px",fontSize:8,color:SC.muted,
                               textTransform:"uppercase",letterSpacing:"0.08em"}}>{hdr}</th>
                           ))}
                         </tr>
                       </thead>
                       <tbody>
                         {(()=>{
-                          const xWingLE_=(R.xACwing-0.25*R.Cr_).toFixed(3);
+                          const xWingLE_=(SR.xACwing-0.25*SR.Cr_).toFixed(3);
                           const zWing_=(-p.fusDiam*0.10).toFixed(3);
-                          const xVtLE_=((R.xACwing+R.lv)-0.25*R.MAC_vt).toFixed(3);
+                          const xVtLE_=((SR.xACwing+SR.lv)-0.25*SR.MAC_vt).toFixed(3);
                           const zVt_=(p.fusDiam*0.05).toFixed(3);
                           const nSide=Math.floor(p.nPropHover/2);
                           const rows=[
@@ -5340,20 +5340,20 @@ export default function App(){
                             ["Main Wing",xWingLE_,"0.000 (root)",zWing_,"2° (low-wing)"],
                             ["V-Tail",xVtLE_,"0.000 (root)",zVt_,p.vtGamma+"° (panel)"],
                             ...Array.from({length:nSide},(_,i)=>{
-                              const y=((R.bWing/2)*(i+0.5)/nSide).toFixed(3);
-                              const x=((R.xACwing-0.25*R.Cr_)-0.30).toFixed(3);
-                              const z=((-p.fusDiam*0.10)+R.Drotor*0.55).toFixed(3);
+                              const y=((SR.bWing/2)*(i+0.5)/nSide).toFixed(3);
+                              const x=((SR.xACwing-0.25*SR.Cr_)-0.30).toFixed(3);
+                              const z=((-p.fusDiam*0.10)+SR.Drotor*0.55).toFixed(3);
                               return["Rotor "+(2*i)+" / "+(2*i+1),x,"±"+y,z,"—"];
                             }),
-                            ["CG Marker",R.xCGtotal.toFixed(3),"0","fD×0.55","—"],
-                            ["NP Marker",R.xNP.toFixed(3),"0","fD×0.65","—"],
+                            ["CG Marker",SR.xCGtotal.toFixed(3),"0","fD×0.55","—"],
+                            ["NP Marker",SR.xNP.toFixed(3),"0","fD×0.65","—"],
                           ];
                           return rows.map((r,i)=>(
-                            <tr key={i} style={{background:i%2===0?C.bg:"transparent",
-                              borderBottom:`1px solid ${C.border}22`}}>
+                            <tr key={i} style={{background:i%2===0?SC.bg:"transparent",
+                              borderBottom:`1px solid ${SC.border}22`}}>
                               {r.map((cell,j)=>(
                                 <td key={j} style={{padding:"4px 6px",
-                                  color:j===0?C.amber:C.text,
+                                  color:j===0?SC.amber:SC.text,
                                   fontSize:j===0?10:9}}>{cell}</td>
                               ))}
                             </tr>
@@ -5368,24 +5368,24 @@ export default function App(){
                     <div style={{fontFamily:"'DM Mono',monospace",fontSize:10,lineHeight:1.8}}>
                       {[
                         {indent:0,icon:"🏗️",label:"Fuselage (FUSELAGE_GEOM)",detail:`L=${p.fusLen}m  Ø=${p.fusDiam}m`,col:"#94a3b8"},
-                        {indent:1,icon:"✈️",label:"Main Wing (WING_GEOM)",detail:`b=${R.bWing}m  S=${R.Swing}m²  AR=${p.AR}  λ=${p.taper}`,col:C.blue},
-                        {indent:1,icon:"🦋",label:"V-Tail (WING_GEOM · XZ sym)",detail:`Γ=${p.vtGamma}°  S_panel=${R.Svt_panel}m²  AR=${p.vtAR}`,col:"#8b5cf6"},
-                        {indent:1,icon:"🟢",label:"CG Marker (FUSELAGE_GEOM)",detail:`x=${R.xCGtotal}m  SM=${((R.SM)*100).toFixed(1)}% MAC`,col:C.green},
-                        {indent:1,icon:"🔵",label:"NP Marker (FUSELAGE_GEOM)",detail:`x=${R.xNP}m from nose`,col:C.teal},
+                        {indent:1,icon:"✈️",label:"Main Wing (WING_GEOM)",detail:`b=${SR.bWing}m  S=${SR.Swing}m²  AR=${p.AR}  λ=${p.taper}`,col:SC.blue},
+                        {indent:1,icon:"🦋",label:"V-Tail (WING_GEOM · XZ sym)",detail:`Γ=${p.vtGamma}°  S_panel=${SR.Svt_panel}m²  AR=${p.vtAR}`,col:"#8b5cf6"},
+                        {indent:1,icon:"🟢",label:"CG Marker (FUSELAGE_GEOM)",detail:`x=${SR.xCGtotal}m  SM=${((SR.SM)*100).toFixed(1)}% MAC`,col:SC.green},
+                        {indent:1,icon:"🔵",label:"NP Marker (FUSELAGE_GEOM)",detail:`x=${SR.xNP}m from nose`,col:SC.teal},
                         ...Array.from({length:Math.floor(p.nPropHover/2)},(_,i)=>({
                           indent:1,icon:"🔧",
                           label:`Rotor pair ${i} (PROP_GEOM × 2)`,
-                          detail:`D=${R.Drotor}m  ${R.Nbld||3} blades  @y=±${((R.bWing/2)*(i+0.5)/Math.floor(p.nPropHover/2)).toFixed(2)}m`,
-                          col:C.amber,
+                          detail:`D=${SR.Drotor}m  ${SR.Nbld||3} blades  @y=±${((SR.bWing/2)*(i+0.5)/Math.floor(p.nPropHover/2)).toFixed(2)}m`,
+                          col:SC.amber,
                         })),
                       ].map((n,i)=>(
                         <div key={i} style={{display:"flex",alignItems:"flex-start",gap:4,
                           paddingLeft:n.indent*18,paddingTop:1,paddingBottom:1}}>
-                          <span style={{color:C.dim,flexShrink:0}}>{n.indent>0?"└ ":""}</span>
+                          <span style={{color:SC.dim,flexShrink:0}}>{n.indent>0?"└ ":""}</span>
                           <span style={{flexShrink:0}}>{n.icon}</span>
                           <div>
                             <span style={{color:n.col,fontWeight:600}}>{n.label}</span>
-                            <div style={{fontSize:8,color:C.muted,marginTop:1}}>{n.detail}</div>
+                            <div style={{fontSize:8,color:SC.muted,marginTop:1}}>{n.detail}</div>
                           </div>
                         </div>
                       ))}
@@ -5398,27 +5398,27 @@ export default function App(){
                   <Panel title="Design Values Written to Script">
                     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4}}>
                       {[
-                        ["MTOW",R.MTOW+" kg"],
-                        ["Wing LE (from nose)",(R.xACwing-0.25*R.Cr_).toFixed(3)+" m"],
-                        ["Wing root chord",R.Cr_+" m"],
-                        ["Wing tip chord",R.Ct_+" m"],
-                        ["Wing half-span",(R.bWing/2).toFixed(3)+" m"],
-                        ["Wing sweep (LE)",R.sweep+"°"],
+                        ["MTOW",SR.MTOW+" kg"],
+                        ["Wing LE (from nose)",(SR.xACwing-0.25*SR.Cr_).toFixed(3)+" m"],
+                        ["Wing root chord",SR.Cr_+" m"],
+                        ["Wing tip chord",SR.Ct_+" m"],
+                        ["Wing half-span",(SR.bWing/2).toFixed(3)+" m"],
+                        ["Wing sweep (LE)",SR.sweep+"°"],
                         ["Wing t/c",p.tc],
-                        ["V-tail root LE",((R.xACwing+R.lv)-0.25*R.MAC_vt).toFixed(3)+" m"],
-                        ["V-tail panel span",R.bvt_panel+" m"],
-                        ["V-tail root chord",R.Cr_vt+" m"],
-                        ["V-tail sweep (LE)",R.sweep_vt+"°"],
-                        ["Rotor diameter",R.Drotor+" m"],
-                        ["Blade chord",R.ChordBl.toFixed(4)+" m"],
-                        ["CG from nose",R.xCGtotal+" m"],
-                        ["NP from nose",R.xNP+" m"],
-                        ["Static margin",(R.SM*100).toFixed(1)+"% MAC"],
+                        ["V-tail root LE",((SR.xACwing+SR.lv)-0.25*SR.MAC_vt).toFixed(3)+" m"],
+                        ["V-tail panel span",SR.bvt_panel+" m"],
+                        ["V-tail root chord",SR.Cr_vt+" m"],
+                        ["V-tail sweep (LE)",SR.sweep_vt+"°"],
+                        ["Rotor diameter",SR.Drotor+" m"],
+                        ["Blade chord",SR.ChordBl.toFixed(4)+" m"],
+                        ["CG from nose",SR.xCGtotal+" m"],
+                        ["NP from nose",SR.xNP+" m"],
+                        ["Static margin",(SR.SM*100).toFixed(1)+"% MAC"],
                       ].map(([k,v])=>(
                         <div key={k} style={{display:"flex",justifyContent:"space-between",
-                          padding:"3px 6px",background:C.bg,borderRadius:3}}>
-                          <span style={{fontSize:9,color:C.muted,fontFamily:"'DM Mono',monospace"}}>{k}</span>
-                          <span style={{fontSize:9,color:C.amber,fontFamily:"'DM Mono',monospace",fontWeight:700}}>{v}</span>
+                          padding:"3px 6px",background:SC.bg,borderRadius:3}}>
+                          <span style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace"}}>{k}</span>
+                          <span style={{fontSize:9,color:SC.amber,fontFamily:"'DM Mono',monospace",fontWeight:700}}>{v}</span>
                         </div>
                       ))}
                     </div>
@@ -5435,12 +5435,12 @@ export default function App(){
                       ["7","Iterate","Slider change in sidebar → re-download → re-run script. Each run rebuilds the model exactly."],
                     ].map(([n,title,text])=>(
                       <div key={n} style={{display:"flex",gap:8,marginBottom:8}}>
-                        <div style={{width:18,height:18,borderRadius:"50%",background:C.amber,flexShrink:0,
+                        <div style={{width:18,height:18,borderRadius:"50%",background:SC.amber,flexShrink:0,
                           display:"flex",alignItems:"center",justifyContent:"center",
                           fontSize:8,fontWeight:800,color:"#07090f",fontFamily:"'DM Mono',monospace"}}>{n}</div>
                         <div>
-                          <div style={{fontSize:10,fontWeight:700,color:C.text,fontFamily:"'DM Mono',monospace"}}>{title}</div>
-                          <div style={{fontSize:9,color:C.muted,marginTop:1,lineHeight:1.5}}>{text}</div>
+                          <div style={{fontSize:10,fontWeight:700,color:SC.text,fontFamily:"'DM Mono',monospace"}}>{title}</div>
+                          <div style={{fontSize:9,color:SC.muted,marginTop:1,lineHeight:1.5}}>{text}</div>
                         </div>
                       </div>
                     ))}
@@ -5452,18 +5452,18 @@ export default function App(){
                   <AuthGate user={user} onAuth={handleAuth}>
                   <button
                     onClick={()=>{
-                      const xml=generateVSPScript(p,R);
+                      const xml=generateVSPScript(p,SR);
                       const blob=new Blob([xml],{type:"application/xml"});
                       const url=URL.createObjectURL(blob);
                       const a=document.createElement("a");
                       a.href=url; a.download="Trail1_eVTOL.vspscript"; a.click();
                       URL.revokeObjectURL(url);
-                      if(user) addNotif(user.id,{title:"VSP Script Downloaded",body:`Trail1_eVTOL.vspscript generated — MTOW=${R.MTOW} kg, b=${R.bWing} m.`,type:"success"});
+                      if(user) addNotif(user.id,{title:"VSP Script Downloaded",body:`Trail1_eVTOL.vspscript generated — MTOW=${SR.MTOW} kg, b=${SR.bWing} m.`,type:"success"});
                     }}
-                    style={{padding:"12px 40px",background:`linear-gradient(135deg,${C.amber},#f97316)`,
+                    style={{padding:"12px 40px",background:`linear-gradient(135deg,${SC.amber},#f97316)`,
                       border:"none",borderRadius:6,color:"#07090f",fontSize:14,fontWeight:800,
                       cursor:"pointer",letterSpacing:"0.06em",fontFamily:"'DM Mono',monospace",
-                      boxShadow:`0 0 30px ${C.amber}44`,display:"flex",alignItems:"center",gap:8}}>
+                      boxShadow:`0 0 30px ${SC.amber}44`,display:"flex",alignItems:"center",gap:8}}>
                     {!user&&<span>🔒</span>}⬇  Download Trail1_eVTOL.vspscript
                   </button>
                   </AuthGate>
