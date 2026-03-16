@@ -2002,7 +2002,7 @@ export default function App(){
           )}
 
           {/* Share Design — community leaderboard */}
-          {SR&&<ShareDesignButton user={user} params={params} results={SR} C={C}/>}
+          {SR&&<ShareDesignButton user={user} params={params} results={SR} C={SC}/>}
 
           <UserHeaderBar user={user} onSignOut={handleSignOut} onSignIn={()=>setShowAuthModal(true)} onUpdate={handleUpdate}/>
           {showAuthModal&&<AuthModal onClose={()=>setShowAuthModal(false)} onAuth={handleAuth}/>}
@@ -2088,7 +2088,7 @@ export default function App(){
           <div style={{flex:1,overflowY:"auto",padding:"14px 18px 28px",background:SC.bg}}>
             {/* Shared design banner — shown when ?design= is in URL */}
             {sharedDesignId&&(
-              <PublicDesignBanner shareId={sharedDesignId} onLoad={params=>setParams(prev=>({...prev,...params}))} C={C}/>
+              <PublicDesignBanner shareId={sharedDesignId} onLoad={params=>setParams(prev=>({...prev,...params}))} C={SC}/>
             )}
             {!SR&&<div style={{color:SC.red,fontFamily:"'DM Mono',monospace",padding:20}}>Calculation error — adjust inputs.</div>}
             {SR&&<>
@@ -5467,7 +5467,7 @@ export default function App(){
 
             {/* ──── TAB 16: COMMUNITY & LEADERBOARD ──── */}
             {tab===16&&(
-              <LeaderboardPanel C={C} onLoadDesign={(row)=>{
+              <LeaderboardPanel C={SC} onLoadDesign={(row)=>{
                 try{
                   const params=JSON.parse(row.params||"{}");
                   if(Object.keys(params).length>0){
@@ -5480,7 +5480,7 @@ export default function App(){
 
             {/* ──── TAB 17: REAL-TIME COLLABORATION ──── */}
             {tab===17&&(
-              <CollabPanel user={user} params={params} onParamChange={set} C={C}/>
+              <CollabPanel user={user} params={params} onParamChange={set} C={SC}/>
             )}
 
             </>}
