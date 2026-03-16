@@ -477,10 +477,10 @@ function runSizing(p) {
   const dist_55dBA  = +contourDist(55).toFixed(0);
 
   // BPF harmonics SPL (tonal spectrum)
-  const bpfHarmonics=[1,2,3,4].map(n=>({
-    harmonic:n,
-    freq:+(BPF*n).toFixed(1),
-    SPL:+(OASPL_single_1m - (n-1)*6 + 10*Math.log10(N_rot) + Aweight(BPF*n)).toFixed(1),
+  const bpfHarmonics=[1,2,3,4].map(nth=>({
+    harmonic:nth,
+    freq:+(BPF*nth).toFixed(1),
+    SPL:+(OASPL_single_1m - (nth-1)*6 + 10*Math.log10(N_rot) + Aweight(BPF*nth)).toFixed(1),
   }));
 
   // Noise sensitivity to design parameters (for optimization guidance)
@@ -1525,7 +1525,7 @@ export default function App(){
       ["Hover FOM",p.etaHov,""],["System η",p.etaSys,""],
       ["T/W ratio",p.twRatio,""],["Rotors",p.nPropHover,""],
     ];
-    const csv=rows.map(r=>r.map(v=>`"${v}"`).join(",")).join("\n");
+    const csv=rows.map(rowArr=>rowArr.map(cellVal=>`"${cellVal}"`).join(",")).join("\n");
     const blob=new Blob([csv],{type:"text/csv"});
     const url=URL.createObjectURL(blob);
     const a=document.createElement("a");
@@ -2561,7 +2561,7 @@ export default function App(){
                     return(
                     <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} style={{fontFamily:"'DM Mono',monospace",overflow:"visible"}}>
                       {/* grid lines */}
-                      {[0.25,0.5,0.75,1.0].map(f=>{
+                      {[0.25,0.5,0.75,1.0].map(frac=>{
                         const xg=f*b/2*sc;
                         return <line key={f} x1={cx+xg} y1={margin.t-8} x2={cx+xg} y2={H-margin.b+5}
                           stroke="#1e2a3a" strokeWidth={1} strokeDasharray="3 3"/>;
@@ -2598,7 +2598,7 @@ export default function App(){
                       <text x={cx-xTip-4} y={yTip-4} textAnchor="end" fill="#3b82f6" fontSize={8}>LE</text>
                       <text x={cx-xTipTe-4} y={yTipTe+4} textAnchor="end" fill="#3b82f6" fontSize={8}>TE</text>
                       {/* Span fraction ticks */}
-                      {[0.25,0.5,0.75].map(f=>(
+                      {[0.25,0.5,0.75].map(frac=>(
                         <text key={f} x={cx+f*b/2*sc} y={margin.t-10} textAnchor="middle" fill="#334155" fontSize={7}>{Math.round(f*100)}%</text>
                       ))}
                       <text x={cx+b/2*sc} y={margin.t-10} textAnchor="middle" fill="#334155" fontSize={7}>tip</text>
@@ -4180,9 +4180,9 @@ export default function App(){
               // Compute scores
               const score=(arr)=>{
                 const total=arr.length;
-                const passed=arr.filter(r=>r.check).length;
-                const critical_fail=arr.filter(r=>!r.check&&r.severity==="critical").length;
-                const major_fail=arr.filter(r=>!r.check&&r.severity==="major").length;
+                const passed=arr.filter(rule=>rule.check).length;
+                const critical_fail=arr.filter(rule=>!rule.check&&r.severity==="critical").length;
+                const major_fail=arr.filter(rule=>!rule.check&&r.severity==="major").length;
                 return{total,passed,critical_fail,major_fail,pct:Math.round(passed/total*100)};
               };
               const faaScore=score(rules.FAA);
