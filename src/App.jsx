@@ -730,12 +730,12 @@ function generateReport(p, SR, branding={}) {
       <tr><td>Design Status</td><td>${feasBadge}</td></tr>
     </table>
     <div class="cover-kpi-grid">
-      <div class="kpi"><div class="kpi-val">${n(SR.MTOW,1)} kg</div><div class="kpi-lbl">MTOW</div></div>
-      <div class="kpi"><div class="kpi-val">${n(SR.Etot,2)} kWh</div><div class="kpi-lbl">Total Energy</div></div>
-      <div class="kpi"><div class="kpi-val">${n(SR.Phov,1)} kW</div><div class="kpi-lbl">Hover Power</div></div>
-      <div class="kpi"><div class="kpi-val">${n(SR.bWing,2)} m</div><div class="kpi-lbl">Wing Span</div></div>
-      <div class="kpi"><div class="kpi-val">${n(SR.SM_vt*100,1)}%</div><div class="kpi-lbl">Static Margin</div></div>
-      <div class="kpi"><div class="kpi-val">${n(SR.LDact,2)}</div><div class="kpi-lbl">Actual L/D</div></div>
+      <div class="kpi"><div class="kpi-val">${fmt(SR.MTOW,1)} kg</div><div class="kpi-lbl">MTOW</div></div>
+      <div class="kpi"><div class="kpi-val">${fmt(SR.Etot,2)} kWh</div><div class="kpi-lbl">Total Energy</div></div>
+      <div class="kpi"><div class="kpi-val">${fmt(SR.Phov,1)} kW</div><div class="kpi-lbl">Hover Power</div></div>
+      <div class="kpi"><div class="kpi-val">${fmt(SR.bWing,2)} m</div><div class="kpi-lbl">Wing Span</div></div>
+      <div class="kpi"><div class="kpi-val">${fmt(SR.SM_vt*100,1)}%</div><div class="kpi-lbl">Static Margin</div></div>
+      <div class="kpi"><div class="kpi-val">${fmt(SR.LDact,2)}</div><div class="kpi-lbl">Actual L/D</div></div>
     </div>
   </div>`;
 
@@ -745,7 +745,7 @@ function generateReport(p, SR, branding={}) {
   ${table(["Parameter","Symbol","Value","Unit"],[
     row("Payload","m<sub>pay</sub>",p.payload,"kg"),
     row("Design Range","SR",p.range,"km"),
-    row("Cruise Speed","V<sub>cr</sub>",p.vCruise,"m/s ("+n(p.vCruise*3.6,1)+" km/h)"),
+    row("Cruise Speed","V<sub>cr</sub>",p.vCruise,"m/s ("+fmt(p.vCruise*3.6,1)+" km/h)"),
     row("Cruise Altitude","h<sub>cr</sub>",p.cruiseAlt,"m"),
     row("Reserve Range","SR<sub>res</sub>",p.reserveRange,"km"),
     row("Hover Height","h<sub>hov</sub>",p.hoverHeight,"m"),
@@ -777,13 +777,13 @@ function generateReport(p, SR, branding={}) {
   // ── 2. ATMOSPHERE MODEL ──────────────────────────────────────────────
   const s2 = sec("atmo","2. Atmosphere Model (ISA)",`
   <p>All aerodynamic calculations use the International Standard Atmosphere (ISA) model evaluated at the cruise altitude h = ${p.cruiseAlt} m.</p>
-  ${eq("T_{cr} = T_0 - L_{lapse} \\cdot h_{cr} = 288.15 - 0.0065 \\times "+p.cruiseAlt+" = "+n(288.15-0.0065*p.cruiseAlt,2)+"\\text{ K}",
+  ${eq("T_{cr} = T_0 - L_{lapse} \\cdot h_{cr} = 288.15 - 0.0065 \\times "+p.cruiseAlt+" = "+fmt(288.15-0.0065*p.cruiseAlt,2)+"\\text{ K}",
     "Temperature at cruise altitude")}
-  ${eq("\\rho_{cr} = \\rho_{SL}\\left(\\frac{T_{cr}}{T_0}\\right)^{\\left(\\frac{g_0}{L_{lapse}\\,R_{air}}\\right)-1} = "+n(SR.MTOW ? 1.225*Math.pow((288.15-0.0065*p.cruiseAlt)/288.15, (-9.81/(-0.0065*287))-1) : 1.112,4)+"\\text{ kg/m}^3",
+  ${eq("\\rho_{cr} = \\rho_{SL}\\left(\\frac{T_{cr}}{T_0}\\right)^{\\left(\\frac{g_0}{L_{lapse}\\,R_{air}}\\right)-1} = "+fmt(SR.MTOW ? 1.225*Math.pow((288.15-0.0065*p.cruiseAlt)/288.15, (-9.81/(-0.0065*287))-1) : 1.112,4)+"\\text{ kg/m}^3",
     "Density at cruise altitude (ISA troposphere)")}
-  ${eq("a_{cr} = \\sqrt{\\gamma R_{air} T_{cr}} = \\sqrt{1.4 \\times 287 \\times "+(288.15-0.0065*p.cruiseAlt).toFixed(2)+"} = "+n(Math.sqrt(1.4*287*(288.15-0.0065*p.cruiseAlt)),2)+"\\text{ m/s}",
+  ${eq("a_{cr} = \\sqrt{\\gamma R_{air} T_{cr}} = \\sqrt{1.4 \\times 287 \\times "+(288.15-0.0065*p.cruiseAlt).toFixed(2)+"} = "+fmt(Math.sqrt(1.4*287*(288.15-0.0065*p.cruiseAlt)),2)+"\\text{ m/s}",
     "Speed of sound at cruise altitude")}
-  ${eq("M = \\frac{V_{cr}}{a_{cr}} = \\frac{"+p.vCruise+"}{"+n(Math.sqrt(1.4*287*(288.15-0.0065*p.cruiseAlt)),2)+"} = "+n(SR.Mach,4),
+  ${eq("M = \\frac{V_{cr}}{a_{cr}} = \\frac{"+p.vCruise+"}{"+fmt(Math.sqrt(1.4*287*(288.15-0.0065*p.cruiseAlt)),2)+"} = "+fmt(SR.Mach,4),
     "Cruise Mach number")}
   `);
 
@@ -794,139 +794,139 @@ function generateReport(p, SR, branding={}) {
   ${eq("W_{bat} = \\frac{E_{total}\\times 1000\\,(1+\\text{SoC}_{min})}{\\text{SED}_{cell}\\,\\eta_{bat}}","Battery mass from total mission energy")}
   ${eq("\\text{MTOW} = m_{pay} + f_{EW}\\cdot\\text{MTOW} + W_{bat}","Weight closure equation (solved iteratively)")}
   ${table(["Quantity","Symbol","Value","Unit"],[
-    row("MTOW (initial)","MTOW<sub>1</sub>",n(SR.MTOW1,1),"kg"),
-    row("MTOW (converged)","MTOW",n(SR.MTOW,1),"kg"),
-    row("Empty Weight","W<sub>e</sub>",n(SR.Wempty,1),"kg"),
-    row("Battery Mass","W<sub>bat</sub>",n(SR.Wbat,1),"kg"),
+    row("MTOW (initial)","MTOW<sub>1</sub>",fmt(SR.MTOW1,1),"kg"),
+    row("MTOW (converged)","MTOW",fmt(SR.MTOW,1),"kg"),
+    row("Empty Weight","W<sub>e</sub>",fmt(SR.Wempty,1),"kg"),
+    row("Battery Mass","W<sub>bat</sub>",fmt(SR.Wbat,1),"kg"),
     row("Payload","m<sub>pay</sub>",p.payload,"kg"),
-    row("Battery Mass Fraction","W<sub>bat</sub>/MTOW",n(SR.Wbat/SR.MTOW*100,1),"%"),
+    row("Battery Mass Fraction","W<sub>bat</sub>/MTOW",fmt(SR.Wbat/SR.MTOW*100,1),"%"),
   ])}
   `);
 
   // ── 4. MISSION ENERGY ────────────────────────────────────────────────
   const s4 = sec("energy","4. Mission Energy Breakdown",`
   <p>The mission is divided into six phases: Takeoff (hover), Climb, Cruise, Descent, Landing (hover), and Reserve.</p>
-  ${eq("E_{total} = E_{TO}+E_{cl}+E_{cr}+E_{dc}+E_{ld}+E_{res} = "+n(SR.Etot,3)+"\\text{ kWh}","Total mission energy")}
-  ${eq("P_{hov} = \\frac{W\\,g_0}{\\eta_{hov}}\\sqrt{\\frac{W\\,g_0}{2\\,\\rho_{SL}\\,N_{rot}\\,A_{disk}}} = "+n(SR.Phov,2)+"\\text{ kW}","Hover power (actuator disk theory)")}
-  ${eq("P_{cr} = \\frac{W\\,g_0\\,V_{cr}}{\\eta_{sys}\\,(L/D)} = "+n(SR.Pcr,2)+"\\text{ kW}","Cruise power")}
+  ${eq("E_{total} = E_{TO}+E_{cl}+E_{cr}+E_{dc}+E_{ld}+E_{res} = "+fmt(SR.Etot,3)+"\\text{ kWh}","Total mission energy")}
+  ${eq("P_{hov} = \\frac{W\\,g_0}{\\eta_{hov}}\\sqrt{\\frac{W\\,g_0}{2\\,\\rho_{SL}\\,N_{rot}\\,A_{disk}}} = "+fmt(SR.Phov,2)+"\\text{ kW}","Hover power (actuator disk theory)")}
+  ${eq("P_{cr} = \\frac{W\\,g_0\\,V_{cr}}{\\eta_{sys}\\,(L/D)} = "+fmt(SR.Pcr,2)+"\\text{ kW}","Cruise power")}
   ${table(["Phase","Power (kW)","Time (s)","Energy (kWh)"],[
-    row("Takeoff (Hover)","P<sub>hov</sub> = "+n(SR.Phov,2),n(SR.tto,0),n(SR.Eto,3)),
-    row("Climb","P<sub>cl</sub> = "+n(SR.Pcl,2),n(SR.tcl,0),n(SR.Ecl,3)),
-    row("Cruise","P<sub>cr</sub> = "+n(SR.Pcr,2),n(SR.tcr,0),n(SR.Ecr,3)),
-    row("Descent","P<sub>dc</sub> = "+n(SR.Pdc,2),n(SR.tdc,0),n(SR.Edc,3)),
-    row("Landing (Hover)","P<sub>hov</sub> = "+n(SR.Phov,2),n(SR.tld,0),n(SR.Eld,3)),
-    row("Reserve","P<sub>res</sub> = "+n(SR.Pres,2),n(SR.tres,0),n(SR.Eres,3)),
-    row("<strong>Total</strong>","","<strong>"+n(SR.Tend,0)+" s</strong>","<strong>"+n(SR.Etot,3)+"</strong>"),
+    row("Takeoff (Hover)","P<sub>hov</sub> = "+fmt(SR.Phov,2),fmt(SR.tto,0),fmt(SR.Eto,3)),
+    row("Climb","P<sub>cl</sub> = "+fmt(SR.Pcl,2),fmt(SR.tcl,0),fmt(SR.Ecl,3)),
+    row("Cruise","P<sub>cr</sub> = "+fmt(SR.Pcr,2),fmt(SR.tcr,0),fmt(SR.Ecr,3)),
+    row("Descent","P<sub>dc</sub> = "+fmt(SR.Pdc,2),fmt(SR.tdc,0),fmt(SR.Edc,3)),
+    row("Landing (Hover)","P<sub>hov</sub> = "+fmt(SR.Phov,2),fmt(SR.tld,0),fmt(SR.Eld,3)),
+    row("Reserve","P<sub>res</sub> = "+fmt(SR.Pres,2),fmt(SR.tres,0),fmt(SR.Eres,3)),
+    row("<strong>Total</strong>","","<strong>"+fmt(SR.Tend,0)+" s</strong>","<strong>"+fmt(SR.Etot,3)+"</strong>"),
   ])}
   `);
 
   // ── 5. WING AERODYNAMICS ─────────────────────────────────────────────
   const s5 = sec("wing","5. Wing Design & Aerodynamics",`
   <p>Wing area is sized to provide the required lift at cruise using the design lift coefficient C<sub>L,des</sub> = ${p.clDesign}.</p>
-  ${eq("S_w = \\frac{2\\,L_{req}}{\\rho_{cr}\\,V_{cr}^2\\,C_{L,des}} = \\frac{2\\times"+n(SR.MTOW*9.81,1)+"}{"+n(1.225*Math.pow((288.15-0.0065*p.cruiseAlt)/288.15,(-9.81/(-0.0065*287))-1),4)+"\\times"+p.vCruise+"^2\\times"+p.clDesign+"} = "+n(SR.Swing,2)+"\\text{ m}^2","Wing reference area")}
-  ${eq("b_w = \\sqrt{AR\\cdot S_w} = \\sqrt{"+p.AR+"\\times"+n(SR.Swing,2)+"} = "+n(SR.bWing,2)+"\\text{ m}","Wing span")}
-  ${eq("C_r = \\frac{2S_w}{b_w(1+\\lambda)} = "+n(SR.Cr_,3)+"\\text{ m}, \\quad C_t = \\lambda\\,C_r = "+n(SR.Ct_,3)+"\\text{ m}","Root and tip chord (taper λ = "+p.taper+")")}
-  ${eq("\\bar{c} = \\frac{2}{3}C_r\\frac{1+\\lambda+\\lambda^2}{1+\\lambda} = "+n(SR.MAC,3)+"\\text{ m}","Mean aerodynamic chord (MAC)")}
-  ${eq("\\Lambda_{LE} = \\arctan\\!\\left(\\frac{C_r - C_t}{b_w/2}\\right) = \\arctan\\!\\left(\\frac{"+n(SR.Cr_,3)+"-"+n(SR.Ct_,3)+"}{"+n(SR.bWing/2,3)+"}\\right) = "+n(SR.sweep,2)+"^\\circ","Leading edge sweep (semi-span denominator)")}
-  ${eq("C_{D_0,total} = "+n(SR.CD0tot,5)+", \\quad C_{D_i} = \\frac{C_{L,des}^2}{\\pi\\,AR\\,e} = "+n(SR.CDi,5),"Parasitic and induced drag coefficients")}
-  ${eq("(L/D)_{actual} = \\frac{C_{L,des}}{C_{D_0}+C_{D_i}} = "+n(SR.LDact,2),"Actual cruise lift-to-drag ratio")}
+  ${eq("S_w = \\frac{2\\,L_{req}}{\\rho_{cr}\\,V_{cr}^2\\,C_{L,des}} = \\frac{2\\times"+fmt(SR.MTOW*9.81,1)+"}{"+fmt(1.225*Math.pow((288.15-0.0065*p.cruiseAlt)/288.15,(-9.81/(-0.0065*287))-1),4)+"\\times"+p.vCruise+"^2\\times"+p.clDesign+"} = "+fmt(SR.Swing,2)+"\\text{ m}^2","Wing reference area")}
+  ${eq("b_w = \\sqrt{AR\\cdot S_w} = \\sqrt{"+p.AR+"\\times"+fmt(SR.Swing,2)+"} = "+fmt(SR.bWing,2)+"\\text{ m}","Wing span")}
+  ${eq("C_r = \\frac{2S_w}{b_w(1+\\lambda)} = "+fmt(SR.Cr_,3)+"\\text{ m}, \\quad C_t = \\lambda\\,C_r = "+fmt(SR.Ct_,3)+"\\text{ m}","Root and tip chord (taper λ = "+p.taper+")")}
+  ${eq("\\bar{c} = \\frac{2}{3}C_r\\frac{1+\\lambda+\\lambda^2}{1+\\lambda} = "+fmt(SR.MAC,3)+"\\text{ m}","Mean aerodynamic chord (MAC)")}
+  ${eq("\\Lambda_{LE} = \\arctan\\!\\left(\\frac{C_r - C_t}{b_w/2}\\right) = \\arctan\\!\\left(\\frac{"+fmt(SR.Cr_,3)+"-"+fmt(SR.Ct_,3)+"}{"+fmt(SR.bWing/2,3)+"}\\right) = "+fmt(SR.sweep,2)+"^\\circ","Leading edge sweep (semi-span denominator)")}
+  ${eq("C_{D_0,total} = "+fmt(SR.CD0tot,5)+", \\quad C_{D_i} = \\frac{C_{L,des}^2}{\\pi\\,AR\\,e} = "+fmt(SR.CDi,5),"Parasitic and induced drag coefficients")}
+  ${eq("(L/D)_{actual} = \\frac{C_{L,des}}{C_{D_0}+C_{D_i}} = "+fmt(SR.LDact,2),"Actual cruise lift-to-drag ratio")}
   ${table(["Parameter","Symbol","Value","Unit"],[
-    row("Wing Area","S<sub>w</sub>",n(SR.Swing,2),"m²"),
-    row("Wing Span","b<sub>w</sub>",n(SR.bWing,3),"m"),
-    row("Root Chord","C<sub>r</sub>",n(SR.Cr_,3),"m"),
-    row("Tip Chord","C<sub>t</sub>",n(SR.Ct_,3),"m"),
-    row("MAC","c̄",n(SR.MAC,3),"m"),
-    row("y<sub>MAC</sub>","ȳ<sub>MAC</sub>",n(SR.Ymac,3),"m"),
-    row("LE Sweep","Λ<sub>LE</sub>",n(SR.sweep,2),"°"),
-    row("Wing Loading","W/S",n(SR.WL,1),"N/m²"),
-    row("Re (MAC)","Re",n(SR.Re_,0),""),
+    row("Wing Area","S<sub>w</sub>",fmt(SR.Swing,2),"m²"),
+    row("Wing Span","b<sub>w</sub>",fmt(SR.bWing,3),"m"),
+    row("Root Chord","C<sub>r</sub>",fmt(SR.Cr_,3),"m"),
+    row("Tip Chord","C<sub>t</sub>",fmt(SR.Ct_,3),"m"),
+    row("MAC","c̄",fmt(SR.MAC,3),"m"),
+    row("y<sub>MAC</sub>","ȳ<sub>MAC</sub>",fmt(SR.Ymac,3),"m"),
+    row("LE Sweep","Λ<sub>LE</sub>",fmt(SR.sweep,2),"°"),
+    row("Wing Loading","W/S",fmt(SR.WL,1),"N/m²"),
+    row("Re (MAC)","Re",fmt(SR.Re_,0),""),
     row("Selected Airfoil","—",SR.selAF?.name||"—",""),
-    row("Actual L/D","(L/D)<sub>act</sub>",n(SR.LDact,2),""),
-    row("C<sub>D0</sub> total","C<sub>D0</sub>",n(SR.CD0tot,5),""),
-    row("C<sub>Di</sub>","C<sub>Di</sub>",n(SR.CDi,5),""),
+    row("Actual L/D","(L/D)<sub>act</sub>",fmt(SR.LDact,2),""),
+    row("C<sub>D0</sub> total","C<sub>D0</sub>",fmt(SR.CD0tot,5),""),
+    row("C<sub>Di</sub>","C<sub>Di</sub>",fmt(SR.CDi,5),""),
   ])}
   `);
 
   // ── 6. PROPULSION ────────────────────────────────────────────────────
   const s6 = sec("prop","6. Hover Propulsion Sizing",`
   <p>Rotor disk area is sized from actuator disk theory to satisfy the hover power budget with the given figure of merit η<sub>hov</sub> = ${p.etaHov}.</p>
-  ${eq("T_{rotor} = \\frac{W\\,g_0}{N_{rot}} = \\frac{"+n(SR.MTOW,1)+"\\times 9.81}{"+p.nPropHover+"} = "+n(SR.MTOW*9.81/p.nPropHover,1)+"\\text{ N}","Thrust per rotor")}
+  ${eq("T_{rotor} = \\frac{W\\,g_0}{N_{rot}} = \\frac{"+fmt(SR.MTOW,1)+"\\times 9.81}{"+p.nPropHover+"} = "+fmt(SR.MTOW*9.81/p.nPropHover,1)+"\\text{ N}","Thrust per rotor")}
   ${eq("A_{disk} = \\frac{T_{rotor}^3}{2\\,\\rho_{SL}\\,(P_{rotor}\\,\\eta_{hov})^2}","Disk area from actuator disk momentum theory")}
-  ${eq("D_{rotor} = 2\\sqrt{A_{disk}/\\pi} = "+n(SR.Drotor,3)+"\\text{ m}","Rotor diameter")}
-  ${eq("\\Omega_{tip} = \\sqrt{\\frac{2P_{rotor}\\eta_{hov}}{\\rho_{SL}\\,A_{disk}}}, \\quad \\text{RPM} = \\frac{60\\,\\Omega_{tip}}{2\\pi SR} = "+n(SR.RPM,0),"Tip speed and rotational speed")}
+  ${eq("D_{rotor} = 2\\sqrt{A_{disk}/\\pi} = "+fmt(SR.Drotor,3)+"\\text{ m}","Rotor diameter")}
+  ${eq("\\Omega_{tip} = \\sqrt{\\frac{2P_{rotor}\\eta_{hov}}{\\rho_{SL}\\,A_{disk}}}, \\quad \\text{RPM} = \\frac{60\\,\\Omega_{tip}}{2\\pi SR} = "+fmt(SR.RPM,0),"Tip speed and rotational speed")}
   ${table(["Parameter","Symbol","Value","Unit"],[
-    row("Hover Power (total)","P<sub>hov</sub>",n(SR.Phov,2),"kW"),
-    row("Power per Rotor","P<sub>rotor</sub>",n(SR.Phov/p.nPropHover,2),"kW"),
-    row("Rotor Diameter","D<sub>rot</sub>",n(SR.Drotor,3),"m"),
-    row("Disk Loading","DL",n(SR.DLrotor,1),"N/m²"),
-    row("Power Loading","PL",n(SR.PLrotor,1),"N/W"),
-    row("Tip Speed","Ω<sub>tip</sub>",n(SR.TipSpd,1),"m/s"),
-    row("Tip Mach","M<sub>tip</sub>",n(SR.TipMach,4),""),
-    row("RPM","n",n(SR.RPM,0),"rpm"),
+    row("Hover Power (total)","P<sub>hov</sub>",fmt(SR.Phov,2),"kW"),
+    row("Power per Rotor","P<sub>rotor</sub>",fmt(SR.Phov/p.nPropHover,2),"kW"),
+    row("Rotor Diameter","D<sub>rot</sub>",fmt(SR.Drotor,3),"m"),
+    row("Disk Loading","DL",fmt(SR.DLrotor,1),"N/m²"),
+    row("Power Loading","PL",fmt(SR.PLrotor,1),"N/W"),
+    row("Tip Speed","Ω<sub>tip</sub>",fmt(SR.TipSpd,1),"m/s"),
+    row("Tip Mach","M<sub>tip</sub>",fmt(SR.TipMach,4),""),
+    row("RPM","n",fmt(SR.RPM,0),"rpm"),
     row("No. of Blades","N<sub>bl</sub>",SR.Nbld,""),
-    row("Blade Chord","c<sub>bl</sub>",n(SR.ChordBl,4),"m"),
-    row("Motor Power","P<sub>mot</sub>",n(SR.PmotKW,2),"kW"),
-    row("Peak Power","P<sub>peak</sub>",n(SR.PpeakKW,2),"kW"),
+    row("Blade Chord","c<sub>bl</sub>",fmt(SR.ChordBl,4),"m"),
+    row("Motor Power","P<sub>mot</sub>",fmt(SR.PmotKW,2),"kW"),
+    row("Peak Power","P<sub>peak</sub>",fmt(SR.PpeakKW,2),"kW"),
   ])}
   `);
 
   // ── 7. BATTERY ───────────────────────────────────────────────────────
   const s7 = sec("battery","7. Battery System Sizing",`
-  ${eq("W_{bat} = \\frac{E_{total}\\times 1000\\,(1+\\text{SoC}_{min})}{\\text{SED}_{cell}\\,\\eta_{bat}} = \\frac{"+n(SR.Etot,3)+"\\times 1000\\times(1+"+p.socMin+")}{"+p.sedCell+"\\times"+p.etaBat+"} = "+n(SR.Wbat,1)+"\\text{ kg}","Battery mass")}
-  ${eq("\\text{SED}_{pack} = \\frac{E_{total}}{W_{bat}} = "+n(SR.SEDpack,1)+"\\text{ Wh/kg}","Pack-level specific energy density")}
+  ${eq("W_{bat} = \\frac{E_{total}\\times 1000\\,(1+\\text{SoC}_{min})}{\\text{SED}_{cell}\\,\\eta_{bat}} = \\frac{"+fmt(SR.Etot,3)+"\\times 1000\\times(1+"+p.socMin+")}{"+p.sedCell+"\\times"+p.etaBat+"} = "+fmt(SR.Wbat,1)+"\\text{ kg}","Battery mass")}
+  ${eq("\\text{SED}_{pack} = \\frac{E_{total}}{W_{bat}} = "+fmt(SR.SEDpack,1)+"\\text{ Wh/kg}","Pack-level specific energy density")}
   ${eq("N_{series} = \\text{round}\\!\\left(\\frac{V_{pack}}{V_{cell}}\\right) = \\text{round}\\!\\left(\\frac{800}{3.6}\\right) = "+SR.Nseries,"Series cell count for 800V pack")}
   ${table(["Parameter","Symbol","Value","Unit"],[
-    row("Battery Mass","W<sub>bat</sub>",n(SR.Wbat,1),"kg"),
-    row("Total Energy","E<sub>total</sub>",n(SR.Etot,3),"kWh"),
-    row("Pack SED","SED<sub>pack</sub>",n(SR.SEDpack,1),"Wh/kg"),
-    row("Pack Voltage","V<sub>pack</sub>",n(SR.PackV,0),"V"),
-    row("Pack Capacity","Q<sub>pack</sub>",n(SR.PackAh,1),"Ah"),
+    row("Battery Mass","W<sub>bat</sub>",fmt(SR.Wbat,1),"kg"),
+    row("Total Energy","E<sub>total</sub>",fmt(SR.Etot,3),"kWh"),
+    row("Pack SED","SED<sub>pack</sub>",fmt(SR.SEDpack,1),"Wh/kg"),
+    row("Pack Voltage","V<sub>pack</sub>",fmt(SR.PackV,0),"V"),
+    row("Pack Capacity","Q<sub>pack</sub>",fmt(SR.PackAh,1),"Ah"),
     row("Series Cells","N<sub>s</sub>",SR.Nseries,""),
     row("Parallel Strings","N<sub>p</sub>",SR.Npar,""),
     row("Total Cells","N<sub>cells</sub>",SR.Ncells,""),
-    row("C-rate (Hover)","C<sub>hov</sub>",n(SR.CrateHov,2),"C"),
-    row("C-rate (Cruise)","C<sub>cr</sub>",n(SR.CrateCr,2),"C"),
+    row("C-rate (Hover)","C<sub>hov</sub>",fmt(SR.CrateHov,2),"C"),
+    row("C-rate (Cruise)","C<sub>cr</sub>",fmt(SR.CrateCr,2),"C"),
   ])}
   `);
 
   // ── 8. STABILITY ─────────────────────────────────────────────────────
-  const xACwing = n(+(p.fusLen*0.2589 + (SR.Cr_-(SR.MAC-0.25*SR.MAC))),3);
+  const xACwing = fmt(+(p.fusLen*0.2589 + (SR.Cr_-(SR.MAC-0.25*SR.MAC))),3);
   const s8 = sec("stability","8. Longitudinal Stability",`
   <p>The static margin (SM) measures stability: positive SM indicates the neutral point (NP) is aft of the centre of gravity (CG).</p>
-  ${eq("x_{CG,total} = \\frac{W_e\\,x_{CG,e}+W_{bat}\\,x_{CG,bat}+m_{pay}\\,x_{CG,pay}}{\\text{MTOW}} = "+n(SR.xCGtotal,3)+"\\text{ m from nose}","Total centre of gravity")}
-  ${eq("x_{NP} = x_{AC,wing} + \\frac{S_h}{S_w}\\,\\eta_h\\,(1-\\varepsilon_\\alpha)\\,l_h = "+n(SR.SM_vt !== undefined ? SR.xNP : SR.xNP,3)+"\\text{ m from nose}","Neutral point (stick-fixed)")}
-  ${eq("SM = \\frac{x_{NP}-x_{CG}}{\\bar{c}} = \\frac{"+n(SR.xNP,3)+"-"+n(SR.xCGtotal,3)+"}{"+n(SR.MAC,3)+"} = "+n(SR.SM*100,1)+"\\%\\;\\text{MAC}","Static margin")}
+  ${eq("x_{CG,total} = \\frac{W_e\\,x_{CG,e}+W_{bat}\\,x_{CG,bat}+m_{pay}\\,x_{CG,pay}}{\\text{MTOW}} = "+fmt(SR.xCGtotal,3)+"\\text{ m from nose}","Total centre of gravity")}
+  ${eq("x_{NP} = x_{AC,wing} + \\frac{S_h}{S_w}\\,\\eta_h\\,(1-\\varepsilon_\\alpha)\\,l_h = "+fmt(SR.SM_vt !== undefined ? SR.xNP : SR.xNP,3)+"\\text{ m from nose}","Neutral point (stick-fixed)")}
+  ${eq("SM = \\frac{x_{NP}-x_{CG}}{\\bar{c}} = \\frac{"+fmt(SR.xNP,3)+"-"+fmt(SR.xCGtotal,3)+"}{"+fmt(SR.MAC,3)+"} = "+fmt(SR.SM*100,1)+"\\%\\;\\text{MAC}","Static margin")}
   ${table(["Quantity","Symbol","Value","Unit"],[
     row("Wing AC from nose","x<sub>AC,w</sub>",xACwing,"m"),
-    row("Total CG from nose","x<sub>CG</sub>",n(SR.xCGtotal,3),"m"),
-    row("Neutral Point from nose","x<sub>NP</sub>",n(SR.xNP,3),"m"),
-    row("Static Margin","SM",n(SR.SM*100,2),"%  MAC"),
-    row("MAC","c̄",n(SR.MAC,3),"m"),
+    row("Total CG from nose","x<sub>CG</sub>",fmt(SR.xCGtotal,3),"m"),
+    row("Neutral Point from nose","x<sub>NP</sub>",fmt(SR.xNP,3),"m"),
+    row("Static Margin","SM",fmt(SR.SM*100,2),"%  MAC"),
+    row("MAC","c̄",fmt(SR.MAC,3),"m"),
   ])}
   `);
 
   // ── 9. V-TAIL ────────────────────────────────────────────────────────
   const s9 = sec("vtail","9. V-Tail Sizing (Ruscheweyh / Raymer)",`
   <p>The V-tail replaces both the horizontal and vertical stabilisers. Each panel is inclined at dihedral angle Γ = ${p.vtGamma}° from horizontal.</p>
-  ${eq("S_{h,req} = \\frac{C_h\\,S_w\\,\\bar{c}}{l_v} = \\frac{"+p.vtCh+"\\times"+n(SR.Swing,2)+"\\times"+n(SR.MAC,3)+"}{"+n(SR.lv,3)+"} = "+n(SR.Sh_req,3)+"\\text{ m}^2","Required horizontal tail area")}
-  ${eq("S_{v,req} = \\frac{C_v\\,S_w\\,b_w}{l_v} = \\frac{"+p.vtCv+"\\times"+n(SR.Swing,2)+"\\times"+n(SR.bWing,2)+"}{"+n(SR.lv,3)+"} = "+n(SR.Sv_req,3)+"\\text{ m}^2","Required vertical tail area")}
-  ${eq("S_{panel} = \\max\\!\\left(\\frac{S_{h,req}}{\\cos^2\\Gamma},\\,\\frac{S_{v,req}}{\\sin^2\\Gamma}\\right) = "+n(SR.Svt_panel,3)+"\\text{ m}^2","V-tail panel area (governing constraint)")}
-  ${eq("\\Gamma_{opt} = \\arctan\\!\\sqrt{\\frac{S_{v,req}}{S_{h,req}}} = "+n(SR.vtGamma_opt,1)+"^\\circ","Optimal dihedral angle for minimum panel area")}
-  ${eq("b_{vt} = \\sqrt{AR_{vt}\\cdot S_{panel}} = "+n(SR.bvt_panel,3)+"\\text{ m}, \\quad C_{r,vt} = "+n(SR.Cr_vt,3)+"\\text{ m}, \\quad C_{t,vt} = "+n(SR.Ct_vt,3)+"\\text{ m}","V-tail panel geometry")}
+  ${eq("S_{h,req} = \\frac{C_h\\,S_w\\,\\bar{c}}{l_v} = \\frac{"+p.vtCh+"\\times"+fmt(SR.Swing,2)+"\\times"+fmt(SR.MAC,3)+"}{"+fmt(SR.lv,3)+"} = "+fmt(SR.Sh_req,3)+"\\text{ m}^2","Required horizontal tail area")}
+  ${eq("S_{v,req} = \\frac{C_v\\,S_w\\,b_w}{l_v} = \\frac{"+p.vtCv+"\\times"+fmt(SR.Swing,2)+"\\times"+fmt(SR.bWing,2)+"}{"+fmt(SR.lv,3)+"} = "+fmt(SR.Sv_req,3)+"\\text{ m}^2","Required vertical tail area")}
+  ${eq("S_{panel} = \\max\\!\\left(\\frac{S_{h,req}}{\\cos^2\\Gamma},\\,\\frac{S_{v,req}}{\\sin^2\\Gamma}\\right) = "+fmt(SR.Svt_panel,3)+"\\text{ m}^2","V-tail panel area (governing constraint)")}
+  ${eq("\\Gamma_{opt} = \\arctan\\!\\sqrt{\\frac{S_{v,req}}{S_{h,req}}} = "+fmt(SR.vtGamma_opt,1)+"^\\circ","Optimal dihedral angle for minimum panel area")}
+  ${eq("b_{vt} = \\sqrt{AR_{vt}\\cdot S_{panel}} = "+fmt(SR.bvt_panel,3)+"\\text{ m}, \\quad C_{r,vt} = "+fmt(SR.Cr_vt,3)+"\\text{ m}, \\quad C_{t,vt} = "+fmt(SR.Ct_vt,3)+"\\text{ m}","V-tail panel geometry")}
   ${table(["Parameter","Symbol","Value","Unit"],[
-    row("Tail moment arm","l<sub>v</sub>",n(SR.lv,3),"m"),
-    row("Req. H-tail area","S<sub>h,req</sub>",n(SR.Sh_req,3),"m²"),
-    row("Req. V-tail area","S<sub>v,req</sub>",n(SR.Sv_req,3),"m²"),
-    row("Panel area","S<sub>panel</sub>",n(SR.Svt_panel,3),"m²"),
-    row("Total V-tail area","S<sub>vt,total</sub>",n(SR.Svt_total,3),"m²"),
-    row("Optimal Γ","Γ<sub>opt</sub>",n(SR.vtGamma_opt,1),"°"),
+    row("Tail moment arm","l<sub>v</sub>",fmt(SR.lv,3),"m"),
+    row("Req. H-tail area","S<sub>h,req</sub>",fmt(SR.Sh_req,3),"m²"),
+    row("Req. V-tail area","S<sub>v,req</sub>",fmt(SR.Sv_req,3),"m²"),
+    row("Panel area","S<sub>panel</sub>",fmt(SR.Svt_panel,3),"m²"),
+    row("Total V-tail area","S<sub>vt,total</sub>",fmt(SR.Svt_total,3),"m²"),
+    row("Optimal Γ","Γ<sub>opt</sub>",fmt(SR.vtGamma_opt,1),"°"),
     row("Chosen Γ","Γ",p.vtGamma,"°"),
-    row("Panel span","b<sub>vt</sub>",n(SR.bvt_panel,3),"m"),
-    row("Root chord","C<sub>r,vt</sub>",n(SR.Cr_vt,3),"m"),
-    row("Tip chord","C<sub>t,vt</sub>",n(SR.Ct_vt,3),"m"),
-    row("LE sweep","Λ<sub>LE,vt</sub>",n(SR.sweep_vt,2),"°"),
-    row("Pitch authority","—",n(SR.pitch_ratio*100,1),"%"),
-    row("Yaw authority","—",n(SR.yaw_ratio*100,1),"%"),
+    row("Panel span","b<sub>vt</sub>",fmt(SR.bvt_panel,3),"m"),
+    row("Root chord","C<sub>r,vt</sub>",fmt(SR.Cr_vt,3),"m"),
+    row("Tip chord","C<sub>t,vt</sub>",fmt(SR.Ct_vt,3),"m"),
+    row("LE sweep","Λ<sub>LE,vt</sub>",fmt(SR.sweep_vt,2),"°"),
+    row("Pitch authority","—",fmt(SR.pitch_ratio*100,1),"%"),
+    row("Yaw authority","—",fmt(SR.yaw_ratio*100,1),"%"),
   ])}
   `);
 
@@ -999,167 +999,167 @@ function generateReport(p, SR, branding={}) {
   // ── D1. ROUND 1 — INITIAL MTOW ──────────────────────────────────────
   const sd1 = sec("iter1","D1. Round 1 — Initial MTOW Estimate (Simplified Range-Energy Method)",`
   <p>Round 1 computes a first-pass MTOW using a simplified battery mass fraction derived purely from range. Starting guess MTOW<sub>0</sub> = 2177 kg, iterated to convergence (&lt; 10<sup>−6</sup> kg).</p>
-  ${eq("f_{bat} = \\frac{g_0 \\cdot SR}{(L/D)\\,\\eta_{sys}\\,\\text{SED}_{cell}\\times 3600} = \\frac{9.81 \\times "+p.range+" \\times 1000}{"+p.LD+" \\times "+p.etaSys+" \\times "+p.sedCell+" \\times 3600} = "+n(bfd,5),"Simplified battery mass fraction (range-energy method)")}
+  ${eq("f_{bat} = \\frac{g_0 \\cdot SR}{(L/D)\\,\\eta_{sys}\\,\\text{SED}_{cell}\\times 3600} = \\frac{9.81 \\times "+p.range+" \\times 1000}{"+p.LD+" \\times "+p.etaSys+" \\times "+p.sedCell+" \\times 3600} = "+fmt(bfd,5),"Simplified battery mass fraction (range-energy method)")}
   ${eq("W_{empty} = f_{EW} \\cdot \\text{MTOW} = "+p.ewf+" \\cdot \\text{MTOW}","Empty weight from structural mass fraction EWF = "+p.ewf)}
-  ${eq("W_{bat,1} = f_{bat} \\cdot \\text{MTOW} = "+n(bfd,5)+" \\cdot \\text{MTOW}","Battery mass (Round 1 approximation)")}
-  ${eq("\\text{MTOW}_{1} = \\frac{m_{pay}}{1 - f_{EW} - f_{bat}} = \\frac{"+p.payload+"}{1 - "+p.ewf+" - "+n(bfd,5)+"} = "+n(SR.MTOW1,2)+"\\text{ kg}","Analytical solution of weight closure")}
+  ${eq("W_{bat,1} = f_{bat} \\cdot \\text{MTOW} = "+fmt(bfd,5)+" \\cdot \\text{MTOW}","Battery mass (Round 1 approximation)")}
+  ${eq("\\text{MTOW}_{1} = \\frac{m_{pay}}{1 - f_{EW} - f_{bat}} = \\frac{"+p.payload+"}{1 - "+p.ewf+" - "+fmt(bfd,5)+"} = "+fmt(SR.MTOW1,2)+"\\text{ kg}","Analytical solution of weight closure")}
   ${table(["Quantity","Formula / Value","Result","Unit"],[
-    row("Battery fraction","g₀·SR / [(L/D)·η_sys·SED·3600]",n(bfd,5),""),
-    row("Empty weight (R1)","f_EW × MTOW₁",n(p.ewf*SR.MTOW1,1),"kg"),
-    row("Battery mass (R1)","f_bat × MTOW₁",n(bfd*SR.MTOW1,1),"kg"),
+    row("Battery fraction","g₀·SR / [(L/D)·η_sys·SED·3600]",fmt(bfd,5),""),
+    row("Empty weight (R1)","f_EW × MTOW₁",fmt(p.ewf*SR.MTOW1,1),"kg"),
+    row("Battery mass (R1)","f_bat × MTOW₁",fmt(bfd*SR.MTOW1,1),"kg"),
     row("Payload","given",p.payload,"kg"),
-    row("MTOW Round 1","m_pay + W_e + W_bat",n(SR.MTOW1,2),"kg"),
+    row("MTOW Round 1","m_pay + W_e + W_bat",fmt(SR.MTOW1,2),"kg"),
   ])}
   `);
 
   // ── D2. ROUND 2 — COUPLED MTOW + ENERGY CONVERGENCE ─────────────────
   const sd2 = sec("iter2","D2. Round 2 — Coupled MTOW + Energy Convergence",`
-  <p>Round 2 couples weight closure to full mission energy. For each MTOW trial, all phase powers, times, and energies are computed; W<sub>bat</sub> is re-derived from E<sub>total</sub>; MTOW is updated until |MTOW<sub>new</sub> − MTOW<sub>old</sub>| &lt; 10<sup>−6</sup> kg. Starts from MTOW<sub>1</sub> = ${n(SR.MTOW1,2)} kg.</p>
+  <p>Round 2 couples weight closure to full mission energy. For each MTOW trial, all phase powers, times, and energies are computed; W<sub>bat</sub> is re-derived from E<sub>total</sub>; MTOW is updated until |MTOW<sub>new</sub> − MTOW<sub>old</sub>| &lt; 10<sup>−6</sup> kg. Starts from MTOW<sub>1</sub> = ${fmt(SR.MTOW1,2)} kg.</p>
   <p><strong>Phase geometry (fixed, computed once):</strong></p>
-  ${eq("V_{cl} = \\frac{\\dot{h}}{\\sin\\gamma_{cl}} = \\frac{"+RoCd+"}{\\sin("+clAngd+"^\\circ)} = "+n(Vcld,2)+"\\text{ m/s}","Climb speed from RoC and climb angle")}
-  ${eq("(L/D)_{cl} = (L/D)_{cr}\\times 0.87 = "+p.LD+"\\times 0.87 = "+n(LDcld,3),"Climb L/D — 13% reduction for induced drag increase")}
-  ${eq("\\gamma_{dc} = \\arctan\\!\\left(\\frac{1}{(L/D)}\\right) = "+n(desAngd,3)+"^\\circ, \\quad V_{dc} = \\frac{\\dot{h}}{\\sin\\gamma_{dc}} = "+n(Vdcd,2)+"\\text{ m/s}","Descent angle and speed")}
-  ${eq("V_{res} = 0.7\\,V_{cr} = 0.7\\times "+p.vCruise+" = "+n(Vresd,2)+"\\text{ m/s}","Reserve loiter speed")}
-  ${eq("d_{cl} = \\frac{h_{cr}-h_{hov}}{\\tan\\gamma_{cl}} = "+n(ClimbRd,1)+"\\text{ m}, \\quad d_{dc} = \\frac{h_{cr}-h_{hov}}{\\tan\\gamma_{dc}} = "+n(DescRd,1)+"\\text{ m}","Climb and descent ground tracks")}
-  ${eq("d_{cr} = SR - d_{cl} - d_{dc} - R_{res} = "+p.range*1000+" - "+n(ClimbRd,1)+" - "+n(DescRd,1)+" - "+p.reserveRange*1000+" = "+n(CruiseRanged,1)+"\\text{ m}","Net cruise distance")}
-  <p><strong>Final converged iteration (MTOW = ${n(SR.MTOW,2)} kg):</strong></p>
-  ${eq("DL = \\frac{\\text{MTOW}\\cdot g_0}{N_{rot}\\cdot A_{disk}} = \\frac{"+n(SR.MTOW,2)+"\\times 9.81}{"+p.nPropHover+"\\times\\pi("+n(p.propDiam/2,3)+")^2} = "+n(DLd,2)+"\\text{ N/m}^2","Disk loading")}
-  ${eq("P_{hov} = \\frac{W}{\\eta_{hov}}\\sqrt{\\frac{DL}{2\\rho_{SL}}} \\div 1000 = \\frac{"+n(SR.MTOW*g0d,1)+"}{"+p.etaHov+"}\\sqrt{\\frac{"+n(DLd,2)+"}{2.45}} \\div 1000 = "+n(SR.Phov,2)+"\\text{ kW}","Hover power")}
-  ${eq("P_{cl} = \\frac{W}{\\eta_{sys}}\\!\\left(\\dot{h}+\\frac{V_{cl}}{(L/D)_{cl}}\\right)\\!\\div 1000 = \\frac{"+n(SR.MTOW*g0d,1)+"}{"+p.etaSys+"}\\!\\left("+RoCd+"+\\frac{"+n(Vcld,2)+"}{"+n(LDcld,3)+"}\\right)\\!\\div 1000 = "+n(SR.Pcl,2)+"\\text{ kW}","Climb power")}
-  ${eq("P_{cr} = \\frac{W\\,V_{cr}}{\\eta_{sys}\\,(L/D)} = \\frac{"+n(SR.MTOW*g0d,1)+"\\times "+p.vCruise+"}{"+p.etaSys+"\\times "+p.LD+"} \\div 1000 = "+n(SR.Pcr,2)+"\\text{ kW}","Cruise power")}
-  ${eq("P_{dc} = \\frac{W}{\\eta_{sys}}\\!\\left(-\\dot{h}+\\frac{V_{dc}}{(L/D)_{cl}}\\right)\\!\\div 1000 = "+n(SR.Pdc,2)+"\\text{ kW}","Descent power")}
-  ${eq("P_{res} = \\frac{W\\,V_{res}}{\\eta_{sys}\\,(L/D)} \\div 1000 = "+n(SR.Pres,2)+"\\text{ kW}","Reserve power")}
-  ${eq("W_{bat} = \\frac{E_{total}\\times 1000\\,(1+\\text{SoC}_{min})}{\\text{SED}_{cell}\\,\\eta_{bat}} = \\frac{"+n(SR.Etot,3)+"\\times 1000\\times(1+"+p.socMin+")}{"+p.sedCell+"\\times "+p.etaBat+"} = "+n(SR.Wbat,2)+"\\text{ kg}","Battery mass from total energy")}
-  ${eq("\\text{MTOW} = "+p.payload+" + "+n(SR.Wempty,2)+" + "+n(SR.Wbat,2)+" = "+n(SR.MTOW,2)+"\\text{ kg} \\quad \\checkmark\\text{ Converged}","Final weight closure")}
+  ${eq("V_{cl} = \\frac{\\dot{h}}{\\sin\\gamma_{cl}} = \\frac{"+RoCd+"}{\\sin("+clAngd+"^\\circ)} = "+fmt(Vcld,2)+"\\text{ m/s}","Climb speed from RoC and climb angle")}
+  ${eq("(L/D)_{cl} = (L/D)_{cr}\\times 0.87 = "+p.LD+"\\times 0.87 = "+fmt(LDcld,3),"Climb L/D — 13% reduction for induced drag increase")}
+  ${eq("\\gamma_{dc} = \\arctan\\!\\left(\\frac{1}{(L/D)}\\right) = "+fmt(desAngd,3)+"^\\circ, \\quad V_{dc} = \\frac{\\dot{h}}{\\sin\\gamma_{dc}} = "+fmt(Vdcd,2)+"\\text{ m/s}","Descent angle and speed")}
+  ${eq("V_{res} = 0.7\\,V_{cr} = 0.7\\times "+p.vCruise+" = "+fmt(Vresd,2)+"\\text{ m/s}","Reserve loiter speed")}
+  ${eq("d_{cl} = \\frac{h_{cr}-h_{hov}}{\\tan\\gamma_{cl}} = "+fmt(ClimbRd,1)+"\\text{ m}, \\quad d_{dc} = \\frac{h_{cr}-h_{hov}}{\\tan\\gamma_{dc}} = "+fmt(DescRd,1)+"\\text{ m}","Climb and descent ground tracks")}
+  ${eq("d_{cr} = SR - d_{cl} - d_{dc} - R_{res} = "+p.range*1000+" - "+fmt(ClimbRd,1)+" - "+fmt(DescRd,1)+" - "+p.reserveRange*1000+" = "+fmt(CruiseRanged,1)+"\\text{ m}","Net cruise distance")}
+  <p><strong>Final converged iteration (MTOW = ${fmt(SR.MTOW,2)} kg):</strong></p>
+  ${eq("DL = \\frac{\\text{MTOW}\\cdot g_0}{N_{rot}\\cdot A_{disk}} = \\frac{"+fmt(SR.MTOW,2)+"\\times 9.81}{"+p.nPropHover+"\\times\\pi("+fmt(p.propDiam/2,3)+")^2} = "+fmt(DLd,2)+"\\text{ N/m}^2","Disk loading")}
+  ${eq("P_{hov} = \\frac{W}{\\eta_{hov}}\\sqrt{\\frac{DL}{2\\rho_{SL}}} \\div 1000 = \\frac{"+fmt(SR.MTOW*g0d,1)+"}{"+p.etaHov+"}\\sqrt{\\frac{"+fmt(DLd,2)+"}{2.45}} \\div 1000 = "+fmt(SR.Phov,2)+"\\text{ kW}","Hover power")}
+  ${eq("P_{cl} = \\frac{W}{\\eta_{sys}}\\!\\left(\\dot{h}+\\frac{V_{cl}}{(L/D)_{cl}}\\right)\\!\\div 1000 = \\frac{"+fmt(SR.MTOW*g0d,1)+"}{"+p.etaSys+"}\\!\\left("+RoCd+"+\\frac{"+fmt(Vcld,2)+"}{"+fmt(LDcld,3)+"}\\right)\\!\\div 1000 = "+fmt(SR.Pcl,2)+"\\text{ kW}","Climb power")}
+  ${eq("P_{cr} = \\frac{W\\,V_{cr}}{\\eta_{sys}\\,(L/D)} = \\frac{"+fmt(SR.MTOW*g0d,1)+"\\times "+p.vCruise+"}{"+p.etaSys+"\\times "+p.LD+"} \\div 1000 = "+fmt(SR.Pcr,2)+"\\text{ kW}","Cruise power")}
+  ${eq("P_{dc} = \\frac{W}{\\eta_{sys}}\\!\\left(-\\dot{h}+\\frac{V_{dc}}{(L/D)_{cl}}\\right)\\!\\div 1000 = "+fmt(SR.Pdc,2)+"\\text{ kW}","Descent power")}
+  ${eq("P_{res} = \\frac{W\\,V_{res}}{\\eta_{sys}\\,(L/D)} \\div 1000 = "+fmt(SR.Pres,2)+"\\text{ kW}","Reserve power")}
+  ${eq("W_{bat} = \\frac{E_{total}\\times 1000\\,(1+\\text{SoC}_{min})}{\\text{SED}_{cell}\\,\\eta_{bat}} = \\frac{"+fmt(SR.Etot,3)+"\\times 1000\\times(1+"+p.socMin+")}{"+p.sedCell+"\\times "+p.etaBat+"} = "+fmt(SR.Wbat,2)+"\\text{ kg}","Battery mass from total energy")}
+  ${eq("\\text{MTOW} = "+p.payload+" + "+fmt(SR.Wempty,2)+" + "+fmt(SR.Wbat,2)+" = "+fmt(SR.MTOW,2)+"\\text{ kg} \\quad \\checkmark\\text{ Converged}","Final weight closure")}
   `);
 
   // ── D3. MISSION PHASE TIMING ─────────────────────────────────────────
   const sd3 = sec("timing","D3. Mission Phase Timing & Distance Analysis",`
-  ${eq("t_{TO} = \\frac{h_{hov}}{0.5} = \\frac{"+hvtold+"}{0.5} = "+n(SR.tto,0)+"\\text{ s}","Takeoff hover time — average vertical speed = 0.5 m/s")}
-  ${eq("t_{cl} = \\frac{d_{cl}}{V_{cl}} = \\frac{"+n(ClimbRd,1)+"}{"+n(Vcld,2)+"} = "+n(SR.tcl,0)+"\\text{ s}","Climb duration")}
-  ${eq("t_{cr} = \\frac{d_{cr}}{V_{cr}} = \\frac{"+n(CruiseRanged,1)+"}{"+p.vCruise+"} = "+n(SR.tcr,0)+"\\text{ s}","Cruise duration")}
-  ${eq("t_{dc} = \\frac{d_{dc}}{V_{dc}} = \\frac{"+n(DescRd,1)+"}{"+n(Vdcd,2)+"} = "+n(SR.tdc,0)+"\\text{ s}","Descent duration")}
-  ${eq("t_{ld} = \\frac{h_{hov}}{0.5} = "+n(SR.tld,0)+"\\text{ s}","Landing hover time")}
-  ${eq("t_{res} = \\frac{R_{res}}{V_{res}} = \\frac{"+p.reserveRange*1000+"}{"+n(Vresd,2)+"} = "+n(SR.tres,0)+"\\text{ s}","Reserve duration")}
-  ${eq("T_{mission} = "+n(SR.tto,0)+"+"+n(SR.tcl,0)+"+"+n(SR.tcr,0)+"+"+n(SR.tdc,0)+"+"+n(SR.tld,0)+"+"+n(SR.tres,0)+" = "+n(SR.Tend,0)+"\\text{ s} = "+n(SR.Tend/60,1)+"\\text{ min}","Total mission time")}
+  ${eq("t_{TO} = \\frac{h_{hov}}{0.5} = \\frac{"+hvtold+"}{0.5} = "+fmt(SR.tto,0)+"\\text{ s}","Takeoff hover time — average vertical speed = 0.5 m/s")}
+  ${eq("t_{cl} = \\frac{d_{cl}}{V_{cl}} = \\frac{"+fmt(ClimbRd,1)+"}{"+fmt(Vcld,2)+"} = "+fmt(SR.tcl,0)+"\\text{ s}","Climb duration")}
+  ${eq("t_{cr} = \\frac{d_{cr}}{V_{cr}} = \\frac{"+fmt(CruiseRanged,1)+"}{"+p.vCruise+"} = "+fmt(SR.tcr,0)+"\\text{ s}","Cruise duration")}
+  ${eq("t_{dc} = \\frac{d_{dc}}{V_{dc}} = \\frac{"+fmt(DescRd,1)+"}{"+fmt(Vdcd,2)+"} = "+fmt(SR.tdc,0)+"\\text{ s}","Descent duration")}
+  ${eq("t_{ld} = \\frac{h_{hov}}{0.5} = "+fmt(SR.tld,0)+"\\text{ s}","Landing hover time")}
+  ${eq("t_{res} = \\frac{R_{res}}{V_{res}} = \\frac{"+p.reserveRange*1000+"}{"+fmt(Vresd,2)+"} = "+fmt(SR.tres,0)+"\\text{ s}","Reserve duration")}
+  ${eq("T_{mission} = "+fmt(SR.tto,0)+"+"+fmt(SR.tcl,0)+"+"+fmt(SR.tcr,0)+"+"+fmt(SR.tdc,0)+"+"+fmt(SR.tld,0)+"+"+fmt(SR.tres,0)+" = "+fmt(SR.Tend,0)+"\\text{ s} = "+fmt(SR.Tend/60,1)+"\\text{ min}","Total mission time")}
   ${table(["Phase","Distance (m)","Speed (m/s)","Duration (s)","Duration (min)"],[
-    row("Takeoff (hover)","Vertical "+hvtold+" m","0.5",n(SR.tto,0),n(SR.tto/60,1)),
-    row("Climb",n(ClimbRd,1),n(Vcld,2),n(SR.tcl,0),n(SR.tcl/60,1)),
-    row("Cruise",n(CruiseRanged,1),p.vCruise,n(SR.tcr,0),n(SR.tcr/60,1)),
-    row("Descent",n(DescRd,1),n(Vdcd,2),n(SR.tdc,0),n(SR.tdc/60,1)),
-    row("Landing (hover)","Vertical "+hvtold+" m","0.5",n(SR.tld,0),n(SR.tld/60,1)),
-    row("Reserve",n(p.reserveRange*1000,0),n(Vresd,2),n(SR.tres,0),n(SR.tres/60,1)),
-    row("<b>Total</b>","<b>"+n(p.range*1000,0)+" m</b>","—","<b>"+n(SR.Tend,0)+"</b>","<b>"+n(SR.Tend/60,1)+"</b>"),
+    row("Takeoff (hover)","Vertical "+hvtold+" m","0.5",fmt(SR.tto,0),fmt(SR.tto/60,1)),
+    row("Climb",fmt(ClimbRd,1),fmt(Vcld,2),fmt(SR.tcl,0),fmt(SR.tcl/60,1)),
+    row("Cruise",fmt(CruiseRanged,1),p.vCruise,fmt(SR.tcr,0),fmt(SR.tcr/60,1)),
+    row("Descent",fmt(DescRd,1),fmt(Vdcd,2),fmt(SR.tdc,0),fmt(SR.tdc/60,1)),
+    row("Landing (hover)","Vertical "+hvtold+" m","0.5",fmt(SR.tld,0),fmt(SR.tld/60,1)),
+    row("Reserve",fmt(p.reserveRange*1000,0),fmt(Vresd,2),fmt(SR.tres,0),fmt(SR.tres/60,1)),
+    row("<b>Total</b>","<b>"+fmt(p.range*1000,0)+" m</b>","—","<b>"+fmt(SR.Tend,0)+"</b>","<b>"+fmt(SR.Tend/60,1)+"</b>"),
   ])}
   `);
 
   // ── D4. PHASE POWER & ENERGY ─────────────────────────────────────────
   const sd4 = sec("phasecalc","D4. Phase Power & Energy — Detailed Calculations",`
   <p>Energy per phase: E<sub>phase</sub> = P<sub>phase</sub> × t<sub>phase</sub> / 3600. Cumulative column tracks battery draw throughout the mission.</p>
-  ${eq("E_{TO} = P_{hov}\\times\\frac{t_{TO}}{3600} = "+n(SR.Phov,2)+"\\times\\frac{"+n(SR.tto,0)+"}{3600} = "+n(SR.Eto,4)+"\\text{ kWh}","Takeoff energy")}
-  ${eq("E_{cl} = P_{cl}\\times\\frac{t_{cl}}{3600} = "+n(SR.Pcl,2)+"\\times\\frac{"+n(SR.tcl,0)+"}{3600} = "+n(SR.Ecl,4)+"\\text{ kWh}","Climb energy")}
-  ${eq("E_{cr} = P_{cr}\\times\\frac{t_{cr}}{3600} = "+n(SR.Pcr,2)+"\\times\\frac{"+n(SR.tcr,0)+"}{3600} = "+n(SR.Ecr,4)+"\\text{ kWh}","Cruise energy")}
-  ${eq("E_{dc} = |P_{dc}|\\times\\frac{t_{dc}}{3600} = "+n(SR.Pdc,2)+"\\times\\frac{"+n(SR.tdc,0)+"}{3600} = "+n(SR.Edc,4)+"\\text{ kWh}","Descent energy")}
-  ${eq("E_{ld} = P_{hov}\\times\\frac{t_{ld}}{3600} = "+n(SR.Phov,2)+"\\times\\frac{"+n(SR.tld,0)+"}{3600} = "+n(SR.Eld,4)+"\\text{ kWh}","Landing energy")}
-  ${eq("E_{res} = P_{res}\\times\\frac{t_{res}}{3600} = "+n(SR.Pres,2)+"\\times\\frac{"+n(SR.tres,0)+"}{3600} = "+n(SR.Eres,4)+"\\text{ kWh}","Reserve energy")}
-  ${eq("E_{total} = "+n(SR.Eto,4)+"+"+n(SR.Ecl,4)+"+"+n(SR.Ecr,4)+"+"+n(SR.Edc,4)+"+"+n(SR.Eld,4)+"+"+n(SR.Eres,4)+" = "+n(SR.Etot,3)+"\\text{ kWh}","Total mission energy")}
+  ${eq("E_{TO} = P_{hov}\\times\\frac{t_{TO}}{3600} = "+fmt(SR.Phov,2)+"\\times\\frac{"+fmt(SR.tto,0)+"}{3600} = "+fmt(SR.Eto,4)+"\\text{ kWh}","Takeoff energy")}
+  ${eq("E_{cl} = P_{cl}\\times\\frac{t_{cl}}{3600} = "+fmt(SR.Pcl,2)+"\\times\\frac{"+fmt(SR.tcl,0)+"}{3600} = "+fmt(SR.Ecl,4)+"\\text{ kWh}","Climb energy")}
+  ${eq("E_{cr} = P_{cr}\\times\\frac{t_{cr}}{3600} = "+fmt(SR.Pcr,2)+"\\times\\frac{"+fmt(SR.tcr,0)+"}{3600} = "+fmt(SR.Ecr,4)+"\\text{ kWh}","Cruise energy")}
+  ${eq("E_{dc} = |P_{dc}|\\times\\frac{t_{dc}}{3600} = "+fmt(SR.Pdc,2)+"\\times\\frac{"+fmt(SR.tdc,0)+"}{3600} = "+fmt(SR.Edc,4)+"\\text{ kWh}","Descent energy")}
+  ${eq("E_{ld} = P_{hov}\\times\\frac{t_{ld}}{3600} = "+fmt(SR.Phov,2)+"\\times\\frac{"+fmt(SR.tld,0)+"}{3600} = "+fmt(SR.Eld,4)+"\\text{ kWh}","Landing energy")}
+  ${eq("E_{res} = P_{res}\\times\\frac{t_{res}}{3600} = "+fmt(SR.Pres,2)+"\\times\\frac{"+fmt(SR.tres,0)+"}{3600} = "+fmt(SR.Eres,4)+"\\text{ kWh}","Reserve energy")}
+  ${eq("E_{total} = "+fmt(SR.Eto,4)+"+"+fmt(SR.Ecl,4)+"+"+fmt(SR.Ecr,4)+"+"+fmt(SR.Edc,4)+"+"+fmt(SR.Eld,4)+"+"+fmt(SR.Eres,4)+" = "+fmt(SR.Etot,3)+"\\text{ kWh}","Total mission energy")}
   ${table(["Phase","Power (kW)","Time (s)","Energy (kWh)","Cumulative (kWh)","% Total"],[
-    `<tr><td>Takeoff</td><td>${n(SR.Phov,2)}</td><td>${n(SR.tto,0)}</td><td>${n(SR.Eto,4)}</td><td>${n(SR.Eto,4)}</td><td>${n(SR.Eto/SR.Etot*100,1)}%</td></tr>`,
-    `<tr><td>Climb</td><td>${n(SR.Pcl,2)}</td><td>${n(SR.tcl,0)}</td><td>${n(SR.Ecl,4)}</td><td>${n(SR.Eto+SR.Ecl,4)}</td><td>${n(SR.Ecl/SR.Etot*100,1)}%</td></tr>`,
-    `<tr><td>Cruise</td><td>${n(SR.Pcr,2)}</td><td>${n(SR.tcr,0)}</td><td>${n(SR.Ecr,4)}</td><td>${n(SR.Eto+SR.Ecl+SR.Ecr,4)}</td><td>${n(SR.Ecr/SR.Etot*100,1)}%</td></tr>`,
-    `<tr><td>Descent</td><td>${n(SR.Pdc,2)}</td><td>${n(SR.tdc,0)}</td><td>${n(SR.Edc,4)}</td><td>${n(SR.Eto+SR.Ecl+SR.Ecr+SR.Edc,4)}</td><td>${n(SR.Edc/SR.Etot*100,1)}%</td></tr>`,
-    `<tr><td>Landing</td><td>${n(SR.Phov,2)}</td><td>${n(SR.tld,0)}</td><td>${n(SR.Eld,4)}</td><td>${n(SR.Eto+SR.Ecl+SR.Ecr+SR.Edc+SR.Eld,4)}</td><td>${n(SR.Eld/SR.Etot*100,1)}%</td></tr>`,
-    `<tr><td>Reserve</td><td>${n(SR.Pres,2)}</td><td>${n(SR.tres,0)}</td><td>${n(SR.Eres,4)}</td><td>${n(SR.Etot,3)}</td><td>${n(SR.Eres/SR.Etot*100,1)}%</td></tr>`,
-    `<tr style="font-weight:700"><td>Total</td><td>—</td><td>${n(SR.Tend,0)}</td><td>${n(SR.Etot,3)}</td><td>${n(SR.Etot,3)}</td><td>100%</td></tr>`,
+    `<tr><td>Takeoff</td><td>${fmt(SR.Phov,2)}</td><td>${fmt(SR.tto,0)}</td><td>${fmt(SR.Eto,4)}</td><td>${fmt(SR.Eto,4)}</td><td>${fmt(SR.Eto/SR.Etot*100,1)}%</td></tr>`,
+    `<tr><td>Climb</td><td>${fmt(SR.Pcl,2)}</td><td>${fmt(SR.tcl,0)}</td><td>${fmt(SR.Ecl,4)}</td><td>${fmt(SR.Eto+SR.Ecl,4)}</td><td>${fmt(SR.Ecl/SR.Etot*100,1)}%</td></tr>`,
+    `<tr><td>Cruise</td><td>${fmt(SR.Pcr,2)}</td><td>${fmt(SR.tcr,0)}</td><td>${fmt(SR.Ecr,4)}</td><td>${fmt(SR.Eto+SR.Ecl+SR.Ecr,4)}</td><td>${fmt(SR.Ecr/SR.Etot*100,1)}%</td></tr>`,
+    `<tr><td>Descent</td><td>${fmt(SR.Pdc,2)}</td><td>${fmt(SR.tdc,0)}</td><td>${fmt(SR.Edc,4)}</td><td>${fmt(SR.Eto+SR.Ecl+SR.Ecr+SR.Edc,4)}</td><td>${fmt(SR.Edc/SR.Etot*100,1)}%</td></tr>`,
+    `<tr><td>Landing</td><td>${fmt(SR.Phov,2)}</td><td>${fmt(SR.tld,0)}</td><td>${fmt(SR.Eld,4)}</td><td>${fmt(SR.Eto+SR.Ecl+SR.Ecr+SR.Edc+SR.Eld,4)}</td><td>${fmt(SR.Eld/SR.Etot*100,1)}%</td></tr>`,
+    `<tr><td>Reserve</td><td>${fmt(SR.Pres,2)}</td><td>${fmt(SR.tres,0)}</td><td>${fmt(SR.Eres,4)}</td><td>${fmt(SR.Etot,3)}</td><td>${fmt(SR.Eres/SR.Etot*100,1)}%</td></tr>`,
+    `<tr style="font-weight:700"><td>Total</td><td>—</td><td>${fmt(SR.Tend,0)}</td><td>${fmt(SR.Etot,3)}</td><td>${fmt(SR.Etot,3)}</td><td>100%</td></tr>`,
   ])}
   `);
 
   // ── D5. WING SIZING DETAILED ──────────────────────────────────────────
   const sd5 = sec("wingdetail","D5. Wing Sizing — Detailed Calculations",`
-  ${eq("S_w = \\frac{2\\,L_{req}}{\\rho_{cr}\\,V_{cr}^2\\,C_{L,des}} = \\frac{2\\times "+n(SR.MTOW*g0d,1)+"}{"+n(rhoCrd,4)+"\\times "+p.vCruise+"^2\\times "+p.clDesign+"} = "+n(SR.Swing,2)+"\\text{ m}^2","Wing area from lift balance at cruise")}
-  ${eq("W/S = "+n(SR.WL,1)+"\\text{ N/m}^2","Wing loading")}
-  ${eq("b_w = \\sqrt{AR\\cdot S_w} = \\sqrt{"+p.AR+"\\times "+n(SR.Swing,2)+"} = "+n(SR.bWing,2)+"\\text{ m}","Wing span")}
-  ${eq("C_r = \\frac{2S_w}{b_w(1+\\lambda)} = \\frac{2\\times "+n(SR.Swing,2)+"}{"+n(SR.bWing,2)+"\\times(1+"+p.taper+")} = "+n(SR.Cr_,3)+"\\text{ m}","Root chord")}
-  ${eq("C_t = \\lambda\\,C_r = "+p.taper+"\\times "+n(SR.Cr_,3)+" = "+n(SR.Ct_,3)+"\\text{ m}","Tip chord")}
-  ${eq("\\bar{c} = \\frac{2}{3}\\,C_r\\,\\frac{1+\\lambda+\\lambda^2}{1+\\lambda} = "+n(SR.MAC,3)+"\\text{ m}","Mean aerodynamic chord")}
-  ${eq("\\bar{y}_{MAC} = \\frac{b_w}{6}\\,\\frac{1+2\\lambda}{1+\\lambda} = "+n(SR.Ymac,3)+"\\text{ m}","Spanwise MAC position")}
-  ${eq("\\Lambda_{LE} = \\arctan\\!\\left(\\frac{C_r-C_t}{b_w/2}\\right) = \\arctan\\!\\left(\\frac{"+n(SR.Cr_,3)+"-"+n(SR.Ct_,3)+"}{"+n(SR.bWing/2,3)+"}\\right) = "+n(SR.sweep,2)+"^\\circ","Leading edge sweep")}
-  ${eq("Re_w = \\frac{\\rho_{cr}\\,V_{cr}\\,\\bar{c}}{\\mu_{cr}} = \\frac{"+n(rhoCrd,4)+"\\times "+p.vCruise+"\\times "+n(SR.MAC,3)+"}{"+n(muCrd,7)+"} = "+n(SR.Re_,0),"Wing chord Reynolds number")}
-  ${eq("M = \\frac{V_{cr}}{a_{cr}} = \\frac{"+p.vCruise+"}{"+n(Math.sqrt(1.4*287*Tcrd),2)+"} = "+n(SR.Mach,4),"Cruise Mach number")}
-  ${eq("V_{stall} = \\sqrt{\\frac{2(W/S)}{\\rho_{cr}\\,C_{L,max}}} = \\sqrt{\\frac{2\\times "+n(SR.WL,1)+"}{"+n(rhoCrd,4)+"\\times "+(SR.selAF&&SR.selAF.CLmax?n(SR.selAF.CLmax,2):"1.60")+"}} = "+n(SR.Vstall,2)+"\\text{ m/s}","Stall speed")}
+  ${eq("S_w = \\frac{2\\,L_{req}}{\\rho_{cr}\\,V_{cr}^2\\,C_{L,des}} = \\frac{2\\times "+fmt(SR.MTOW*g0d,1)+"}{"+fmt(rhoCrd,4)+"\\times "+p.vCruise+"^2\\times "+p.clDesign+"} = "+fmt(SR.Swing,2)+"\\text{ m}^2","Wing area from lift balance at cruise")}
+  ${eq("W/S = "+fmt(SR.WL,1)+"\\text{ N/m}^2","Wing loading")}
+  ${eq("b_w = \\sqrt{AR\\cdot S_w} = \\sqrt{"+p.AR+"\\times "+fmt(SR.Swing,2)+"} = "+fmt(SR.bWing,2)+"\\text{ m}","Wing span")}
+  ${eq("C_r = \\frac{2S_w}{b_w(1+\\lambda)} = \\frac{2\\times "+fmt(SR.Swing,2)+"}{"+fmt(SR.bWing,2)+"\\times(1+"+p.taper+")} = "+fmt(SR.Cr_,3)+"\\text{ m}","Root chord")}
+  ${eq("C_t = \\lambda\\,C_r = "+p.taper+"\\times "+fmt(SR.Cr_,3)+" = "+fmt(SR.Ct_,3)+"\\text{ m}","Tip chord")}
+  ${eq("\\bar{c} = \\frac{2}{3}\\,C_r\\,\\frac{1+\\lambda+\\lambda^2}{1+\\lambda} = "+fmt(SR.MAC,3)+"\\text{ m}","Mean aerodynamic chord")}
+  ${eq("\\bar{y}_{MAC} = \\frac{b_w}{6}\\,\\frac{1+2\\lambda}{1+\\lambda} = "+fmt(SR.Ymac,3)+"\\text{ m}","Spanwise MAC position")}
+  ${eq("\\Lambda_{LE} = \\arctan\\!\\left(\\frac{C_r-C_t}{b_w/2}\\right) = \\arctan\\!\\left(\\frac{"+fmt(SR.Cr_,3)+"-"+fmt(SR.Ct_,3)+"}{"+fmt(SR.bWing/2,3)+"}\\right) = "+fmt(SR.sweep,2)+"^\\circ","Leading edge sweep")}
+  ${eq("Re_w = \\frac{\\rho_{cr}\\,V_{cr}\\,\\bar{c}}{\\mu_{cr}} = \\frac{"+fmt(rhoCrd,4)+"\\times "+p.vCruise+"\\times "+fmt(SR.MAC,3)+"}{"+fmt(muCrd,7)+"} = "+fmt(SR.Re_,0),"Wing chord Reynolds number")}
+  ${eq("M = \\frac{V_{cr}}{a_{cr}} = \\frac{"+p.vCruise+"}{"+fmt(Math.sqrt(1.4*287*Tcrd),2)+"} = "+fmt(SR.Mach,4),"Cruise Mach number")}
+  ${eq("V_{stall} = \\sqrt{\\frac{2(W/S)}{\\rho_{cr}\\,C_{L,max}}} = \\sqrt{\\frac{2\\times "+fmt(SR.WL,1)+"}{"+fmt(rhoCrd,4)+"\\times "+(SR.selAF&&SR.selAF.CLmax?fmt(SR.selAF.CLmax,2):"1.60")+"}} = "+fmt(SR.Vstall,2)+"\\text{ m/s}","Stall speed")}
   `);
 
   // ── D6. FUSELAGE SIZING & DRAG BUILDUP ───────────────────────────────
   const sd6 = sec("dragbuildup","D6. Fuselage Sizing & Drag Component Buildup (Raymer)",`
   <p>Zero-lift drag uses Raymer component buildup: C<sub>D0,k</sub> = C<sub>f,k</sub> · FF<sub>k</sub> · S<sub>wet,k</sub> / S<sub>ref</sub>.</p>
-  ${eq("\\lambda_f = \\frac{L_{fus}}{D_{fus}} = \\frac{"+p.fusLen+"}{"+p.fusDiam+"} = "+n(lambdaFd,2),"Fuselage fineness ratio")}
-  ${eq("S_{wet,f} = \\pi D_f L_f\\left(1-\\frac{2}{\\lambda_f}\\right)^{2/3}\\!\\left(1+\\frac{1}{\\lambda_f^2}\\right) = "+n(SwfWetd,3)+"\\text{ m}^2","Fuselage wetted area (Raymer Eq. 12.31)")}
-  ${eq("S_{wet,w} = 2S_w\\left(1+0.25\\,\\frac{t}{c}(1+\\lambda\\cdot 0.25)\\right) = "+n(Swwd,3)+"\\text{ m}^2","Wing wetted area")}
-  ${eq("Re_{fus} = \\frac{\\rho_{cr}\\,V_{cr}\\,L_{fus}}{\\mu_{cr}} = \\frac{"+n(rhoCrd,4)+"\\times "+p.vCruise+"\\times "+p.fusLen+"}{"+n(muCrd,7)+"} = "+n(Refusd,0),"Fuselage Reynolds number")}
-  ${eq("C_{f,w} = \\frac{0.455}{(\\log_{10}"+n(SR.Re_,0)+")^{2.58}(1+0.144\\times "+n(SR.Mach,4)+"^2)^{0.65}} = "+n(Cfwd,6),"Wing skin friction coefficient")}
-  ${eq("C_{f,f} = \\frac{0.455}{(\\log_{10}"+n(Refusd,0)+")^{2.58}(1+0.144\\times "+n(SR.Mach,4)+"^2)^{0.65}} = "+n(Cffd,6),"Fuselage skin friction coefficient")}
-  ${eq("FF_w = \\left(1+2\\times "+p.tc+"+100\\times "+n(p.tc**4,6)+"\\right)\\times 1.05 = "+n(FFwd,4),"Wing form factor")}
-  ${eq("FF_f = 1+\\frac{60}{"+n(lambdaFd,2)+"^3}+\\frac{"+n(lambdaFd,2)+"}{400} = "+n(FFfd,4),"Fuselage form factor")}
+  ${eq("\\lambda_f = \\frac{L_{fus}}{D_{fus}} = \\frac{"+p.fusLen+"}{"+p.fusDiam+"} = "+fmt(lambdaFd,2),"Fuselage fineness ratio")}
+  ${eq("S_{wet,f} = \\pi D_f L_f\\left(1-\\frac{2}{\\lambda_f}\\right)^{2/3}\\!\\left(1+\\frac{1}{\\lambda_f^2}\\right) = "+fmt(SwfWetd,3)+"\\text{ m}^2","Fuselage wetted area (Raymer Eq. 12.31)")}
+  ${eq("S_{wet,w} = 2S_w\\left(1+0.25\\,\\frac{t}{c}(1+\\lambda\\cdot 0.25)\\right) = "+fmt(Swwd,3)+"\\text{ m}^2","Wing wetted area")}
+  ${eq("Re_{fus} = \\frac{\\rho_{cr}\\,V_{cr}\\,L_{fus}}{\\mu_{cr}} = \\frac{"+fmt(rhoCrd,4)+"\\times "+p.vCruise+"\\times "+p.fusLen+"}{"+fmt(muCrd,7)+"} = "+fmt(Refusd,0),"Fuselage Reynolds number")}
+  ${eq("C_{f,w} = \\frac{0.455}{(\\log_{10}"+fmt(SR.Re_,0)+")^{2.58}(1+0.144\\times "+fmt(SR.Mach,4)+"^2)^{0.65}} = "+fmt(Cfwd,6),"Wing skin friction coefficient")}
+  ${eq("C_{f,f} = \\frac{0.455}{(\\log_{10}"+fmt(Refusd,0)+")^{2.58}(1+0.144\\times "+fmt(SR.Mach,4)+"^2)^{0.65}} = "+fmt(Cffd,6),"Fuselage skin friction coefficient")}
+  ${eq("FF_w = \\left(1+2\\times "+p.tc+"+100\\times "+fmt(p.tc**4,6)+"\\right)\\times 1.05 = "+fmt(FFwd,4),"Wing form factor")}
+  ${eq("FF_f = 1+\\frac{60}{"+fmt(lambdaFd,2)+"^3}+\\frac{"+fmt(lambdaFd,2)+"}{400} = "+fmt(FFfd,4),"Fuselage form factor")}
   ${table(["Component","C<sub>f</sub>","FF","S<sub>wet</sub> (m²)","S<sub>wet</sub>/S<sub>w</sub>","C<sub>D0</sub>"],[
-    `<tr><td>Wing</td><td>${n(Cfwd,6)}</td><td>${n(FFwd,4)}</td><td>${n(Swwd,3)}</td><td>${n(Swwd/SR.Swing,4)}</td><td>${n(SR.dragComp&&SR.dragComp.find(d=>d.name==="Wing")?SR.dragComp.find(d=>d.name==="Wing").val:0,5)}</td></tr>`,
-    `<tr><td>Fuselage</td><td>${n(Cffd,6)}</td><td>${n(FFfd,4)}</td><td>${n(SwfWetd,3)}</td><td>${n(SwfWetd/SR.Swing,4)}</td><td>${n(SR.dragComp&&SR.dragComp.find(d=>d.name==="Fuselage")?SR.dragComp.find(d=>d.name==="Fuselage").val:0,5)}</td></tr>`,
-    `<tr><td>H-Stab equiv.</td><td>${n(Cfwd,6)}</td><td>1.05</td><td>${n(Swhs_d,3)}</td><td>${n(Swhs_d/SR.Swing,4)}</td><td>${n(SR.dragComp&&SR.dragComp.find(d=>d.name==="H-Stab")?SR.dragComp.find(d=>d.name==="H-Stab").val:0,5)}</td></tr>`,
-    `<tr><td>V-Stab equiv.</td><td>${n(Cfwd,6)}</td><td>1.05</td><td>${n(Swvs_d,3)}</td><td>${n(Swvs_d/SR.Swing,4)}</td><td>${n(SR.dragComp&&SR.dragComp.find(d=>d.name==="V-Stab")?SR.dragComp.find(d=>d.name==="V-Stab").val:0,5)}</td></tr>`,
-    `<tr><td>Nacelles (×${p.nPropHover})</td><td>${n(Cfwd,6)}</td><td>1.30</td><td>${n(Swn_d,3)}</td><td>${n(Swn_d/SR.Swing,4)}</td><td>${n(SR.dragComp&&SR.dragComp.find(d=>d.name==="Nacelles")?SR.dragComp.find(d=>d.name==="Nacelles").val:0,5)}</td></tr>`,
+    `<tr><td>Wing</td><td>${fmt(Cfwd,6)}</td><td>${fmt(FFwd,4)}</td><td>${fmt(Swwd,3)}</td><td>${fmt(Swwd/SR.Swing,4)}</td><td>${fmt(SR.dragComp&&SR.dragComp.find(d=>d.name==="Wing")?SR.dragComp.find(d=>d.name==="Wing").val:0,5)}</td></tr>`,
+    `<tr><td>Fuselage</td><td>${fmt(Cffd,6)}</td><td>${fmt(FFfd,4)}</td><td>${fmt(SwfWetd,3)}</td><td>${fmt(SwfWetd/SR.Swing,4)}</td><td>${fmt(SR.dragComp&&SR.dragComp.find(d=>d.name==="Fuselage")?SR.dragComp.find(d=>d.name==="Fuselage").val:0,5)}</td></tr>`,
+    `<tr><td>H-Stab equiv.</td><td>${fmt(Cfwd,6)}</td><td>1.05</td><td>${fmt(Swhs_d,3)}</td><td>${fmt(Swhs_d/SR.Swing,4)}</td><td>${fmt(SR.dragComp&&SR.dragComp.find(d=>d.name==="H-Stab")?SR.dragComp.find(d=>d.name==="H-Stab").val:0,5)}</td></tr>`,
+    `<tr><td>V-Stab equiv.</td><td>${fmt(Cfwd,6)}</td><td>1.05</td><td>${fmt(Swvs_d,3)}</td><td>${fmt(Swvs_d/SR.Swing,4)}</td><td>${fmt(SR.dragComp&&SR.dragComp.find(d=>d.name==="V-Stab")?SR.dragComp.find(d=>d.name==="V-Stab").val:0,5)}</td></tr>`,
+    `<tr><td>Nacelles (×${p.nPropHover})</td><td>${fmt(Cfwd,6)}</td><td>1.30</td><td>${fmt(Swn_d,3)}</td><td>${fmt(Swn_d/SR.Swing,4)}</td><td>${fmt(SR.dragComp&&SR.dragComp.find(d=>d.name==="Nacelles")?SR.dragComp.find(d=>d.name==="Nacelles").val:0,5)}</td></tr>`,
     `<tr><td>Landing Gear</td><td colspan="4">Fixed interference estimate</td><td>0.01500</td></tr>`,
     `<tr><td>Miscellaneous</td><td colspan="4">Gaps, protuberances</td><td>0.00200</td></tr>`,
-    `<tr style="font-weight:700"><td>Total C<sub>D0</sub></td><td colspan="4"></td><td>${n(SR.CD0tot,5)}</td></tr>`,
+    `<tr style="font-weight:700"><td>Total C<sub>D0</sub></td><td colspan="4"></td><td>${fmt(SR.CD0tot,5)}</td></tr>`,
   ])}
-  ${eq("C_{D_i} = \\frac{C_{L,des}^2}{\\pi\\,AR\\,e} = \\frac{"+p.clDesign+"^2}{\\pi\\times "+p.AR+"\\times "+p.eOsw+"} = "+n(SR.CDi,5),"Induced drag")}
-  ${eq("C_{D,total} = "+n(SR.CD0tot,5)+"+"+n(SR.CDi,5)+" = "+n(SR.CDtot,5)+", \\quad (L/D)_{act} = "+n(SR.LDact,2),"Total drag and actual L/D")}
+  ${eq("C_{D_i} = \\frac{C_{L,des}^2}{\\pi\\,AR\\,e} = \\frac{"+p.clDesign+"^2}{\\pi\\times "+p.AR+"\\times "+p.eOsw+"} = "+fmt(SR.CDi,5),"Induced drag")}
+  ${eq("C_{D,total} = "+fmt(SR.CD0tot,5)+"+"+fmt(SR.CDi,5)+" = "+fmt(SR.CDtot,5)+", \\quad (L/D)_{act} = "+fmt(SR.LDact,2),"Total drag and actual L/D")}
   `);
 
   // ── D7. ROTOR & MOTOR SIZING ──────────────────────────────────────────
   const sd7 = sec("rotcalc","D7. Rotor & Motor Sizing — Actuator Disk Theory",`
-  ${eq("T_{total} = \\text{MTOW}\\times g_0 = "+n(SR.MTOW,2)+"\\times 9.81 = "+n(Ttotd,1)+"\\text{ N}","Total hover thrust")}
-  ${eq("T_{rotor} = T_{total}/N_{rot} = "+n(Trotord,1)+"\\text{ N}, \\quad P_{rotor} = P_{hov}\\times 1000/N_{rot} = "+n(PrWd,1)+"\\text{ W}","Thrust and power per rotor")}
-  ${eq("A_{disk} = \\frac{T_{rotor}^3}{2\\,\\rho_{SL}\\,(P_{rotor}\\,\\eta_{hov})^2} = \\frac{"+n(Trotord,1)+"^3}{2\\times 1.225\\times("+n(PrWd,1)+"\\times "+p.etaHov+")^2} = "+n(Adiskd,4)+"\\text{ m}^2","Disk area from actuator disk theory")}
-  ${eq("D_{rot} = 2\\sqrt{A_{disk}/\\pi} = 2\\sqrt{"+n(Adiskd,4)+"/\\pi} = "+n(SR.Drotor,3)+"\\text{ m}","Rotor diameter")}
-  ${eq("DL = T_{rotor}/A_{disk} = "+n(SR.DLrotor,1)+"\\text{ N/m}^2, \\quad PL = T_{rotor}/(P_{rotor}/1000) = "+n(SR.PLrotor,1)+"\\text{ N/W}","Disk loading and power loading")}
-  ${eq("V_{tip} = \\sqrt{2P_{rotor}\\,\\eta_{hov}/(\\rho_{SL}\\,A_{disk})} = "+n(TipSpdd,2)+"\\text{ m/s}, \\quad M_{tip} = "+n(SR.TipMach,4)+"\\;(<0.70\\;\\checkmark)","Tip speed and tip Mach number")}
-  ${eq("N = \\frac{V_{tip}}{R_{rot}}\\times\\frac{60}{2\\pi} = \\frac{"+n(TipSpdd,2)+"}{"+n(Rrotord,4)+"}\\times\\frac{60}{2\\pi} = "+n(SR.RPM,0)+"\\text{ rpm}","Rotational speed")}
-  ${eq("c_{blade} = \\sigma\\pi R_{rot}/N_{bl} = 0.10\\times\\pi\\times "+n(Rrotord,4)+"/3 = "+n(SR.ChordBl,4)+"\\text{ m}\\;(\\sigma=0.10,\\;N_{bl}=3)","Blade chord")}
-  ${eq("P_{motor,cont} = 1.15\\times P_{rotor} = "+n(PmotKWd,2)+"\\text{ kW}, \\quad P_{peak} = 1.50\\times P_{motor} = "+n(PpeakKWd,2)+"\\text{ kW}","Motor ratings with margins")}
-  ${eq("Q = P_{motor}\\times 1000/\\Omega = "+n(Torqued,1)+"\\text{ N·m}","Motor shaft torque")}
+  ${eq("T_{total} = \\text{MTOW}\\times g_0 = "+fmt(SR.MTOW,2)+"\\times 9.81 = "+fmt(Ttotd,1)+"\\text{ N}","Total hover thrust")}
+  ${eq("T_{rotor} = T_{total}/N_{rot} = "+fmt(Trotord,1)+"\\text{ N}, \\quad P_{rotor} = P_{hov}\\times 1000/N_{rot} = "+fmt(PrWd,1)+"\\text{ W}","Thrust and power per rotor")}
+  ${eq("A_{disk} = \\frac{T_{rotor}^3}{2\\,\\rho_{SL}\\,(P_{rotor}\\,\\eta_{hov})^2} = \\frac{"+fmt(Trotord,1)+"^3}{2\\times 1.225\\times("+fmt(PrWd,1)+"\\times "+p.etaHov+")^2} = "+fmt(Adiskd,4)+"\\text{ m}^2","Disk area from actuator disk theory")}
+  ${eq("D_{rot} = 2\\sqrt{A_{disk}/\\pi} = 2\\sqrt{"+fmt(Adiskd,4)+"/\\pi} = "+fmt(SR.Drotor,3)+"\\text{ m}","Rotor diameter")}
+  ${eq("DL = T_{rotor}/A_{disk} = "+fmt(SR.DLrotor,1)+"\\text{ N/m}^2, \\quad PL = T_{rotor}/(P_{rotor}/1000) = "+fmt(SR.PLrotor,1)+"\\text{ N/W}","Disk loading and power loading")}
+  ${eq("V_{tip} = \\sqrt{2P_{rotor}\\,\\eta_{hov}/(\\rho_{SL}\\,A_{disk})} = "+fmt(TipSpdd,2)+"\\text{ m/s}, \\quad M_{tip} = "+fmt(SR.TipMach,4)+"\\;(<0.70\\;\\checkmark)","Tip speed and tip Mach number")}
+  ${eq("N = \\frac{V_{tip}}{R_{rot}}\\times\\frac{60}{2\\pi} = \\frac{"+fmt(TipSpdd,2)+"}{"+fmt(Rrotord,4)+"}\\times\\frac{60}{2\\pi} = "+fmt(SR.RPM,0)+"\\text{ rpm}","Rotational speed")}
+  ${eq("c_{blade} = \\sigma\\pi R_{rot}/N_{bl} = 0.10\\times\\pi\\times "+fmt(Rrotord,4)+"/3 = "+fmt(SR.ChordBl,4)+"\\text{ m}\\;(\\sigma=0.10,\\;N_{bl}=3)","Blade chord")}
+  ${eq("P_{motor,cont} = 1.15\\times P_{rotor} = "+fmt(PmotKWd,2)+"\\text{ kW}, \\quad P_{peak} = 1.50\\times P_{motor} = "+fmt(PpeakKWd,2)+"\\text{ kW}","Motor ratings with margins")}
+  ${eq("Q = P_{motor}\\times 1000/\\Omega = "+fmt(Torqued,1)+"\\text{ N·m}","Motor shaft torque")}
   `);
 
   // ── D8. BATTERY PACK ARCHITECTURE ────────────────────────────────────
   const sd8 = sec("battcalc","D8. Battery Pack Architecture & Sizing",`
   <p>Cell specs: NMC Li-ion, V<sub>cell</sub> = 3.6 V, Q<sub>cell</sub> = 5.0 Ah. Bus voltage = 800 V DC.</p>
-  ${eq("W_{bat} = \\frac{E_{total}\\times 1000\\,(1+\\text{SoC}_{min})}{\\text{SED}_{cell}\\,\\eta_{bat}} = \\frac{"+n(SR.Etot,3)+"\\times 1000\\times(1+"+p.socMin+")}{"+p.sedCell+"\\times "+p.etaBat+"} = "+n(SR.Wbat,2)+"\\text{ kg}","Battery mass")}
-  ${eq("\\text{SED}_{pack} = E_{total}\\times 1000/W_{bat} = "+n(SR.SEDpack,1)+"\\text{ Wh/kg}","Pack energy density")}
-  ${eq("N_s = \\text{round}(800/3.6) = "+Nseriesd+", \\quad Q_{req} = E_{total}\\times 1000/800 = "+n(PackAhReqd,2)+"\\text{ Ah}","Series cells and required capacity")}
-  ${eq("N_p = \\lceil "+n(PackAhReqd,2)+"/5.0 \\rceil = "+Npard+", \\quad N_{cells} = "+Nseriesd+"\\times "+Npard+" = "+Nseriesd*Npard,"Parallel strings and total cells")}
-  ${eq("E_{pack} = V_{pack}\\times Q_{pack}/1000 = "+n(PackVd,0)+"\\times "+n(PackAhd,1)+"/1000 = "+n(SR.PackkWh,3)+"\\text{ kWh} \\geq "+n(SR.Etot,3)+"\\text{ kWh}\\;\\checkmark","Pack energy must exceed mission energy")}
-  ${eq("C_{hov} = \\frac{P_{hov}\\times 1000/V_{pack}}{Q_{pack}} = \\frac{"+n(SR.Phov*1000/PackVd,1)+"}{"+n(PackAhd,1)+"} = "+n(SR.CrateHov,3)+"\\text{ C}, \\quad C_{cr} = "+n(SR.CrateCr,3)+"\\text{ C}","Hover and cruise C-rates")}
-  ${eq("R_{int} = 0.030\\times N_s/N_p = "+n(Rintd,4)+"\\,\\Omega, \\quad P_{heat} = I_{hov}^2\\times R_{int} = "+n(Pheatd,1)+"\\text{ W}","Pack resistance and ohmic heating at hover")}
+  ${eq("W_{bat} = \\frac{E_{total}\\times 1000\\,(1+\\text{SoC}_{min})}{\\text{SED}_{cell}\\,\\eta_{bat}} = \\frac{"+fmt(SR.Etot,3)+"\\times 1000\\times(1+"+p.socMin+")}{"+p.sedCell+"\\times "+p.etaBat+"} = "+fmt(SR.Wbat,2)+"\\text{ kg}","Battery mass")}
+  ${eq("\\text{SED}_{pack} = E_{total}\\times 1000/W_{bat} = "+fmt(SR.SEDpack,1)+"\\text{ Wh/kg}","Pack energy density")}
+  ${eq("N_s = \\text{round}(800/3.6) = "+Nseriesd+", \\quad Q_{req} = E_{total}\\times 1000/800 = "+fmt(PackAhReqd,2)+"\\text{ Ah}","Series cells and required capacity")}
+  ${eq("N_p = \\lceil "+fmt(PackAhReqd,2)+"/5.0 \\rceil = "+Npard+", \\quad N_{cells} = "+Nseriesd+"\\times "+Npard+" = "+Nseriesd*Npard,"Parallel strings and total cells")}
+  ${eq("E_{pack} = V_{pack}\\times Q_{pack}/1000 = "+fmt(PackVd,0)+"\\times "+fmt(PackAhd,1)+"/1000 = "+fmt(SR.PackkWh,3)+"\\text{ kWh} \\geq "+fmt(SR.Etot,3)+"\\text{ kWh}\\;\\checkmark","Pack energy must exceed mission energy")}
+  ${eq("C_{hov} = \\frac{P_{hov}\\times 1000/V_{pack}}{Q_{pack}} = \\frac{"+fmt(SR.Phov*1000/PackVd,1)+"}{"+fmt(PackAhd,1)+"} = "+fmt(SR.CrateHov,3)+"\\text{ C}, \\quad C_{cr} = "+fmt(SR.CrateCr,3)+"\\text{ C}","Hover and cruise C-rates")}
+  ${eq("R_{int} = 0.030\\times N_s/N_p = "+fmt(Rintd,4)+"\\,\\Omega, \\quad P_{heat} = I_{hov}^2\\times R_{int} = "+fmt(Pheatd,1)+"\\text{ W}","Pack resistance and ohmic heating at hover")}
   `);
 
   // ── D9. CG BREAKDOWN & STABILITY ─────────────────────────────────────
   const sd9 = sec("stabcalc","D9. Centre of Gravity, Neutral Point & Static Margin — Detailed",`
   <p>All positions from nose. Component CGs are fractions of L<sub>fus</sub> = ${p.fusLen} m.</p>
   ${table(["Component","Mass (kg)","x<sub>CG</sub> (m)","Moment (kg·m)"],[
-    `<tr><td>Fuselage struct. (35% W<sub>e</sub>)</td><td>${n(Wfuscd,2)}</td><td>${n(xCGfusd,3)}  = 0.42 × L<sub>fus</sub></td><td>${n(Wfuscd*xCGfusd,2)}</td></tr>`,
-    `<tr><td>Wing + attach. (18% W<sub>e</sub>)</td><td>${n(Wwingcd,2)}</td><td>${n(xCGwingd,3)}</td><td>${n(Wwingcd*xCGwingd,2)}</td></tr>`,
-    `<tr><td>Motors (22% W<sub>e</sub>)</td><td>${n(Wmotcd,2)}</td><td>${n(xCGfusd,3)}</td><td>${n(Wmotcd*xCGfusd,2)}</td></tr>`,
-    `<tr><td>Avionics (4% W<sub>e</sub>)</td><td>${n(Wavcd,2)}</td><td>0.800</td><td>${n(Wavcd*0.8,2)}</td></tr>`,
-    `<tr><td>Other (21% W<sub>e</sub>)</td><td>${n(Wothcd,2)}</td><td>${n(xCGfusd,3)}</td><td>${n(Wothcd*xCGfusd,2)}</td></tr>`,
-    `<tr style="font-weight:700"><td>Empty W<sub>e</sub></td><td>${n(SR.Wempty,2)}</td><td>${n(xCGemptyd,3)}</td><td>${n(SR.Wempty*xCGemptyd,2)}</td></tr>`,
-    `<tr><td>Battery</td><td>${n(SR.Wbat,2)}</td><td>${n(xCGbatd,3)}  = 0.38 × L<sub>fus</sub></td><td>${n(SR.Wbat*xCGbatd,2)}</td></tr>`,
-    `<tr><td>Payload</td><td>${p.payload}</td><td>${n(xCGpayd,3)}  = 0.40 × L<sub>fus</sub></td><td>${n(p.payload*xCGpayd,2)}</td></tr>`,
-    `<tr style="font-weight:700;background:#dbeafe"><td>Total (MTOW)</td><td>${n(SR.MTOW,2)}</td><td><b>${n(SR.xCGtotal,3)}</b></td><td>${n(SR.MTOW*SR.xCGtotal,2)}</td></tr>`,
+    `<tr><td>Fuselage struct. (35% W<sub>e</sub>)</td><td>${fmt(Wfuscd,2)}</td><td>${fmt(xCGfusd,3)}  = 0.42 × L<sub>fus</sub></td><td>${fmt(Wfuscd*xCGfusd,2)}</td></tr>`,
+    `<tr><td>Wing + attach. (18% W<sub>e</sub>)</td><td>${fmt(Wwingcd,2)}</td><td>${fmt(xCGwingd,3)}</td><td>${fmt(Wwingcd*xCGwingd,2)}</td></tr>`,
+    `<tr><td>Motors (22% W<sub>e</sub>)</td><td>${fmt(Wmotcd,2)}</td><td>${fmt(xCGfusd,3)}</td><td>${fmt(Wmotcd*xCGfusd,2)}</td></tr>`,
+    `<tr><td>Avionics (4% W<sub>e</sub>)</td><td>${fmt(Wavcd,2)}</td><td>0.800</td><td>${fmt(Wavcd*0.8,2)}</td></tr>`,
+    `<tr><td>Other (21% W<sub>e</sub>)</td><td>${fmt(Wothcd,2)}</td><td>${fmt(xCGfusd,3)}</td><td>${fmt(Wothcd*xCGfusd,2)}</td></tr>`,
+    `<tr style="font-weight:700"><td>Empty W<sub>e</sub></td><td>${fmt(SR.Wempty,2)}</td><td>${fmt(xCGemptyd,3)}</td><td>${fmt(SR.Wempty*xCGemptyd,2)}</td></tr>`,
+    `<tr><td>Battery</td><td>${fmt(SR.Wbat,2)}</td><td>${fmt(xCGbatd,3)}  = 0.38 × L<sub>fus</sub></td><td>${fmt(SR.Wbat*xCGbatd,2)}</td></tr>`,
+    `<tr><td>Payload</td><td>${p.payload}</td><td>${fmt(xCGpayd,3)}  = 0.40 × L<sub>fus</sub></td><td>${fmt(p.payload*xCGpayd,2)}</td></tr>`,
+    `<tr style="font-weight:700;background:#dbeafe"><td>Total (MTOW)</td><td>${fmt(SR.MTOW,2)}</td><td><b>${fmt(SR.xCGtotal,3)}</b></td><td>${fmt(SR.MTOW*SR.xCGtotal,2)}</td></tr>`,
   ])}
-  ${eq("x_{CG} = \\frac{W_e\\,x_{CG,e}+W_{bat}\\,x_{CG,bat}+m_{pay}\\,x_{CG,pay}}{\\text{MTOW}} = \\frac{"+n(SR.Wempty*xCGemptyd,1)+"+"+n(SR.Wbat*xCGbatd,1)+"+"+n(p.payload*xCGpayd,1)+"}{"+n(SR.MTOW,2)+"} = "+n(SR.xCGtotal,3)+"\\text{ m}","Total CG from nose")}
-  ${eq("x_{AC,wing} = L_{fus}\\times 0.2589+X_{ac} = "+n(p.fusLen*0.2589,3)+"+"+n(Xacd,3)+" = "+n(xACwingd,3)+"\\text{ m}","Wing aerodynamic centre")}
-  ${eq("C_{L_\\alpha,w} = 2\\pi(1+0.77\\times "+p.tc+") = "+n(CLaWd,4)+"\\text{ rad}^{-1}, \\quad \\frac{d\\varepsilon}{d\\alpha} = \\frac{2C_{L_\\alpha,w}}{\\pi AR} = "+n(dwd,4),"Lift-curve slope and downwash gradient")}
-  ${eq("l_h = L_{fus}-x_{AC,wing} = "+p.fusLen+"-"+n(xACwingd,3)+" = "+n(lhd,3)+"\\text{ m}","Tail moment arm")}
-  ${eq("x_{NP} = x_{AC,wing}+\\frac{S_h}{S_w}\\eta_h(1-\\frac{d\\varepsilon}{d\\alpha})l_h = "+n(xACwingd,3)+"+\\frac{"+n(Shd,3)+"}{"+n(SR.Swing,2)+"}\\times 0.9\\times(1-"+n(dwd,4)+")\\times "+n(lhd,3)+" = "+n(SR.xNP,3)+"\\text{ m}","Neutral point")}
-  ${eq("SM = \\frac{x_{NP}-x_{CG}}{\\bar{c}} = \\frac{"+n(SR.xNP,3)+"-"+n(SR.xCGtotal,3)+"}{"+n(SR.MAC,3)+"} = "+n(SR.SM*100,2)+"\\%\\;\\text{MAC}","Static margin (target 5–25% MAC)")}
+  ${eq("x_{CG} = \\frac{W_e\\,x_{CG,e}+W_{bat}\\,x_{CG,bat}+m_{pay}\\,x_{CG,pay}}{\\text{MTOW}} = \\frac{"+fmt(SR.Wempty*xCGemptyd,1)+"+"+fmt(SR.Wbat*xCGbatd,1)+"+"+fmt(p.payload*xCGpayd,1)+"}{"+fmt(SR.MTOW,2)+"} = "+fmt(SR.xCGtotal,3)+"\\text{ m}","Total CG from nose")}
+  ${eq("x_{AC,wing} = L_{fus}\\times 0.2589+X_{ac} = "+fmt(p.fusLen*0.2589,3)+"+"+fmt(Xacd,3)+" = "+fmt(xACwingd,3)+"\\text{ m}","Wing aerodynamic centre")}
+  ${eq("C_{L_\\alpha,w} = 2\\pi(1+0.77\\times "+p.tc+") = "+fmt(CLaWd,4)+"\\text{ rad}^{-1}, \\quad \\frac{d\\varepsilon}{d\\alpha} = \\frac{2C_{L_\\alpha,w}}{\\pi AR} = "+fmt(dwd,4),"Lift-curve slope and downwash gradient")}
+  ${eq("l_h = L_{fus}-x_{AC,wing} = "+p.fusLen+"-"+fmt(xACwingd,3)+" = "+fmt(lhd,3)+"\\text{ m}","Tail moment arm")}
+  ${eq("x_{NP} = x_{AC,wing}+\\frac{S_h}{S_w}\\eta_h(1-\\frac{d\\varepsilon}{d\\alpha})l_h = "+fmt(xACwingd,3)+"+\\frac{"+fmt(Shd,3)+"}{"+fmt(SR.Swing,2)+"}\\times 0.9\\times(1-"+fmt(dwd,4)+")\\times "+fmt(lhd,3)+" = "+fmt(SR.xNP,3)+"\\text{ m}","Neutral point")}
+  ${eq("SM = \\frac{x_{NP}-x_{CG}}{\\bar{c}} = \\frac{"+fmt(SR.xNP,3)+"-"+fmt(SR.xCGtotal,3)+"}{"+fmt(SR.MAC,3)+"} = "+fmt(SR.SM*100,2)+"\\%\\;\\text{MAC}","Static margin (target 5–25% MAC)")}
   `);
 
   // ── FULL HTML PAGE ───────────────────────────────────────────────────
@@ -1242,14 +1242,14 @@ ${s1}${s2}${sd1}${sd2}${s3}${sd3}${sd4}${s4}${sd5}${s5}${sd6}${s6}${sd7}${s7}${s
   <table class="data-table">
     <thead><tr><th>Metric</th><th>This Design</th><th>Community Target</th><th>Status</th></tr></thead>
     <tbody>
-      <tr><td class="td-label">Actual L/D</td><td class="td-value">${n(SR.LDact,2)}</td><td class="td-value">≥ 12.0</td><td style="color:${SR.LDact>=12?"#16a34a":"#dc2626"};font-weight:700">${SR.LDact>=12?"✓ Above target":"✗ Below target"}</td></tr>
-      <tr style="background:#f8faff"><td class="td-label">MTOW / Payload ratio</td><td class="td-value">${n(SR.MTOW/p.payload,2)}</td><td class="td-value">≤ 6.0</td><td style="color:${SR.MTOW/p.payload<=6?"#16a34a":"#dc2626"};font-weight:700">${SR.MTOW/p.payload<=6?"✓ Efficient":"✗ Review weight"}</td></tr>
-      <tr><td class="td-label">Energy / Range (Wh/km)</td><td class="td-value">${n(SR.Etot*1000/p.range,1)} Wh/km</td><td class="td-value">≤ 400 Wh/km</td><td style="color:${SR.Etot*1000/p.range<=400?"#16a34a":"#dc2626"};font-weight:700">${SR.Etot*1000/p.range<=400?"✓ Efficient":"✗ High consumption"}</td></tr>
-      <tr style="background:#f8faff"><td class="td-label">Battery pack energy density</td><td class="td-value">${n(SR.SEDpack,1)} Wh/kg</td><td class="td-value">≥ 150 Wh/kg</td><td style="color:${SR.SEDpack>=150?"#16a34a":"#d97706"};font-weight:700">${SR.SEDpack>=150?"✓ Good":"⚠ Marginal"}</td></tr>
-      <tr><td class="td-label">Static Margin (V-tail corrected)</td><td class="td-value">${n(SR.SM_vt*100,1)}% MAC</td><td class="td-value">5–25% MAC</td><td style="color:${SR.SM_vt>=0.05&&SR.SM_vt<=0.25?"#16a34a":"#dc2626"};font-weight:700">${SR.SM_vt>=0.05&&SR.SM_vt<=0.25?"✓ Stable":"✗ Review"}</td></tr>
-      <tr style="background:#f8faff"><td class="td-label">Hover power / MTOW (W/kg)</td><td class="td-value">${n(SR.Phov*1000/SR.MTOW,1)} W/kg</td><td class="td-value">≤ 220 W/kg</td><td style="color:${SR.Phov*1000/SR.MTOW<=220?"#16a34a":"#d97706"};font-weight:700">${SR.Phov*1000/SR.MTOW<=220?"✓ Good":"⚠ High hover loading"}</td></tr>
-      <tr><td class="td-label">Tip Mach number</td><td class="td-value">${n(SR.TipMach,4)}</td><td class="td-value">≤ 0.70</td><td style="color:${SR.TipMach<0.70?"#16a34a":"#dc2626"};font-weight:700">${SR.TipMach<0.70?"✓ Subsonic tips":"✗ Compressibility risk"}</td></tr>
-      <tr style="background:#f8faff"><td class="td-label">Noise at 150m (A-weighted)</td><td class="td-value">${n(SR.dBA_150m,1)} dBA</td><td class="td-value">≤ 65 dBA (EASA UAM)</td><td style="color:${SR.dBA_150m<=65?"#16a34a":SR.dBA_150m<=75?"#d97706":"#dc2626"};font-weight:700">${SR.dBA_150m<=65?"✓ Meets EASA target":SR.dBA_150m<=75?"⚠ Above EASA target":"✗ Exceeds limit"}</td></tr>
+      <tr><td class="td-label">Actual L/D</td><td class="td-value">${fmt(SR.LDact,2)}</td><td class="td-value">≥ 12.0</td><td style="color:${SR.LDact>=12?"#16a34a":"#dc2626"};font-weight:700">${SR.LDact>=12?"✓ Above target":"✗ Below target"}</td></tr>
+      <tr style="background:#f8faff"><td class="td-label">MTOW / Payload ratio</td><td class="td-value">${fmt(SR.MTOW/p.payload,2)}</td><td class="td-value">≤ 6.0</td><td style="color:${SR.MTOW/p.payload<=6?"#16a34a":"#dc2626"};font-weight:700">${SR.MTOW/p.payload<=6?"✓ Efficient":"✗ Review weight"}</td></tr>
+      <tr><td class="td-label">Energy / Range (Wh/km)</td><td class="td-value">${fmt(SR.Etot*1000/p.range,1)} Wh/km</td><td class="td-value">≤ 400 Wh/km</td><td style="color:${SR.Etot*1000/p.range<=400?"#16a34a":"#dc2626"};font-weight:700">${SR.Etot*1000/p.range<=400?"✓ Efficient":"✗ High consumption"}</td></tr>
+      <tr style="background:#f8faff"><td class="td-label">Battery pack energy density</td><td class="td-value">${fmt(SR.SEDpack,1)} Wh/kg</td><td class="td-value">≥ 150 Wh/kg</td><td style="color:${SR.SEDpack>=150?"#16a34a":"#d97706"};font-weight:700">${SR.SEDpack>=150?"✓ Good":"⚠ Marginal"}</td></tr>
+      <tr><td class="td-label">Static Margin (V-tail corrected)</td><td class="td-value">${fmt(SR.SM_vt*100,1)}% MAC</td><td class="td-value">5–25% MAC</td><td style="color:${SR.SM_vt>=0.05&&SR.SM_vt<=0.25?"#16a34a":"#dc2626"};font-weight:700">${SR.SM_vt>=0.05&&SR.SM_vt<=0.25?"✓ Stable":"✗ Review"}</td></tr>
+      <tr style="background:#f8faff"><td class="td-label">Hover power / MTOW (W/kg)</td><td class="td-value">${fmt(SR.Phov*1000/SR.MTOW,1)} W/kg</td><td class="td-value">≤ 220 W/kg</td><td style="color:${SR.Phov*1000/SR.MTOW<=220?"#16a34a":"#d97706"};font-weight:700">${SR.Phov*1000/SR.MTOW<=220?"✓ Good":"⚠ High hover loading"}</td></tr>
+      <tr><td class="td-label">Tip Mach number</td><td class="td-value">${fmt(SR.TipMach,4)}</td><td class="td-value">≤ 0.70</td><td style="color:${SR.TipMach<0.70?"#16a34a":"#dc2626"};font-weight:700">${SR.TipMach<0.70?"✓ Subsonic tips":"✗ Compressibility risk"}</td></tr>
+      <tr style="background:#f8faff"><td class="td-label">Noise at 150m (A-weighted)</td><td class="td-value">${fmt(SR.dBA_150m,1)} dBA</td><td class="td-value">≤ 65 dBA (EASA UAM)</td><td style="color:${SR.dBA_150m<=65?"#16a34a":SR.dBA_150m<=75?"#d97706":"#dc2626"};font-weight:700">${SR.dBA_150m<=65?"✓ Meets EASA target":SR.dBA_150m<=75?"⚠ Above EASA target":"✗ Exceeds limit"}</td></tr>
     </tbody>
   </table>
   <p style="font-size:8.5pt;color:#64748b;margin-top:8px;font-style:italic">
@@ -2456,7 +2456,7 @@ export default function App(){
                     <ResponsiveContainer width="100%" height={215}>
                       <PieChart>
                         <Pie data={SR.dragComp} dataKey="val" nameKey="name" cx="50%" cy="50%" innerRadius={48} outerRadius={85} paddingAngle={3}>
-                          {["#3b82f6","#ef4444","#22c55e","#f59e0b","#8b5cf6","#ec4899","#06b6d4"].map((clr,i)=><Cell key={i} fill={c}/>)}
+                          {["#3b82f6","#ef4444","#22c55e","#f59e0b","#8b5cf6","#ec4899","#06b6d4"].map((clr,i)=><Cell key={i} fill={clr}/>)}
                         </Pie>
                         <Tooltip {...TTP} formatter={(v)=>[v.toFixed(5),"CD₀"]}/>
                         <Legend iconSize={8} wrapperStyle={{fontSize:12,color:SC.muted}}/>
@@ -4175,8 +4175,8 @@ export default function App(){
               const score=(arr)=>{
                 const total=arr.length;
                 const passed=arr.filter(rule=>rule.check).length;
-                const critical_fail=arr.filter(rule=>!rule.check&&r.severity==="critical").length;
-                const major_fail=arr.filter(rule=>!rule.check&&r.severity==="major").length;
+                const critical_fail=arr.filter(rule=>!rule.check&&rule.severity==="critical").length;
+                const major_fail=arr.filter(rule=>!rule.check&&rule.severity==="major").length;
                 return{total,passed,critical_fail,major_fail,pct:Math.round(passed/total*100)};
               };
               const faaScore=score(rules.FAA);
@@ -4278,11 +4278,11 @@ export default function App(){
                     </div>
                   </div>
                   {/* Group by category */}
-                  {[...new Set(rules.FAA.map(rl=>r.category))].map(cat=>(
+                  {[...new Set(rules.FAA.map(rl=>rl.category))].map(cat=>(
                     <div key={cat} style={{marginBottom:14}}>
                       <div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace",letterSpacing:"0.12em",
                         textTransform:"uppercase",marginBottom:6,paddingLeft:2}}>{cat}</div>
-                      {rules.FAA.filter(rl=>r.category===cat).map(rule=>(
+                      {rules.FAA.filter(rl=>rl.category===cat).map(rule=>(
                         <div key={rule.id} style={{
                           background:rule.check?`${SC.green}08`:`${sevColor[rule.severity]}0c`,
                           border:`1px solid ${rule.check?SC.green+"22":sevColor[rule.severity]+"44"}`,
@@ -4328,11 +4328,11 @@ export default function App(){
                       <div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace"}}>{easaScore.passed}/{easaScore.total} checks</div>
                     </div>
                   </div>
-                  {[...new Set(rules.EASA.map(rl=>r.category))].map(cat=>(
+                  {[...new Set(rules.EASA.map(rl=>rl.category))].map(cat=>(
                     <div key={cat} style={{marginBottom:14}}>
                       <div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace",letterSpacing:"0.12em",
                         textTransform:"uppercase",marginBottom:6,paddingLeft:2}}>{cat}</div>
-                      {rules.EASA.filter(rl=>r.category===cat).map(rule=>(
+                      {rules.EASA.filter(rl=>rl.category===cat).map(rule=>(
                         <div key={rule.id} style={{
                           background:rule.check?`${SC.green}08`:`${sevColor[rule.severity]}0c`,
                           border:`1px solid ${rule.check?SC.green+"22":sevColor[rule.severity]+"44"}`,
@@ -4500,7 +4500,7 @@ export default function App(){
                       <YAxis tick={{fontSize:9,fill:SC.muted}}
                         label={{value:"SPL (dBA at 150m)",angle:-90,position:"insideLeft",fontSize:11,fill:SC.muted}}/>
                       <Tooltip {...TTP} formatter={(v)=>[`${v} dBA`,"SPL"]}
-                        labelFormatter={fval=>`BPF×${SR.bpfHarmonics.findIndex(harm=>harm.freq===fval)+1} = ${f} Hz`}/>
+                        labelFormatter={fval=>`BPF×${SR.bpfHarmonics.findIndex(harm=>harm.freq===fval)+1} = ${fval} Hz`}/>
                       <Bar dataKey="SPL" radius={[4,4,0,0]} name="dBA at 150m">
                         {SR.bpfHarmonics.map((harm,i)=>(
                           <Cell key={i} fill={harm.SPL<=65?"#22c55e":harm.SPL<=75?"#f59e0b":"#ef4444"}/>
@@ -4943,7 +4943,7 @@ export default function App(){
                                   <input type="number" value={ph[field]||0}
                                     onChange={evt=>{
                                       const v=parseFloat(e.target.value)||0;
-                                      setCustomPhases(prev=>prev.map((ph_item,j)=>j===i?{...ph_item,[field]:v}:x));
+                                      setCustomPhases(prev=>prev.map((ph_item,j)=>j===i?{...ph_item,[field]:v}:ph_item));
                                     }}
                                     style={{width:60,background:SC.panel,border:`1px solid ${SC.border}`,
                                       borderRadius:4,color:SC.text,fontSize:11,padding:"3px 6px",
