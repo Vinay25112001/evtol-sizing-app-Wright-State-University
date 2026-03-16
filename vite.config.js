@@ -5,12 +5,7 @@ export default defineConfig({
   plugins: [react()],
   base: '/evtol-sizing-app-Wright-State-University/',
   build: {
-    minify: 'esbuild',
+    minify: false,
     target: 'es2020',
-  },
-  esbuild: {
-    minifyIdentifiers: false,
-    minifySyntax: true,
-    minifyWhitespace: true,
   },
 })
