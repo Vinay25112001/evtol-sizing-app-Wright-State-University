@@ -363,7 +363,7 @@ function runSizing(p) {
   /* Weight breakdown (Roskam) */
   const ewFracs=[0.18,0.28,0.05,0.04,0.04,0.22,0.04,0.02,0.08,0.05];
   const ewNames=["Wing Struct","Fuselage","Tail Surf","Booms","LG","Propulsion","Avionics","ECS","Elec Sys","Furnish"];
-  const weightBreak=ewNames.map((n,i)=>({name:n,val:+(ewFracs[i]*Wempty).toFixed(1)}));
+  const weightBreak=ewNames.map((wn,i)=>({name:wn,val:+(ewFracs[i]*Wempty).toFixed(1)}));
 
   /* Drag pie */
   const dragComp=[
@@ -1782,7 +1782,7 @@ export default function App(){
         const w=(mx-mn)/bins;
         const counts=Array(bins).fill(0);
         arr.forEach(val=>{ const b=Math.min(bins-1,Math.floor((val-mn)/w)); counts[b]++; });
-        return counts.map((c,i)=>({
+        return counts.map((cnt,i)=>({
           x:+(mn+i*w+w/2).toFixed(1), count:c,
           pct:+(c/arr.length*100).toFixed(2)
         }));
@@ -1791,7 +1791,7 @@ export default function App(){
       const buildCDF=(arr)=>{
         const sorted=[...arr].sort((a,b)=>a-b);
         return sorted.filter((_,i)=>i%Math.max(1,Math.floor(sorted.length/200))===0)
-          .map((v,i,a)=>({x:+v.toFixed(1),cdf:+((i+1)/a.length*100).toFixed(1)}));
+          .map((cdfVal,cdfIdx,cdfArr)=>({x:+cdfVal.toFixed(1),cdf:+((cdfIdx+1)/cdfArr.length*100).toFixed(1)}));
       };
       setMcResults({
         N, failCount,
@@ -2059,11 +2059,11 @@ export default function App(){
           {SR&&(
             <div style={{marginTop:10,borderTop:`1px solid ${SC.border}`,paddingTop:10}}>
               <div style={{fontSize:8,color:SC.muted,textTransform:"uppercase",letterSpacing:"0.1em",fontFamily:"'DM Mono',monospace",marginBottom:7}}>Design Checks</div>
-              {SR.checks.map((c,i)=>(
+              {SR.checks.map((chkItem,i)=>(
                 <div key={i} style={{display:"flex",alignItems:"center",gap:5,padding:"3px 0",borderBottom:`1px solid #0f131a`}}>
-                  <span style={{fontSize:9}}>{c.ok?"✅":"❌"}</span>
-                  <span style={{fontSize:8,color:c.ok?SC.green:SC.red,flex:1,fontFamily:"'DM Mono',monospace"}}>{c.label}</span>
-                  <span style={{fontSize:8,color:SC.muted,fontFamily:"'DM Mono',monospace"}}>{cpart.val}</span>
+                  <span style={{fontSize:9}}>{chkItem.ok?"✅":"❌"}</span>
+                  <span style={{fontSize:8,color:chkItem.ok?SC.green:SC.red,flex:1,fontFamily:"'DM Mono',monospace"}}>{chkItem.label}</span>
+                  <span style={{fontSize:8,color:SC.muted,fontFamily:"'DM Mono',monospace"}}>{chkItem.val}</span>
                 </div>
               ))}
             </div>
@@ -2074,13 +2074,13 @@ export default function App(){
         <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
           {/* Tabs */}
           <div style={{display:"flex",background:SC.panel,borderBottom:`1px solid ${SC.border}`,overflowX:"auto",flexShrink:0}}>
-            {TABS.map((t,i)=>(
+            {TABS.map((tabLabel,i)=>(
               <button key={i} onClick={()=>setTab(i)}
                 style={{padding:"8px 14px",background:"transparent",border:"none",cursor:"pointer",
                   borderBottom:i===tab?`2px solid ${SC.amber}`:"2px solid transparent",
                   color:i===tab?SC.text:SC.muted,fontSize:10,fontFamily:"'DM Mono',monospace",
                   letterSpacing:"0.05em",whiteSpace:"nowrap",transition:"color 0.15s"}}>
-                {TABI[i]} {t}
+                {TABI[i]} {tabLabel}
               </button>
             ))}
           </div>
@@ -2117,7 +2117,7 @@ export default function App(){
                         <XAxis dataKey="ph" tick={{fontSize:11,fill:SC.muted}}/>
                         <YAxis tick={{fontSize:11,fill:SC.muted}}/>
                         <Tooltip {...TTP}/>
-                        <Bar dataKey="v" radius={[3,3,0,0]} name="kW">{PHC.map((c,i)=><Cell key={i} fill={c}/>)}</Bar>
+                        <Bar dataKey="v" radius={[3,3,0,0]} name="kW">{PHC.map((clr,i)=><Cell key={i} fill={clr}/>)}</Bar>
                       </BarChart>
                     </ResponsiveContainer>
                   </Panel>
@@ -2129,7 +2129,7 @@ export default function App(){
                         <XAxis dataKey="ph" tick={{fontSize:11,fill:SC.muted}}/>
                         <YAxis tick={{fontSize:11,fill:SC.muted}}/>
                         <Tooltip {...TTP}/>
-                        <Bar dataKey="v" radius={[3,3,0,0]} name="kWh">{PHC.map((c,i)=><Cell key={i} fill={c}/>)}</Bar>
+                        <Bar dataKey="v" radius={[3,3,0,0]} name="kWh">{PHC.map((clr,i)=><Cell key={i} fill={clr}/>)}</Bar>
                       </BarChart>
                     </ResponsiveContainer>
                   </Panel>
@@ -2418,7 +2418,7 @@ export default function App(){
                       <PieChart>
                         <Pie data={[{n:"T/O",v:SR.tto},{n:"Climb",v:SR.tcl},{n:"Cruise",v:SR.tcr},{n:"Descent",v:SR.tdc},{n:"Land",v:SR.tld},{n:"Reserve",v:SR.tres}]}
                           dataKey="v" nameKey="n" cx="50%" cy="50%" innerRadius={45} outerRadius={80} paddingAngle={3}>
-                          {PHC.map((c,i)=><Cell key={i} fill={c}/>)}
+                          {PHC.map((clr,i)=><Cell key={i} fill={clr}/>)}
                         </Pie>
                         <Tooltip {...TTP} formatter={(v)=>[`${v} s`,"Duration"]}/>
                         <Legend iconSize={8} wrapperStyle={{fontSize:11,color:SC.muted}}/>
@@ -2456,7 +2456,7 @@ export default function App(){
                     <ResponsiveContainer width="100%" height={215}>
                       <PieChart>
                         <Pie data={SR.dragComp} dataKey="val" nameKey="name" cx="50%" cy="50%" innerRadius={48} outerRadius={85} paddingAngle={3}>
-                          {["#3b82f6","#ef4444","#22c55e","#f59e0b","#8b5cf6","#ec4899","#06b6d4"].map((c,i)=><Cell key={i} fill={c}/>)}
+                          {["#3b82f6","#ef4444","#22c55e","#f59e0b","#8b5cf6","#ec4899","#06b6d4"].map((clr,i)=><Cell key={i} fill={c}/>)}
                         </Pie>
                         <Tooltip {...TTP} formatter={(v)=>[v.toFixed(5),"CD₀"]}/>
                         <Legend iconSize={8} wrapperStyle={{fontSize:12,color:SC.muted}}/>
@@ -2650,7 +2650,7 @@ export default function App(){
                         <XAxis dataKey="ph" tick={{fontSize:11,fill:SC.muted}}/>
                         <YAxis tick={{fontSize:11,fill:SC.muted}} label={{value:"kW",angle:-90,position:"insideLeft",fontSize:12,fill:SC.muted}}/>
                         <Tooltip {...TTP}/>
-                        <Bar dataKey="v" radius={[3,3,0,0]} name="Power (kW)">{PHC.map((c,i)=><Cell key={i} fill={c}/>)}</Bar>
+                        <Bar dataKey="v" radius={[3,3,0,0]} name="Power (kW)">{PHC.map((clr,i)=><Cell key={i} fill={clr}/>)}</Bar>
                       </BarChart>
                     </ResponsiveContainer>
                   </Panel>
@@ -2910,7 +2910,7 @@ export default function App(){
                       <PieChart>
                         <Pie data={[{name:"Empty",val:SR.Wempty},{name:"Battery",val:SR.Wbat},{name:"Payload",val:params.payload}]}
                           dataKey="val" nameKey="name" cx="50%" cy="50%" innerRadius={48} outerRadius={82} paddingAngle={4}>
-                          {[SC.blue,SC.amber,SC.green].map((c,i)=><Cell key={i} fill={c}/>)}
+                          {[SC.blue,SC.amber,SC.green].map((clr,i)=><Cell key={i} fill={clr}/>)}
                         </Pie>
                         <Tooltip {...TTP} formatter={(v,n)=>[`${v.toFixed(1)} kg (${(v/SR.MTOW*100).toFixed(1)}%)`,n]}/>
                         <Legend iconSize={8} wrapperStyle={{fontSize:12,color:SC.muted}}/>
@@ -2919,14 +2919,14 @@ export default function App(){
                   </Panel>
                   <Panel title="Feasibility Checks" ht={235}>
                     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7,marginTop:4}}>
-                      {SR.checks.map((c,i)=>(
-                        <div key={i} style={{background:SC.bg,borderRadius:5,padding:"7px 9px",border:`1px solid ${c.ok?SC.green+"33":SC.red+"33"}`}}>
+                      {SR.checks.map((chk,i)=>(
+                        <div key={i} style={{background:SC.bg,borderRadius:5,padding:"7px 9px",border:`1px solid ${chk.ok?SC.green+"33":SC.red+"33"}`}}>
                           <div style={{display:"flex",alignItems:"center",gap:4,marginBottom:2}}>
-                            <span>{c.ok?"✅":"❌"}</span>
-                            <span style={{fontSize:8,color:c.ok?SC.green:SC.red,fontWeight:700,fontFamily:"'DM Mono',monospace"}}>{c.ok?"PASS":"FAIL"}</span>
+                            <span>{chk.ok?"✅":"❌"}</span>
+                            <span style={{fontSize:8,color:chk.ok?SC.green:SC.red,fontWeight:700,fontFamily:"'DM Mono',monospace"}}>{chk.ok?"PASS":"FAIL"}</span>
                           </div>
-                          <div style={{fontSize:8,color:SC.muted,marginBottom:2}}>{c.label}</div>
-                          <div style={{fontSize:9,color:c.ok?SC.green:SC.red,fontFamily:"'DM Mono',monospace"}}>{cpart.val}</div>
+                          <div style={{fontSize:8,color:SC.muted,marginBottom:2}}>{chk.label}</div>
+                          <div style={{fontSize:9,color:chk.ok?SC.green:SC.red,fontFamily:"'DM Mono',monospace"}}>{chk.val}</div>
                         </div>
                       ))}
                     </div>
@@ -3787,9 +3787,9 @@ export default function App(){
                                 <tr key={i} style={{borderTop:`1px solid ${SC.border}`,background:i%2?"#0a0d14":SC.bg}}>
                                   <td style={{padding:"5px 8px",color:col,fontWeight:700}}>{name}</td>
                                   <td style={{padding:"5px 8px",color:SC.muted,textAlign:"right"}}>{unit}</td>
-                                  {[s.min,s.p5,s.p25,s.p50,s.p75,s.p95,s.max,s.mean,s.std].map((v,j)=>(
+                                  {[s.min,s.p5,s.p25,s.p50,s.p75,s.p95,s.max,s.mean,s.std].map((statVal,j)=>(
                                     <td key={j} style={{padding:"5px 8px",color:j===7?col:SC.text,
-                                      fontWeight:j===7?700:400,textAlign:"right"}}>{v?.toFixed(j>=7?2:1)}</td>
+                                      fontWeight:j===7?700:400,textAlign:"right"}}>{statVal?.toFixed(j>=7?2:1)}</td>
                                   ))}
                                   <td style={{padding:"5px 8px",textAlign:"right",
                                     color:cv<5?SC.green:cv<15?SC.amber:SC.red,fontWeight:700}}>
@@ -4748,7 +4748,7 @@ export default function App(){
                       <PieChart>
                         <Pie data={costParts} dataKey="val" nameKey="name"
                           cx="50%" cy="50%" innerRadius={50} outerRadius={90} paddingAngle={2}>
-                          {costParts.map((c,i)=><Cell key={i} fill={c.col}/>)}
+                          {costParts.map((cp,i)=><Cell key={i} fill={cp.col}/>)}
                         </Pie>
                         <Tooltip {...TTP} formatter={(v)=>[`$${v}`,""]}/>
                         <Legend iconSize={8} wrapperStyle={{fontSize:10,color:SC.muted}}/>
@@ -4841,7 +4841,7 @@ export default function App(){
                       <YAxis type="category" dataKey="name" tick={{fontSize:10,fill:SC.muted}} width={80}/>
                       <Tooltip {...TTP} formatter={(v)=>[`${v}%`,"Share"]}/>
                       <Bar dataKey="pct" radius={[0,4,4,0]} name="% of cost">
-                        {costParts.sort((a,b)=>b.val-a.val).map((c,i)=><Cell key={i} fill={c.col}/>)}
+                        {costParts.sort((a,b)=>b.val-a.val).map((cp,i)=><Cell key={i} fill={cp.col}/>)}
                       </Bar>
                     </BarChart>
                   </ResponsiveContainer>
@@ -4928,7 +4928,7 @@ export default function App(){
                           <span style={{fontSize:16}}>{pt.icon}</span>
                           {/* Label */}
                           <input value={ph.label} onChange={evt=>{
-                              setCustomPhases(prev=>prev.map((x,j)=>j===i?{...x,label:e.target.value}:x));
+                              setCustomPhases(prev=>prev.map((ph_item,j)=>j===i?{...ph_item,label:e.target.value}:x));
                             }}
                             style={{background:"transparent",border:"none",color:pt.col,fontSize:11,
                               fontWeight:700,fontFamily:"'DM Mono',monospace",outline:"none",width:120}}/>
@@ -4943,7 +4943,7 @@ export default function App(){
                                   <input type="number" value={ph[field]||0}
                                     onChange={evt=>{
                                       const v=parseFloat(e.target.value)||0;
-                                      setCustomPhases(prev=>prev.map((x,j)=>j===i?{...x,[field]:v}:x));
+                                      setCustomPhases(prev=>prev.map((ph_item,j)=>j===i?{...ph_item,[field]:v}:x));
                                     }}
                                     style={{width:60,background:SC.panel,border:`1px solid ${SC.border}`,
                                       borderRadius:4,color:SC.text,fontSize:11,padding:"3px 6px",
@@ -5342,10 +5342,10 @@ export default function App(){
                             ["CG Marker",SR.xCGtotal.toFixed(3),"0","fD×0.55","—"],
                             ["NP Marker",SR.xNP.toFixed(3),"0","fD×0.65","—"],
                           ];
-                          return rows.map((r,i)=>(
+                          return rows.map((rowItem,i)=>(
                             <tr key={i} style={{background:i%2===0?SC.bg:"transparent",
                               borderBottom:`1px solid ${SC.border}22`}}>
-                              {r.map((cell,j)=>(
+                              {rowItem.map((cell,j)=>(
                                 <td key={j} style={{padding:"4px 6px",
                                   color:j===0?SC.amber:SC.text,
                                   fontSize:j===0?10:9}}>{cell}</td>
@@ -5372,14 +5372,14 @@ export default function App(){
                           detail:`D=${SR.Drotor}m  ${SR.Nbld||3} blades  @y=±${((SR.bWing/2)*(i+0.5)/Math.floor(params.nPropHover/2)).toFixed(2)}m`,
                           col:SC.amber,
                         })),
-                      ].map((n,i)=>(
+                      ].map((node_item,i)=>(
                         <div key={i} style={{display:"flex",alignItems:"flex-start",gap:4,
-                          paddingLeft:n.indent*18,paddingTop:1,paddingBottom:1}}>
-                          <span style={{color:SC.dim,flexShrink:0}}>{n.indent>0?"└ ":""}</span>
-                          <span style={{flexShrink:0}}>{n.icon}</span>
+                          paddingLeft:node_item.indent*18,paddingTop:1,paddingBottom:1}}>
+                          <span style={{color:SC.dim,flexShrink:0}}>{node_item.indent>0?"└ ":""}</span>
+                          <span style={{flexShrink:0}}>{node_item.icon}</span>
                           <div>
-                            <span style={{color:n.col,fontWeight:600}}>{n.label}</span>
-                            <div style={{fontSize:8,color:SC.muted,marginTop:1}}>{n.detail}</div>
+                            <span style={{color:node_item.col,fontWeight:600}}>{node_item.label}</span>
+                            <div style={{fontSize:8,color:SC.muted,marginTop:1}}>{node_item.detail}</div>
                           </div>
                         </div>
                       ))}
