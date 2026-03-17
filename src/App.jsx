@@ -1460,6 +1460,45 @@ const TABI=["⬛","🛫","✈️","🔧","🔋","📈","⚖️","🦋","🔄","�
    wake contraction, figure of merit vs collective pitch.
    Ref: Leishman "Principles of Helicopter Aerodynamics" Ch.3
    ════════════════════════════════════════════════════════════════════════ */
+/* ── API Key Input — shared by RegTracker and AI Assistant ── */
+function ApiKeyInput({ SC }) {
+  const [key, setKey] = useState(localStorage.getItem("anthropic_api_key") || "");
+  const [saved, setSaved] = useState(!!localStorage.getItem("anthropic_api_key"));
+  const save = () => {
+    if (key.trim()) {
+      localStorage.setItem("anthropic_api_key", key.trim());
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    }
+  };
+  const clear = () => { localStorage.removeItem("anthropic_api_key"); setKey(""); setSaved(false); };
+  return (
+    <div style={{ background: SC.bg, border: `1px solid ${SC.border}`, borderRadius: 6, padding: "10px 14px", marginBottom: 10, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+      <span style={{ fontSize: 9, color: SC.muted, fontFamily: "'DM Mono',monospace", whiteSpace: "nowrap" }}>🔑 Anthropic API Key:</span>
+      <input
+        type="password"
+        value={key}
+        onChange={e => { setKey(e.target.value); setSaved(false); }}
+        placeholder="sk-ant-api03-…"
+        style={{ flex: 1, minWidth: 200, background: SC.panel, border: `1px solid ${SC.border}`, borderRadius: 4, color: SC.text, fontSize: 10, padding: "5px 10px", fontFamily: "'DM Mono',monospace", outline: "none" }}
+      />
+      <button onClick={save} type="button"
+        style={{ padding: "5px 14px", background: saved ? `${SC.green}22` : `${SC.amber}22`, border: `1px solid ${saved ? SC.green : SC.amber}`, borderRadius: 4, color: saved ? SC.green : SC.amber, fontSize: 9, fontWeight: 700, cursor: "pointer", fontFamily: "'DM Mono',monospace" }}>
+        {saved ? "✓ Saved" : "Save"}
+      </button>
+      {localStorage.getItem("anthropic_api_key") && (
+        <button onClick={clear} type="button"
+          style={{ padding: "5px 10px", background: "transparent", border: `1px solid ${SC.border}`, borderRadius: 4, color: SC.muted, fontSize: 9, cursor: "pointer" }}>
+          Clear
+        </button>
+      )}
+      <span style={{ fontSize: 9, color: SC.muted, fontFamily: "'DM Mono',monospace" }}>
+        Get yours at <span style={{ color: SC.blue }}>console.anthropic.com</span> — stored in browser only, never sent anywhere except Anthropic.
+      </span>
+    </div>
+  );
+}
+
 function BEMPanel({ params, SR, SC }) {
   const [twist,    setTwist]    = useState(-8);    // deg, linear twist (root-to-tip)
   const [chord_r,  setChordR]   = useState(0.08);  // c/R
@@ -1472,7 +1511,7 @@ function BEMPanel({ params, SR, SC }) {
   const runBEM = () => {
     const NR    = 40;
     const R     = SR ? SR.Drotor / 2 : params.propDiam / 2;
-    const RPM   = SR ? SR.RPM : 400;
+    const RPM   = +(SR?.RPM) || 400;  // always a number
     const B     = Nbld;
     const rho   = 1.225;
     const g0    = 9.81;
@@ -1480,9 +1519,9 @@ function BEMPanel({ params, SR, SC }) {
     const Vtip  = Omega * R;
     const c     = chord_r * R;
     const sigma = B * c / (Math.PI * R);
-    const nRot  = SR ? SR.nPropHover : params.nPropHover;
-    const T_req = SR ? SR.MTOW * g0 / nRot : 2177 * g0 / nRot;
-    const etaHov= SR ? (params.etaHov || 0.70) : params.etaHov;
+    const nRot  = +(SR?.nPropHover || params.nPropHover) || 6;  // always a number
+    const T_req = SR ? (SR.MTOW * g0 / nRot) : (2177 * g0 / nRot);
+    const etaHov= +(params.etaHov) || 0.70;
 
     let T_total = 0, P_total = 0;
     const stations = [];
@@ -1543,7 +1582,7 @@ function BEMPanel({ params, SR, SC }) {
 
     const P_BEM_kW = P_total * nRot / 1000;
     const P_AKT_kW = P_act_1 * nRot;
-    const T_ratio  = +(T_total / T_req * 100).toFixed(1);
+    const T_ratio  = T_req > 0 ? +(T_total / T_req * 100).toFixed(1) : 0;
     const delta_pct = +((P_BEM_kW - P_AKT_kW) / Math.max(P_AKT_kW, 0.1) * 100).toFixed(1);
 
     setResults({
@@ -1759,10 +1798,13 @@ Based on your knowledge of these regulations up to your training cutoff:
 
 Respond in plain text, clearly structured. Be specific about rule IDs and numerical values. If you are uncertain about a specific value, say so.`;
 
+      const apiKey = localStorage.getItem("anthropic_api_key") || "";
+      if (!apiKey) { setAiErr("⚠️ Enter your Anthropic API key below and try again."); setChecking(false); return; }
       const res = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "x-api-key": apiKey,
           "anthropic-version": "2023-06-01",
           "anthropic-dangerous-direct-browser-access": "true",
         },
@@ -1772,7 +1814,7 @@ Respond in plain text, clearly structured. Be specific about rule IDs and numeri
           messages: [{ role: "user", content: prompt }]
         })
       });
-      if (!res.ok) { const t = await res.text(); throw new Error(`API ${res.status}: ${t.slice(0,120)}`); }
+      if (!res.ok) { const t = await res.text(); throw new Error(`API ${res.status}: ${t.slice(0,200)}`); }
       const data = await res.json();
       const text = data.content?.map(c => c.text || "").join("") || "";
       if (!text) throw new Error("No response from AI");
@@ -1858,6 +1900,7 @@ Respond in plain text, clearly structured. Be specific about rule IDs and numeri
         <div style={{ fontSize: 10, color: SC.muted, fontFamily: "'DM Mono',monospace", marginBottom: 12, lineHeight: 1.7 }}>
           Asks Claude to identify: (1) threshold changes from stored values, (2) new requirements for your specific design, (3) top 3 certification risks.
         </div>
+        <ApiKeyInput SC={SC}/>
         <button onClick={checkUpdates} disabled={checking} type="button"
           style={{ padding: '9px 24px', background: checking ? 'transparent' : `linear-gradient(135deg,#1c1000,${SC.amber}88)`, border: `2px solid ${SC.amber}`, borderRadius: 7, color: checking ? SC.muted : SC.amber, fontSize: 11, fontWeight: 800, cursor: checking ? 'not-allowed' : 'pointer', fontFamily: "'DM Mono',monospace" }}>
           {checking ? '⟳ Checking with Claude…' : '📜 Check for Regulatory Updates'}
@@ -1945,11 +1988,14 @@ When the user describes requirements, use run_sizing to find an optimised soluti
 
       while (iters < 5) {
         iters++;
+        const apiKey = localStorage.getItem("anthropic_api_key") || "";
+        if (!apiKey) throw new Error("API key required. Please enter your Anthropic API key in the field below.");
         const res = await fetch("https://api.anthropic.com/v1/messages", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             "anthropic-version": "2023-06-01",
+            "x-api-key": apiKey,
             "anthropic-dangerous-direct-browser-access": "true",
           },
           body: JSON.stringify({
@@ -1960,7 +2006,7 @@ When the user describes requirements, use run_sizing to find an optimised soluti
             messages: loopHistory,
           })
         });
-        if (!res.ok) { const t = await res.text(); throw new Error(`API ${res.status}: ${t.slice(0,120)}`); }
+        if (!res.ok) { const t = await res.text(); throw new Error(`API ${res.status}: ${t.slice(0,200)}`); }
         const data = await res.json();
 
         // Collect text blocks
@@ -2033,6 +2079,7 @@ When the user describes requirements, use run_sizing to find an optimised soluti
         </div>
       </div>
 
+      <ApiKeyInput SC={SC}/>
       {/* Chat */}
       <div style={{ background: SC.panel, border: `1px solid ${SC.border}`, borderRadius: 8, display: 'flex', flexDirection: 'column', height: 460 }}>
         {/* Messages */}
