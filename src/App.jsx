@@ -1806,7 +1806,7 @@ Respond in plain text, clearly structured. Be specific about rule IDs and numeri
         },
         body: JSON.stringify({
           model: "llama3-groq-70b-8192-tool-use-preview",
-          max_tokens: 1024,
+          max_tokens: 600,
           messages: [{ role: "user", content: prompt }]
         })
       });
@@ -1942,49 +1942,16 @@ function AIAssistantPanel({ params, SR, SC, onParamChange }) {
         .map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content }));
       history.push({ role: 'user', content: userMsg });
 
-      const systemPrompt = `You are an expert aerospace engineer specializing in eVTOL aircraft sizing. You have access to a physics-based sizing engine via run_sizing.
+      const systemPrompt = `eVTOL sizing expert. Use run_sizing iteratively to find a FEASIBLE design.
 
-CURRENT DESIGN STATE:
-- Range: ${params.range} km | Payload: ${params.payload} kg | Cruise: ${params.vCruise} m/s
-- L/D: ${params.LD} | AR: ${params.AR} | Battery SED: ${params.sedCell} Wh/kg
-- nProp: ${params.nPropHover} | Prop diameter: ${params.propDiam} m | T/W: ${params.twRatio}
-- ewf: ${params.ewf} | etaHov: ${params.etaHov} | etaSys: ${params.etaSys}
-${SR ? `Current result: MTOW=${SR.MTOW}kg, Etot=${SR.Etot}kWh, LDact=${SR.LDact}, SM=${(SR.SM_vt*100).toFixed(1)}%, Feasible=${SR.feasible}` : 'No result yet.'}
+State: range=${params.range}km payload=${params.payload}kg vCruise=${params.vCruise}m/s LD=${params.LD} AR=${params.AR} sed=${params.sedCell}Wh/kg nProp=${params.nPropHover} diam=${params.propDiam}m TW=${params.twRatio} ewf=${params.ewf} etaH=${params.etaHov} etaS=${params.etaSys}
+${SR ? `Current: MTOW=${SR.MTOW}kg Etot=${SR.Etot}kWh LDact=${SR.LDact} SM=${(SR.SM_vt*100).toFixed(1)}% Feasible=${SR.feasible}` : ''}
 
-FEASIBILITY RULES — a design is only acceptable when ALL of these pass:
-1. MTOW < 5700 kg
-2. Battery fraction (Wbat/MTOW) < 55%
-3. Static margin SM between 5% and 25% MAC
-4. Tip Mach < 0.70
-5. Actual L/D > 10
-6. Final SoC >= socMin (battery not over-discharged)
-7. V-tail pitch and yaw authority >= 100%
-8. Hover T/W >= 1.0
-
-ITERATION STRATEGY — follow this exactly:
-Step 1: Call run_sizing with your initial estimate based on the user's requirements.
-Step 2: Read checks_failed from the result. If checks_failed is NOT empty, the design FAILED — do NOT present it as a solution.
-Step 3: Fix each failed check using these rules:
-  - "MTOW < 5700 kg" failing → reduce range, reduce payload, or increase sedCell
-  - "Battery Frac < 55%" failing → increase sedCell or reduce range
-  - "SM 5-25% MAC" failing → adjust AR (higher AR moves NP aft), or adjust ewf
-  - "Tip Mach < 0.70" failing → reduce propDiam or reduce twRatio
-  - "Actual L/D > 10" failing → increase AR or increase LD input
-  - "V-tail auth" failing → reduce vCruise or adjust twRatio
-Step 4: Call run_sizing again with corrected parameters.
-Step 5: Repeat until feasible=true AND checks_failed is empty. Use up to 5 iterations.
-Step 6: Only AFTER feasible=true, present the final design with full explanation.
-
-PARAMETER BOUNDS (never exceed these):
-- range: 20-500 km | payload: 50-800 kg | vCruise: 30-120 m/s
-- LD: 8-22 | AR: 5-16 | sedCell: 150-400 Wh/kg
-- nPropHover: 4-12 (even numbers only) | propDiam: 1.0-4.0 m
-- twRatio: 1.0-1.5 | ewf: 0.30-0.65 | etaHov: 0.60-0.85 | etaSys: 0.70-0.92
-
-GOOD STARTING POINTS for a typical 4-passenger 80km UAM design:
-range=80, payload=320, vCruise=67, LD=14, AR=9, sedCell=250, nPropHover=6, propDiam=2.5, twRatio=1.2, ewf=0.45, etaHov=0.72, etaSys=0.82
-
-Keep responses concise. Report iteration number and what you changed each time. Final answer must include: MTOW, battery mass, total energy, L/D, static margin, and confirmation all checks pass.`;
+RULES: Only present design when feasible=true AND checks_failed is empty.
+Fix failures: BatFrac>55%→raise sedCell or cut range. MTOW>5700→cut range/payload. SM bad→adjust AR. TipMach>0.7→cut propDiam. LD<10→raise AR.
+Bounds: range:20-500 payload:50-800 vCruise:30-120 LD:8-22 AR:5-16 sed:150-400 nProp:4-12(even) diam:1-4 TW:1.0-1.5 ewf:0.30-0.65 etaH:0.60-0.85 etaS:0.70-0.92
+Good start: range=80 payload=320 vCruise=67 LD=14 AR=9 sed=250 nProp=6 diam=2.5 TW=1.2 ewf=0.45 etaH=0.72 etaS=0.82
+Be concise. State iteration#, changes made, and action_needed from result.`;
 
       const toolDef = {
         name: "run_sizing",
@@ -2015,7 +1982,7 @@ Keep responses concise. Report iteration number and what you changed each time. 
       let iters = 0;
       let finalText = '';
 
-      while (iters < 8) {
+      while (iters < 5) {
         iters++;
         const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
           method: "POST",
@@ -2064,6 +2031,8 @@ Keep responses concise. Report iteration number and what you changed each time. 
         }
 
         if (toolCalls.length === 0 || data.choices?.[0]?.finish_reason === 'stop') break;
+        // Small delay between iterations to avoid Groq TPM rate limit
+        if (iters < 7) await new Promise(r => setTimeout(r, 1500));
 
         // Process each tool call
         const toolResults = [];
