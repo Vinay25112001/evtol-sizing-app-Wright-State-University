@@ -19,18 +19,39 @@ import { useState, useEffect, useRef, useCallback } from "react";
 const SB_URL = "https://obribjypwwrbhsyjllua.supabase.co";
 const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9icmlianlwd3dyYmhzeWpsbHVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM2MjU1MjIsImV4cCI6MjA4OTIwMTUyMn0.Rq2_KfHlHnoluGJY3AcBIqcbuMFuLBitU-Y6aBWyoJ4";
 
-const hdrs = () => ({
+// GET headers — NO Prefer header (Prefer:return=representation on GETs
+// can cause Supabase to wrap results differently or return errors)
+const getHdrs = () => ({
   "apikey": SB_KEY, "Authorization": `Bearer ${SB_KEY}`,
-  "Content-Type": "application/json", "Prefer": "return=representation",
+  "Content-Type": "application/json",
+});
+// Mutation headers — include Prefer for POST/PATCH
+const mutHdrs = (prefer = "return=representation") => ({
+  "apikey": SB_KEY, "Authorization": `Bearer ${SB_KEY}`,
+  "Content-Type": "application/json", "Prefer": prefer,
 });
 
-async function db(path, method = "GET", body = null) {
+// Generic DB call — picks correct headers per method
+async function db(path, method = "GET", body = null, prefer = null) {
+  const headers = (method === "GET") ? getHdrs() : mutHdrs(prefer || "return=representation");
   const r = await fetch(`${SB_URL}/rest/v1/${path}`, {
-    method, headers: hdrs(), ...(body ? { body: JSON.stringify(body) } : {}),
+    method, headers, ...(body ? { body: JSON.stringify(body) } : {}),
   });
   const t = await r.text();
   if (!r.ok) throw new Error(`DB ${r.status}: ${t.slice(0,120)}`);
   return t ? JSON.parse(t) : null;
+}
+
+// Safe GET — always returns array, never throws, used for polling
+async function dbGet(path) {
+  try {
+    const r = await fetch(`${SB_URL}/rest/v1/${path}`, { method:"GET", headers: getHdrs() });
+    if (!r.ok) return [];
+    const t = await r.text();
+    if (!t) return [];
+    const d = JSON.parse(t);
+    return Array.isArray(d) ? d : (d ? [d] : []);
+  } catch { return []; }
 }
 
 /* Poll for NEW rows only (created after this call was made) */
@@ -328,7 +349,7 @@ async function addMember(sid, uid, name, role) {
   // Use upsert so re-joining after deny/leave doesn't fail on duplicate key
   const res = await fetch(`${SB_URL}/rest/v1/evtol_collab_members`, {
     method: "POST",
-    headers: { ...hdrs(), Prefer: "resolution=merge-duplicates,return=representation" },
+    headers: mutHdrs("resolution=merge-duplicates,return=representation"),
     body: JSON.stringify({ id:`${sid}_${uid}`, session_id:sid, user_id:uid,
       display_name:name, role, joined_at:new Date().toISOString(), updated_at:new Date().toISOString() }),
   });
@@ -563,48 +584,51 @@ export function CollabPanel({ user, params, onParamChange, C }) {
       setSid(joinId.trim()); setWaiting(true);
       addLog("📤 Request sent — waiting for host approval…");
 
-      // FIX: Use direct fetch loop (not poll()) for approval status.
-      // poll() filters by created_at — but PATCH only changes updated_at,
-      // so the updated row never appears in poll() results.
-      // Direct fetch by ID every 1.5s is simple and reliable.
+      // Poll for approval using dbGet (no Prefer header issues, fetches by updated_at)
+      // We store the reqId in a ref so the interval always has the latest value
+      const watchReqId = reqId;
+      const watchSid   = joinId.trim();
       const approvalTimer = setInterval(async () => {
-        try {
-          const rows = await db(`evtol_collab_requests?id=eq.${reqId}&select=id,status`);
-          const req = rows?.[0];
-          if (!req) return;
+        // Direct GET by primary key — simplest possible check
+        const rows = await dbGet(`evtol_collab_requests?id=eq.${watchReqId}`);
+        const reqRow = rows[0];
+        if (!reqRow) return;
 
-          if (req.status === "approved") {
-            clearInterval(approvalTimer);
-            const currentSid = joinId.trim();
-            setWaiting(false); setIn(true); setHost(false);
-            const mems = await getMembers(currentSid);
-            const me = mems.find(m => m.user_id === myId.current);
-            setRole(me?.role || "viewer"); setMembers(mems);
-            const s = await getCollabSession(currentSid);
-            if (s?.state_json) {
-              try { Object.entries(JSON.parse(s.state_json)).forEach(([k,v]) => onParamChange(k)(v)); } catch {}
-            }
-            addLog("✅ Approved! You are in the session.");
-            // Now start the ongoing state + member polls
-            polls.current.state = poll("evtol_collab_sessions", `session_id=eq.${currentSid}`,
-              row => {
-                try {
-                  if (row.updated_by === myId.current) return;
-                  const st = JSON.parse(row.state_json || "{}");
-                  Object.entries(st).forEach(([k,v]) => onParamChange(k)(v));
-                  addLog("🔄 " + (row.updated_by ? "Host" : "Session") + " updated params");
-                } catch {}
-              }, 1500);
-            polls.current.mem = poll("evtol_collab_members", `session_id=eq.${currentSid}`,
-              () => getMembers(currentSid).then(setMembers), 4000);
-
-          } else if (req.status === "denied") {
-            clearInterval(approvalTimer);
-            setWaiting(false); setSid(""); setErr("❌ Host denied your request.");
+        if (reqRow.status === "approved") {
+          clearInterval(approvalTimer);
+          setWaiting(false);
+          setIn(true);
+          setHost(false);
+          // Load members and current session state
+          const mems = await getMembers(watchSid);
+          const me = mems.find(m => m.user_id === myId.current);
+          setRole(me?.role || "viewer");
+          setMembers(mems);
+          const sess = await getCollabSession(watchSid);
+          if (sess?.state_json) {
+            try { Object.entries(JSON.parse(sess.state_json)).forEach(([k,v]) => onParamChange(k)(v)); } catch {}
           }
-        } catch {}
+          addLog("✅ Host approved — you are now in the session!");
+          // Start ongoing polls for state and member changes
+          polls.current.state = poll("evtol_collab_sessions", `session_id=eq.${watchSid}`,
+            row => {
+              try {
+                if (row.updated_by === myId.current) return;
+                const st = JSON.parse(row.state_json || "{}");
+                Object.entries(st).forEach(([k,v]) => onParamChange(k)(v));
+                addLog("🔄 " + (row.updated_by ? "Host" : "Member") + " updated params");
+              } catch {}
+            }, 1500);
+          polls.current.mem = poll("evtol_collab_members", `session_id=eq.${watchSid}`,
+            () => getMembers(watchSid).then(setMembers), 4000);
+
+        } else if (reqRow.status === "denied") {
+          clearInterval(approvalTimer);
+          setWaiting(false);
+          setSid("");
+          setErr("❌ Host denied your join request.");
+        }
       }, 1500);
-      // Store timer so we can clear it on leave
       polls.current.approvalTimer = () => clearInterval(approvalTimer);
     } catch(e) { setErr("Failed: "+e.message); }
     setBusy(false);
