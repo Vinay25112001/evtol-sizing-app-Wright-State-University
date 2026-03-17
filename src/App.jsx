@@ -4801,6 +4801,14 @@ export default function App(){
               const helicopter_cost_per_km = 4.50;
               const savings_vs_heli_pct    = ((helicopter_cost_per_km - cost_per_km) / helicopter_cost_per_km) * 100;
 
+              // Battery degradation curve (SoH vs cycle count) — NREL power-law model
+              const degradationData = Array.from({length:11},(_,i)=>{
+                const cycles = i * batteryCycles / 10;
+                const SoH = Math.max(0.60, 1 - 0.20 * Math.pow(cycles / batteryCycles, 0.8));
+                return {cycles:+cycles.toFixed(0), SoH:+(SoH*100).toFixed(1),
+                  capacity:+(SoH*SR.PackkWh).toFixed(2)};
+              });
+
               // Cost breakdown for pie
               const costParts=[
                 {name:"Battery",    val:+battCost_per_flight.toFixed(2),        col:"#f59e0b"},
@@ -4933,7 +4941,7 @@ export default function App(){
                         ["Annual Cost",   `$${(annualCost/1000).toFixed(0)}k`,SC.red],
                         ["Annual Profit", `$${(annualProfit/1000).toFixed(0)}k`,annualProfit>0?SC.green:SC.red],
                         ["Profit Margin", `${profitMargin.toFixed(1)}%`,profitMargin>20?SC.green:profitMargin>5?SC.amber:SC.red],
-                        ["Payback Period",`${Math.min(99,paybackYears).toFixed(1)} years`,paybackYears<5?SC.green:SC.amber],
+                        ["Payback Period",paybackYears===Infinity?"Not viable":`${Math.min(99,paybackYears).toFixed(1)} yrs`,paybackYears<5?SC.green:paybackYears<20?SC.amber:SC.red],
                         ["Cost vs Heli",  `${savings_vs_heli_pct.toFixed(0)}% cheaper`,savings_vs_heli_pct>0?SC.green:SC.red],
                       ].map(([k,v,col])=>(
                         <div key={k} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${SC.border}22`}}>
