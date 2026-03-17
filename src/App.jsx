@@ -1798,25 +1798,21 @@ Based on your knowledge of these regulations up to your training cutoff:
 
 Respond in plain text, clearly structured. Be specific about rule IDs and numerical values. If you are uncertain about a specific value, say so.`;
 
-      const apiKey = localStorage.getItem("anthropic_api_key") || "";
-      if (!apiKey) { setAiErr("⚠️ Enter your Anthropic API key below and try again."); setChecking(false); return; }
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
+      const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-api-key": apiKey,
-          "anthropic-version": "2023-06-01",
-          "anthropic-dangerous-direct-browser-access": "true",
+          "Authorization": "Bearer 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",
         },
         body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 1000,
+          model: "llama-3.3-70b-versatile",
+          max_tokens: 1024,
           messages: [{ role: "user", content: prompt }]
         })
       });
-      if (!res.ok) { const t = await res.text(); throw new Error(`API ${res.status}: ${t.slice(0,200)}`); }
+      if (!res.ok) { const t = await res.text(); throw new Error(`AI ${res.status}: ${t.slice(0,200)}`); }
       const data = await res.json();
-      const text = data.content?.map(c => c.text || "").join("") || "";
+      const text = data.choices?.[0]?.message?.content || "";
       if (!text) throw new Error("No response from AI");
       setAiReport(text);
     } catch(e) {
@@ -1900,7 +1896,6 @@ Respond in plain text, clearly structured. Be specific about rule IDs and numeri
         <div style={{ fontSize: 10, color: SC.muted, fontFamily: "'DM Mono',monospace", marginBottom: 12, lineHeight: 1.7 }}>
           Asks Claude to identify: (1) threshold changes from stored values, (2) new requirements for your specific design, (3) top 3 certification risks.
         </div>
-        <ApiKeyInput SC={SC}/>
         <button onClick={checkUpdates} disabled={checking} type="button"
           style={{ padding: '9px 24px', background: checking ? 'transparent' : `linear-gradient(135deg,#1c1000,${SC.amber}88)`, border: `2px solid ${SC.amber}`, borderRadius: 7, color: checking ? SC.muted : SC.amber, fontSize: 11, fontWeight: 800, cursor: checking ? 'not-allowed' : 'pointer', fontFamily: "'DM Mono',monospace" }}>
           {checking ? '⟳ Checking with Claude…' : '📜 Check for Regulatory Updates'}
@@ -1941,7 +1936,7 @@ function AIAssistantPanel({ params, SR, SC, onParamChange }) {
     setThinking(true);
 
     try {
-      // Build conversation history for the API
+      // Build conversation history — OpenAI format (system msg first)
       const history = messages
         .filter(m => m.role !== 'tool')
         .map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content }));
@@ -1982,56 +1977,59 @@ When the user describes requirements, use run_sizing to find an optimised soluti
       };
 
       // Agentic loop — Claude may call run_sizing multiple times
-      let loopHistory = [...history];
+      // Groq/OpenAI: system message goes at the start of messages array
+      let loopHistory = [{ role: 'system', content: systemPrompt }, ...history];
       let iters = 0;
       let finalText = '';
 
       while (iters < 5) {
         iters++;
-        const apiKey = localStorage.getItem("anthropic_api_key") || "";
-        if (!apiKey) throw new Error("API key required. Please enter your Anthropic API key in the field below.");
-        const res = await fetch("https://api.anthropic.com/v1/messages", {
+        const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "anthropic-version": "2023-06-01",
-            "x-api-key": apiKey,
-            "anthropic-dangerous-direct-browser-access": "true",
+            "Authorization": "Bearer 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",
           },
           body: JSON.stringify({
-            model: "claude-sonnet-4-20250514",
-            max_tokens: 1000,
-            system: systemPrompt,
-            tools: [toolDef],
+            model: "llama-3.3-70b-versatile",
+            max_tokens: 1024,
             messages: loopHistory,
+            tools: [{
+              type: "function",
+              function: {
+                name: toolDef.name,
+                description: toolDef.description,
+                parameters: toolDef.input_schema,
+              }
+            }],
+            tool_choice: "auto",
           })
         });
-        if (!res.ok) { const t = await res.text(); throw new Error(`API ${res.status}: ${t.slice(0,200)}`); }
+        if (!res.ok) { const t = await res.text(); throw new Error(`AI ${res.status}: ${t.slice(0,200)}`); }
         const data = await res.json();
 
-        // Collect text blocks
-        const textBlocks  = (data.content || []).filter(b => b.type === 'text');
-        const toolUseBlocks = (data.content || []).filter(b => b.type === 'tool_use');
+        // OpenAI-compatible response format (Groq)
+        const msg = data.choices?.[0]?.message;
+        if (!msg) break;
 
-        if (textBlocks.length) {
-          finalText = textBlocks.map(b => b.text).join('');
-        }
+        if (msg.content) finalText = msg.content;
 
-        if (toolUseBlocks.length === 0 || data.stop_reason === 'end_turn') break;
+        const toolCalls = msg.tool_calls || [];
+        if (toolCalls.length === 0 || data.choices?.[0]?.finish_reason === 'stop') break;
 
         // Process each tool call
         const toolResults = [];
-        for (const tu of toolUseBlocks) {
-          if (tu.name === 'run_sizing') {
-            const p_call = { ...params, ...tu.input };
-            // Fix types
-            Object.keys(p_call).forEach(k => { if (typeof p_call[k] === 'string') p_call[k] = +p_call[k]; });
+        for (const tc of toolCalls) {
+          if (tc.function?.name === 'run_sizing') {
+            let args = {};
+            try { args = JSON.parse(tc.function.arguments || '{}'); } catch {}
+            const p_call = { ...params };
+            Object.entries(args).forEach(([k,v]) => { p_call[k] = +v || p_call[k]; });
             let toolResult;
             try {
               const R = runSizing(p_call);
-              // Apply params to sliders live
-              Object.entries(tu.input).forEach(([k, v]) => {
-                if (onParamChange && typeof v === 'number') onParamChange(k)(+v);
+              Object.entries(args).forEach(([k,v]) => {
+                if (onParamChange && typeof +v === 'number' && !isNaN(+v)) onParamChange(k)(+v);
               });
               setIterCount(c => c + 1);
               toolResult = {
@@ -2042,17 +2040,15 @@ When the user describes requirements, use run_sizing to find an optimised soluti
                 checks_failed: (R.checks||[]).filter(c=>!c.ok).map(c=>c.label),
                 batFrac: +(R.Wbat/R.MTOW*100).toFixed(1),
               };
-            } catch(e) {
-              toolResult = { error: e.message };
-            }
-            toolResults.push({ type: 'tool_result', tool_use_id: tu.id, content: JSON.stringify(toolResult) });
+            } catch(e) { toolResult = { error: e.message }; }
+            toolResults.push({ role: 'tool', tool_call_id: tc.id, content: JSON.stringify(toolResult) });
           }
         }
 
-        // Add assistant response + tool results to history
+        // Add assistant message + tool results to history (OpenAI format)
         loopHistory = [...loopHistory,
-          { role: 'assistant', content: data.content },
-          { role: 'user',      content: toolResults },
+          { role: 'assistant', content: msg.content || null, tool_calls: toolCalls },
+          ...toolResults,
         ];
       }
 
@@ -2079,7 +2075,6 @@ When the user describes requirements, use run_sizing to find an optimised soluti
         </div>
       </div>
 
-      <ApiKeyInput SC={SC}/>
       {/* Chat */}
       <div style={{ background: SC.panel, border: `1px solid ${SC.border}`, borderRadius: 8, display: 'flex', flexDirection: 'column', height: 460 }}>
         {/* Messages */}
