@@ -204,19 +204,28 @@ function useVoice(sessionId, myId) {
       }
     };
 
-    // Auto-reconnect on failure
+    // Handle connection state changes
     pc.onconnectionstatechange = () => {
-      setPeers(p => ({ ...p, [remoteId]: { ...(p[remoteId]||{}), state: pc.connectionState } }));
-      if (pc.connectionState === "failed") {
-        // ICE restart — create a new offer with iceRestart:true
-        if (isInitiator(remoteId) && localStream.current) {
-          pc.createOffer({ iceRestart: true, offerToReceiveAudio: true })
-            .then(o => pc.setLocalDescription(o))
-            .then(() => sendSignal(sessionRef.current, myIdRef.current, remoteId, "offer", pc.localDescription.toJSON()))
-            .catch(()=>{});
+      const state = pc.connectionState;
+      setPeers(p => ({ ...p, [remoteId]: { ...(p[remoteId]||{}), state } }));
+
+      if (state === "failed") {
+        // Fully recreate — iceRestart needs both sides to cooperate which is fragile.
+        // Easier: close this pc, clear offerSent, re-announce with a fresh hello.
+        pc.close();
+        delete pcs.current[remoteId];
+        delete offerSent.current[remoteId];
+        setPeers(p => { const n={...p}; delete n[remoteId]; return n; });
+        // Re-announce so the other peer also restarts
+        if (localStream.current) {
+          const myName = myIdRef.current;
+          sendSignal(sessionRef.current, myIdRef.current, "all", "hello", { name: myName }).catch(()=>{});
         }
       }
-      if (["closed","disconnected"].includes(pc.connectionState)) {
+
+      // "disconnected" is transient — WebRTC will try to recover automatically.
+      // Only clean up on permanent "closed".
+      if (state === "closed") {
         const el = audioEls.current[remoteId];
         if (el) { el.srcObject = null; el.remove(); delete audioEls.current[remoteId]; }
         delete pcs.current[remoteId];
@@ -333,12 +342,22 @@ function useVoice(sessionId, myId) {
       stopSig.current = pollNew(
         "evtol_webrtc_signals",
         `session_id=eq.${sessionRef.current}`,
-        (row) => handleSignalRef.current(row),  // ← always latest, never stale
+        (row) => handleSignalRef.current(row),
         600
       );
 
       // Wait for poll to be running before sending hello
       await new Promise(r => setTimeout(r, 400));
+
+      // Fetch signals from last 60s — catches hellos sent BEFORE our poll started.
+      // This is the key fix for "second person enables mic but first person's hello is missed".
+      const cutoff = new Date(Date.now() - 60000).toISOString();
+      const recentSigs = await dbGet(
+        `evtol_webrtc_signals?session_id=eq.${sessionRef.current}&created_at=gt.${encodeURIComponent(cutoff)}&order=created_at.asc`
+      );
+      for (const row of recentSigs) {
+        await handleSignalRef.current(row).catch(()=>{});
+      }
 
       // Announce presence — the hello handler will trigger sendOffer if needed
       await sendSignal(sessionRef.current, myIdRef.current, "all", "hello", { name: myName }).catch(()=>{});
