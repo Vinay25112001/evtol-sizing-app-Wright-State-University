@@ -1495,7 +1495,22 @@ function DesignSpacePanel({ params, SC, TTP, runSizingFn }) {
         try {
           const R = runSizingFn(pS);
           if (!R||!isFinite(R.MTOW)||R.MTOW>8000||R.MTOW<200) continue;
-          pts.push({range:+pS.range.toFixed(1),payload:+pS.payload.toFixed(0),MTOW:+R.MTOW.toFixed(1),Etot:+R.Etot.toFixed(2),Wbat:+R.Wbat.toFixed(1),LDact:+R.LDact.toFixed(2),feasible:R.feasible,batFrac:+(R.Wbat/R.MTOW*100).toFixed(1),AR:+pS.AR.toFixed(1),sedCell:+pS.sedCell.toFixed(0),pareto:false});
+          pts.push({
+            range:+pS.range.toFixed(1), payload:+pS.payload.toFixed(0),
+            LD:+pS.LD.toFixed(2), sedCell:+pS.sedCell.toFixed(0),
+            ewf:+pS.ewf.toFixed(3), AR:+pS.AR.toFixed(1),
+            etaHov:+pS.etaHov.toFixed(3), etaSys:+pS.etaSys.toFixed(3),
+            MTOW:+R.MTOW.toFixed(1), Wempty:+R.Wempty.toFixed(1), Wbat:+R.Wbat.toFixed(1),
+            Etot:+R.Etot.toFixed(2), Phov:+R.Phov.toFixed(2), Pcr:+R.Pcr.toFixed(2),
+            LDact:+R.LDact.toFixed(2), SM:+(R.SM_vt*100).toFixed(2),
+            PackkWh:+R.PackkWh.toFixed(2), bWing:+R.bWing.toFixed(2),
+            Swing:+R.Swing.toFixed(2), WL:+R.WL.toFixed(1),
+            TipMach:+R.TipMach.toFixed(4), RPM:+R.RPM.toFixed(0),
+            batFrac:+(R.Wbat/R.MTOW*100).toFixed(1),
+            emptyFrac:+(R.Wempty/R.MTOW*100).toFixed(1),
+            SEDpack:+R.SEDpack.toFixed(1),
+            feasible:R.feasible, pareto:false,
+          });
         } catch {}
       }
       const fp = pts.filter(p=>p.feasible);
@@ -1505,13 +1520,54 @@ function DesignSpacePanel({ params, SC, TTP, runSizingFn }) {
     }, 80);
   };
 
-  const axes=[{key:"range",label:"Range (km)"},{key:"payload",label:"Payload (kg)"},{key:"MTOW",label:"MTOW (kg)"},{key:"Etot",label:"Energy (kWh)"},{key:"LDact",label:"L/D"},{key:"batFrac",label:"Battery Frac (%)"}];
-  const colorOpts=[{key:"feasible",label:"Feasible/Infeasible"},{key:"pareto",label:"Pareto Front"},{key:"LDact",label:"L/D ratio"},{key:"batFrac",label:"Battery Fraction"}];
+  const axes=[
+    // ── Outputs ──
+    {key:"range",    label:"Range (km)"},
+    {key:"payload",  label:"Payload (kg)"},
+    {key:"MTOW",     label:"MTOW (kg)"},
+    {key:"Wempty",   label:"Empty Weight (kg)"},
+    {key:"Wbat",     label:"Battery Mass (kg)"},
+    {key:"Etot",     label:"Total Energy (kWh)"},
+    {key:"PackkWh",  label:"Pack Capacity (kWh)"},
+    {key:"Phov",     label:"Hover Power (kW)"},
+    {key:"Pcr",      label:"Cruise Power (kW)"},
+    {key:"LDact",    label:"Actual L/D"},
+    {key:"SM",       label:"Static Margin (%)"},
+    {key:"bWing",    label:"Wing Span (m)"},
+    {key:"Swing",    label:"Wing Area (m²)"},
+    {key:"WL",       label:"Wing Loading (N/m²)"},
+    {key:"TipMach",  label:"Tip Mach"},
+    {key:"RPM",      label:"Rotor RPM"},
+    {key:"batFrac",  label:"Battery Fraction (%)"},
+    {key:"emptyFrac",label:"Empty Weight Fraction (%)"},
+    {key:"SEDpack",  label:"Pack SED (Wh/kg)"},
+    // ── Sampled inputs ──
+    {key:"LD",       label:"Input L/D"},
+    {key:"sedCell",  label:"Cell SED (Wh/kg)"},
+    {key:"ewf",      label:"Empty Weight Fraction (input)"},
+    {key:"AR",       label:"Aspect Ratio"},
+    {key:"etaHov",   label:"Hover Efficiency η"},
+    {key:"etaSys",   label:"System Efficiency η"},
+  ];
+  const colorOpts=[
+    {key:"feasible", label:"Feasible / Infeasible"},
+    {key:"pareto",   label:"Pareto Front"},
+    {key:"LDact",    label:"Actual L/D"},
+    {key:"batFrac",  label:"Battery Fraction"},
+    {key:"SM",       label:"Static Margin"},
+    {key:"Etot",     label:"Total Energy"},
+    {key:"TipMach",  label:"Tip Mach"},
+    {key:"emptyFrac",label:"Empty Frac"},
+  ];
   const getColor = pt => {
-    if(colorBy==="feasible") return pt.feasible?"#22c55e":"#ef4444";
-    if(colorBy==="pareto")   return pt.pareto?"#f59e0b":(pt.feasible?"#22c55e88":"#ef444455");
-    if(colorBy==="LDact")    return `hsl(${Math.min(pt.LDact/20*120,120)},90%,55%)`;
-    if(colorBy==="batFrac")  return `hsl(${Math.max(0,120-pt.batFrac*2)},90%,55%)`;
+    if(colorBy==="feasible")  return pt.feasible?"#22c55e":"#ef4444";
+    if(colorBy==="pareto")    return pt.pareto?"#f59e0b":(pt.feasible?"#22c55e88":"#ef444455");
+    if(colorBy==="LDact")     return `hsl(${Math.min(pt.LDact/20*120,120)},90%,55%)`;
+    if(colorBy==="batFrac")   return `hsl(${Math.max(0,120-pt.batFrac*2)},90%,55%)`;
+    if(colorBy==="SM")        return `hsl(${Math.min(Math.max(pt.SM,0)/30*120,120)},90%,55%)`;
+    if(colorBy==="Etot")      return `hsl(${Math.max(0,200-pt.Etot*1.5)},90%,55%)`;
+    if(colorBy==="TipMach")   return `hsl(${Math.max(0,120-pt.TipMach*300)},90%,55%)`;
+    if(colorBy==="emptyFrac") return `hsl(${Math.max(0,120-pt.emptyFrac*2)},90%,55%)`;
     return "#60a5fa";
   };
   const sel={background:SC.bg,border:`1px solid ${SC.border}`,color:SC.text,borderRadius:4,padding:"4px 8px",fontSize:10,fontFamily:"'DM Mono',monospace",outline:"none"};
@@ -1565,26 +1621,45 @@ function DesignSpacePanel({ params, SC, TTP, runSizingFn }) {
             {colorBy==="pareto"&&<span style={{color:"#f59e0b",marginLeft:12}}>● Pareto-optimal</span>}
             {colorBy==="feasible"&&<><span style={{color:SC.green,marginLeft:12}}>● Feasible</span><span style={{color:SC.red,marginLeft:8}}>● Infeasible</span></>}
           </div>
-          <ResponsiveContainer width="100%" height={380}>
-            <ScatterChart margin={{top:10,right:20,bottom:35,left:10}}>
-              <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
-              <XAxis type="number" dataKey={xAxis} name={axes.find(a=>a.key===xAxis)?.label} tick={{fontSize:9,fill:SC.muted}} label={{value:axes.find(a=>a.key===xAxis)?.label,position:"insideBottom",offset:-15,fontSize:10,fill:SC.muted}}/>
-              <YAxis type="number" dataKey={yAxis} name={axes.find(a=>a.key===yAxis)?.label} tick={{fontSize:9,fill:SC.muted}} label={{value:axes.find(a=>a.key===yAxis)?.label,angle:-90,position:"insideLeft",fontSize:10,fill:SC.muted}}/>
-              <Tooltip cursor={{strokeDasharray:"3 3"}} content={({payload})=>{
-                if(!payload?.length) return null;
-                const d=payload[0].payload;
-                return(<div style={{background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:6,padding:"8px 12px",fontSize:9,fontFamily:"'DM Mono',monospace"}}>
-                  {[["Range",d.range+" km"],["Payload",d.payload+" kg"],["MTOW",d.MTOW+" kg"],["Energy",d.Etot+" kWh"],["L/D",d.LDact],["Bat%",d.batFrac+"%"],["Status",d.feasible?"✅ Feasible":"❌ Infeasible"],["Pareto",d.pareto?"⭐ Yes":"—"]].map(([k,v])=>(
-                    <div key={k} style={{display:"flex",gap:12,justifyContent:"space-between"}}><span style={{color:SC.muted}}>{k}</span><span style={{color:SC.text,fontWeight:700}}>{v}</span></div>
-                  ))}
-                </div>);
-              }}/>
-              {results.pts.map((pt,i)=>(
-                <Scatter key={i} data={[pt]} fill={getColor(pt)} opacity={pt.feasible?0.85:0.35}
-                  shape={(props)=>{const {cx,cy}=props;return<circle cx={cx} cy={cy} r={colorBy==="pareto"&&pt.pareto?5:3} fill={getColor(pt)} opacity={pt.feasible?0.85:0.35}/>;}}/>
-              ))}
-            </ScatterChart>
-          </ResponsiveContainer>
+          {(()=>{
+            // Group points by color bucket for efficient rendering (not one series per point)
+            const buckets={};
+            results.pts.forEach(pt=>{
+              const col=getColor(pt);
+              const r=colorBy==="pareto"&&pt.pareto?5:3;
+              const key=col+"_"+r;
+              if(!buckets[key]) buckets[key]={col,r,pts:[]};
+              buckets[key].pts.push(pt);
+            });
+            const TooltipContent=({payload})=>{
+              if(!payload?.length) return null;
+              const d=payload[0].payload;
+              return(<div style={{background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:6,padding:"8px 12px",fontSize:9,fontFamily:"'DM Mono',monospace",maxHeight:320,overflowY:"auto",zIndex:999}}>
+                {[["Range",d.range+" km"],["Payload",d.payload+" kg"],["MTOW",d.MTOW+" kg"],["Empty Wt",d.Wempty+" kg"],["Battery",d.Wbat+" kg"],["Energy",d.Etot+" kWh"],["Pack Cap",d.PackkWh+" kWh"],["Hover Pwr",d.Phov+" kW"],["Cruise Pwr",d.Pcr+" kW"],["L/D (actual)",d.LDact],["L/D (input)",d.LD],["Bat Frac",d.batFrac+"%"],["Empty Frac",d.emptyFrac+"%"],["Wing Span",d.bWing+" m"],["Wing Area",d.Swing+" m²"],["Wing Loading",d.WL+" N/m²"],["Static Margin",d.SM+"%"],["Tip Mach",d.TipMach],["RPM",d.RPM],["Cell SED",d.sedCell+" Wh/kg"],["Pack SED",d.SEDpack+" Wh/kg"],["AR",d.AR],["η_hov",d.etaHov],["η_sys",d.etaSys],["Status",d.feasible?"✅ Feasible":"❌ Infeasible"],["Pareto",d.pareto?"⭐ Yes":"—"]].map(([k,v])=>(
+                  <div key={k} style={{display:"flex",gap:16,justifyContent:"space-between"}}><span style={{color:SC.muted}}>{k}</span><span style={{color:SC.text,fontWeight:700}}>{v}</span></div>
+                ))}
+              </div>);
+            };
+            return(
+            <ResponsiveContainer width="100%" height={400}>
+              <ScatterChart margin={{top:10,right:20,bottom:40,left:10}}>
+                <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
+                <XAxis type="number" dataKey={xAxis} name={axes.find(a=>a.key===xAxis)?.label}
+                  tick={{fontSize:9,fill:SC.muted}}
+                  label={{value:axes.find(a=>a.key===xAxis)?.label,position:"insideBottom",offset:-18,fontSize:10,fill:SC.muted}}/>
+                <YAxis type="number" dataKey={yAxis} name={axes.find(a=>a.key===yAxis)?.label}
+                  tick={{fontSize:9,fill:SC.muted}}
+                  label={{value:axes.find(a=>a.key===yAxis)?.label,angle:-90,position:"insideLeft",fontSize:10,fill:SC.muted}}/>
+                <Tooltip cursor={{strokeDasharray:"3 3"}} content={TooltipContent}/>
+                {Object.entries(buckets).map(([key,{col,r,pts:bpts}])=>(
+                  <Scatter key={key} data={bpts.map(pt=>({...pt,x:pt[xAxis],y:pt[yAxis]}))}
+                    dataKey="y" fill={col} opacity={0.85}
+                    shape={(props)=>{const{cx,cy}=props;return<circle cx={cx} cy={cy} r={r} fill={col} opacity={0.85}/>;}}/>
+                ))}
+              </ScatterChart>
+            </ResponsiveContainer>
+            );
+          })()}
         </div>
 
         {results.feasCount>0&&(
@@ -1595,7 +1670,7 @@ function DesignSpacePanel({ params, SC, TTP, runSizingFn }) {
                 <thead><tr style={{background:SC.bg}}>{["Range km","Payload kg","MTOW kg","Energy kWh","L/D","Bat%"].map(h=><th key={h} style={{padding:"5px 8px",textAlign:"right",color:SC.muted,fontWeight:700,borderBottom:`1px solid ${SC.border}`}}>{h}</th>)}</tr></thead>
                 <tbody>{results.pts.filter(p=>p.pareto).sort((a,b)=>b.range-a.range).slice(0,10).map((pt,i)=>(
                   <tr key={i} style={{background:i%2===0?"#f59e0b08":"transparent"}}>
-                    {[pt.range,pt.payload,pt.MTOW,pt.Etot,pt.LDact,pt.batFrac+"%"].map((v,j)=>(
+                    {[pt.range,pt.payload,pt.MTOW,pt.Wbat,pt.Etot,pt.LDact,pt.SM+"%",pt.bWing,pt.batFrac+"%",pt.SEDpack].map((v,j)=>(
                       <td key={j} style={{padding:"5px 8px",textAlign:"right",color:j===0?"#f59e0b":SC.text,fontWeight:j===0?800:400,borderBottom:`1px solid ${SC.border}22`}}>{v}</td>
                     ))}
                   </tr>
