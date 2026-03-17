@@ -2014,10 +2014,7 @@ When the user describes requirements, use run_sizing to find an optimised soluti
 
         // Strip any <function/...> XML from display content — model sometimes
         // puts tool calls as text instead of structured tool_calls array
-        let displayContent = (msg.content || "").replace(/<function\/[^>]*>[\s\S]*?(?=
-[A-Z]|
-
-|$)/g, "").trim();
+        let displayContent = (msg.content || "").replace(/<function\/run_sizing[^>]*>/g, "").trim();
         if (displayContent) finalText = displayContent;
 
         let toolCalls = msg.tool_calls || [];
