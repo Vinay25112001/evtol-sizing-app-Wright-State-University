@@ -5615,12 +5615,14 @@ export default function App(){
               }}/>
             )}
 
-            {/* ──── TAB 17: REAL-TIME COLLABORATION ──── */}
-            {tab===17&&(
-              <CollabPanel user={user} params={params} onParamChange={set} C={SC}/>
-            )}
-
             </>}
+
+            {/* ──── TAB 17: REAL-TIME COLLABORATION ────
+                OUTSIDE SR&&<> so it NEVER unmounts on tab switch.
+                CSS display:none keeps it alive while hidden. ── */}
+            <div style={{display:tab===17?'block':'none',minHeight:tab===17?0:0}}>
+              <CollabPanel user={user} params={params} onParamChange={set} C={SC}/>
+            </div>
           </div>
         </div>
       </div>
