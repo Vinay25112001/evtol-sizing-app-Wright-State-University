@@ -324,7 +324,16 @@ async function reqJoin(sid, uid, name) {
   return id;
 }
 async function replyReq(id, status) { await db(`evtol_collab_requests?id=eq.${id}`, "PATCH", { status, updated_at:new Date().toISOString() }); }
-async function addMember(sid, uid, name, role) { await db("evtol_collab_members", "POST", { id:`${sid}_${uid}`, session_id:sid, user_id:uid, display_name:name, role, joined_at:new Date().toISOString(), updated_at:new Date().toISOString() }); }
+async function addMember(sid, uid, name, role) {
+  // Use upsert so re-joining after deny/leave doesn't fail on duplicate key
+  const res = await fetch(`${SB_URL}/rest/v1/evtol_collab_members`, {
+    method: "POST",
+    headers: { ...hdrs(), Prefer: "resolution=merge-duplicates,return=representation" },
+    body: JSON.stringify({ id:`${sid}_${uid}`, session_id:sid, user_id:uid,
+      display_name:name, role, joined_at:new Date().toISOString(), updated_at:new Date().toISOString() }),
+  });
+  if (!res.ok) throw new Error("addMember failed: " + await res.text());
+}
 async function setRole(sid, uid, role) { await db(`evtol_collab_members?session_id=eq.${sid}&user_id=eq.${uid}`, "PATCH", { role, updated_at:new Date().toISOString() }); }
 async function getMembers(sid) { try { return await db(`evtol_collab_members?session_id=eq.${sid}&order=joined_at.asc`) || []; } catch { return []; } }
 
@@ -488,7 +497,10 @@ export function CollabPanel({ user, params, onParamChange, C }) {
     pushCollabState(sid, params, myId.current);
   }, [params, inSession, role, sid]);
 
-  const stopAll = () => { Object.values(polls.current).forEach(f=>f?.()); polls.current = {}; };
+  const stopAll = () => {
+    Object.values(polls.current).forEach(f => { try { f?.(); } catch {} });
+    polls.current = {};
+  };
 
   const leave = () => {
     stopAll(); voice.disable();
@@ -505,8 +517,20 @@ export function CollabPanel({ user, params, onParamChange, C }) {
       const newSid = await createCollabSession(myId.current, myName, params);
       setSid(newSid); setIn(true); setHost(true); setRole("editor");
       addLog("🏠 Session started. Share the ID above.");
+      // Poll for new join requests (new rows have new created_at, so poll() works fine here)
       polls.current.req = poll("evtol_collab_requests", `session_id=eq.${newSid}&status=eq.pending`,
         req => setPending(p => p.find(r=>r.id===req.id) ? p : [...p, req]), 2000);
+      // Also do a direct fetch every 3s as backup (in case poll misses anything)
+      const reqTimer = setInterval(async () => {
+        try {
+          const rows = await db(`evtol_collab_requests?session_id=eq.${newSid}&status=eq.pending&select=*`);
+          if (rows?.length) setPending(p => {
+            const newOnes = rows.filter(r => !p.find(x=>x.id===r.id));
+            return newOnes.length ? [...p, ...newOnes] : p;
+          });
+        } catch {}
+      }, 3000);
+      polls.current.reqTimer = () => clearInterval(reqTimer);
       polls.current.mem = poll("evtol_collab_members", `session_id=eq.${newSid}`,
         () => getMembers(newSid).then(setMembers), 4000);
       // Host also polls state — so guest editor changes flow back to host
@@ -539,36 +563,49 @@ export function CollabPanel({ user, params, onParamChange, C }) {
       setSid(joinId.trim()); setWaiting(true);
       addLog("📤 Request sent — waiting for host approval…");
 
-      polls.current.approval = poll("evtol_collab_requests", `id=eq.${reqId}`,
-        async req => {
+      // FIX: Use direct fetch loop (not poll()) for approval status.
+      // poll() filters by created_at — but PATCH only changes updated_at,
+      // so the updated row never appears in poll() results.
+      // Direct fetch by ID every 1.5s is simple and reliable.
+      const approvalTimer = setInterval(async () => {
+        try {
+          const rows = await db(`evtol_collab_requests?id=eq.${reqId}&select=id,status`);
+          const req = rows?.[0];
+          if (!req) return;
+
           if (req.status === "approved") {
-            polls.current.approval?.(); delete polls.current.approval;
+            clearInterval(approvalTimer);
+            const currentSid = joinId.trim();
             setWaiting(false); setIn(true); setHost(false);
-            const mems = await getMembers(joinId.trim());
+            const mems = await getMembers(currentSid);
             const me = mems.find(m => m.user_id === myId.current);
             setRole(me?.role || "viewer"); setMembers(mems);
-            const s = await getCollabSession(joinId.trim());
+            const s = await getCollabSession(currentSid);
             if (s?.state_json) {
               try { Object.entries(JSON.parse(s.state_json)).forEach(([k,v]) => onParamChange(k)(v)); } catch {}
             }
             addLog("✅ Approved! You are in the session.");
-            polls.current.state = poll("evtol_collab_sessions", `session_id=eq.${joinId.trim()}`,
+            // Now start the ongoing state + member polls
+            polls.current.state = poll("evtol_collab_sessions", `session_id=eq.${currentSid}`,
               row => {
                 try {
-                  // Skip updates we pushed ourselves to avoid echo loop
                   if (row.updated_by === myId.current) return;
                   const st = JSON.parse(row.state_json || "{}");
                   Object.entries(st).forEach(([k,v]) => onParamChange(k)(v));
                   addLog("🔄 " + (row.updated_by ? "Host" : "Session") + " updated params");
                 } catch {}
               }, 1500);
-            polls.current.mem = poll("evtol_collab_members", `session_id=eq.${joinId.trim()}`,
-              () => getMembers(joinId.trim()).then(setMembers), 4000);
+            polls.current.mem = poll("evtol_collab_members", `session_id=eq.${currentSid}`,
+              () => getMembers(currentSid).then(setMembers), 4000);
+
           } else if (req.status === "denied") {
-            polls.current.approval?.(); delete polls.current.approval;
+            clearInterval(approvalTimer);
             setWaiting(false); setSid(""); setErr("❌ Host denied your request.");
           }
-        }, 1500);
+        } catch {}
+      }, 1500);
+      // Store timer so we can clear it on leave
+      polls.current.approvalTimer = () => clearInterval(approvalTimer);
     } catch(e) { setErr("Failed: "+e.message); }
     setBusy(false);
   };
