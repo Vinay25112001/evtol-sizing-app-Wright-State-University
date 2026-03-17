@@ -4696,9 +4696,9 @@ export default function App(){
               const chargeDepth        = Math.min(0.90, SR.Etot / SR.PackkWh); // DoD per flight
               // Effective cycle life with DoD correction (empirical power-law):
               const effectiveCycles    = Math.floor(batteryCycles * Math.pow(1 - chargeDepth, 0.3));
-              const packReplCost_$     = SR.Wbat * battCost_per_kg;
+              const packReplCost     = SR.Wbat * battCost_per_kg;
               const flightsPerBattery  = Math.max(1, effectiveCycles); // 1 cycle = 1 flight at this DoD
-              const battCost_per_flight = packReplCost_$ / flightsPerBattery;
+              const battCost_per_flight = packReplCost / flightsPerBattery;
 
               // ── 4. MAINTENANCE COST ───────────────────────────────────────
               // Formula (ICAO Doc 9502 / ATA 2011 method):
@@ -4720,17 +4720,17 @@ export default function App(){
               const motorTBO_hr        = 3000;    // hr — MagniX / Joby target TBO
               const motorCost_per_kW   = 100;     // $/kW — mid of NREL $50-100/kW range
               const motorCount         = params.nPropHover;
-              const motorCost_each_$   = SR.PmotKW * motorCost_per_kW;
+              const motorCostEach   = SR.PmotKW * motorCost_per_kW;
               const flightsPerMotor    = Math.floor(motorTBO_hr / Math.max(0.1, flightDuration_hr));
-              const motorCost_per_flight = (motorCost_each_$ * motorCount) / Math.max(1, flightsPerMotor);
+              const motorCost_per_flight = (motorCostEach * motorCount) / Math.max(1, flightsPerMotor);
 
               // ── 6. INSURANCE ──────────────────────────────────────────────
               // Hull + liability; GAMA Statistical Databook 2023:
               //   Certified GA: 2-4%; Helicopter: 3-6%; Novel type cert: 8-12%
               // FAA AC 21.17-4 (eVTOL powered-lift type cert): novel category → top of range
-              const aircraft_value_$   = SR.MTOW * 800; // $800/kg — Joby $722/kg, VX4 $833/kg
+              const aircraftValue   = SR.MTOW * 800; // $800/kg — Joby $722/kg, VX4 $833/kg
               const insuranceRate      = 0.10;    // 10% — novel type cert upper range (GAMA 2023)
-              const insuranceAnnual    = aircraft_value_$ * insuranceRate;
+              const insuranceAnnual    = aircraftValue * insuranceRate;
               const insuranceCost_per_flight = insuranceAnnual / flightsPerYear;
 
               // ── 7. VERTIPORT INFRASTRUCTURE FEE ──────────────────────────
@@ -4791,9 +4791,9 @@ export default function App(){
 
               // ── 13. ROI / PAYBACK ──────────────────────────────────────────
               // Simple payback: P = AcquisitionCost / AnnualProfit (if profit > 0)
-              const aircraftCost_$     = SR.MTOW * 800; // same basis as insurance
+              const aircraftCost     = SR.MTOW * 800; // same basis as insurance
               const paybackYears       = annualProfit > 0
-                ? aircraftCost_$ / annualProfit
+                ? aircraftCost / annualProfit
                 : Infinity;
 
               // Helicopter benchmark: Bell 206B3 charter all-in
@@ -4843,7 +4843,7 @@ export default function App(){
                     sub={`Margin: ${profitMargin.toFixed(1)}%`}/>
                   <KPI label="Payback Period" value={paybackYears===Infinity||paybackYears>99?"N/A":`${paybackYears.toFixed(1)} yrs`} unit=""
                     color={paybackYears<5?SC.green:paybackYears<10?SC.amber:SC.red}
-                    sub={annualProfit>0?`Aircraft: $${(aircraftCost_$/1000).toFixed(0)}k`:"Profit negative → no payback"}/>
+                    sub={annualProfit>0?`Aircraft: $${(aircraftCost/1000).toFixed(0)}k`:"Profit negative → no payback"}/>
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
                   <KPI label="Energy Cost/Flight" value={`$${energyCost_per_flight.toFixed(2)}`} unit=""
