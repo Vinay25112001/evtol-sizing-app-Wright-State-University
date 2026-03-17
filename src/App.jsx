@@ -1789,6 +1789,29 @@ export default function App(){
   const [sharedDesignId] = useState(()=>new URLSearchParams(window.location.search).get("design")||"");
   const [sharedSessionId] = useState(()=>new URLSearchParams(window.location.search).get("session")||"");
 
+  // Auto-load shared design on page open (when ?design= is in URL)
+  useEffect(()=>{
+    if(!sharedDesignId) return;
+    const SB_URL="https://obribjypwwrbhsyjllua.supabase.co";
+    const SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9icmlianlwd3dyYmhzeWpsbHVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM2MjU1MjIsImV4cCI6MjA4OTIwMTUyMn0.Rq2_KfHlHnoluGJY3AcBIqcbuMFuLBitU-Y6aBWyoJ4";
+    fetch(`${SB_URL}/rest/v1/evtol_public_designs?share_id=eq.${sharedDesignId}&is_public=eq.true`,{
+      headers:{"apikey":SB_KEY,"Authorization":`Bearer ${SB_KEY}`,"Content-Type":"application/json"}
+    }).then(r=>r.json()).then(rows=>{
+      if(!rows||!rows.length) return;
+      const d=rows[0];
+      // increment view count
+      fetch(`${SB_URL}/rest/v1/evtol_public_designs?share_id=eq.${sharedDesignId}`,{
+        method:"PATCH",
+        headers:{"apikey":SB_KEY,"Authorization":`Bearer ${SB_KEY}`,"Content-Type":"application/json","Prefer":"return=representation"},
+        body:JSON.stringify({view_count:(d.view_count||0)+1})
+      }).catch(()=>{});
+      try{
+        const prm=JSON.parse(d.params||"{}");
+        if(Object.keys(prm).length>0) setParams(prev=>({...prev,...prm}));
+      }catch{}
+    }).catch(()=>{});
+  },[]);  // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleAuth=(session)=>{
     saveSession(session);
     setUser(session);
@@ -2304,7 +2327,7 @@ export default function App(){
                   if(!user) return;
                   const html=generateReport(params,SR,pdfBranding);
                   const nm=`Design — MTOW ${SR.MTOW}kg · ${new Date().toLocaleDateString()}`;
-                  saveDesign(user.id,{name:nm,params:p,results:{MTOW:SR.MTOW,Etot:SR.Etot,Phov:SR.Phov,LDact:SR.LDact,SM:SR.SM},pdfHtml:html});
+                  saveDesign(user.id,{name:nm,params:params,results:{MTOW:SR.MTOW,Etot:SR.Etot,Phov:SR.Phov,LDact:SR.LDact,SM:SR.SM},pdfHtml:html});
                   addNotif(user.id,{title:"Design Saved",body:`"${nm}" saved to My Designs.`,type:"success"});
                 }}
                 style={{padding:"5px 14px",background:"linear-gradient(135deg,#0f2a0f,#14532d)",
@@ -2542,6 +2565,40 @@ export default function App(){
                           label={{value:["Climb","Cruise","Desc","Land","Res"][i],fill:PHC[i],fontSize:9,position:"top"}}/>
                       ))}
                     </AreaChart>
+                  </ResponsiveContainer>
+                </Panel>
+
+                {/* Energy Degradation Over Mission */}
+                <Panel title="Energy Degradation & Battery State — Mission Timeline" ht={290}>
+                  <ResponsiveContainer width="100%" height={240}>
+                    <ComposedChart data={SR.energySteps} margin={{top:8,right:20,left:-5,bottom:16}}>
+                      <defs>
+                        <linearGradient id="edg" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor={SC.teal} stopOpacity={0.35}/>
+                          <stop offset="95%" stopColor={SC.teal} stopOpacity={0.02}/>
+                        </linearGradient>
+                        <linearGradient id="pg2" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor={SC.amber} stopOpacity={0.3}/>
+                          <stop offset="95%" stopColor={SC.amber} stopOpacity={0.02}/>
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
+                      <XAxis dataKey="t" tick={{fontSize:9,fill:SC.muted}} label={{value:"Time (s)",position:"insideBottom",offset:-6,fontSize:10,fill:SC.muted}}/>
+                      <YAxis yAxisId="e" tick={{fontSize:9,fill:SC.teal}} label={{value:"Energy Used (kWh)",angle:-90,position:"insideLeft",offset:12,fontSize:9,fill:SC.teal}}/>
+                      <YAxis yAxisId="p" orientation="right" tick={{fontSize:9,fill:SC.amber}} label={{value:"Power (kW)",angle:90,position:"insideRight",offset:12,fontSize:9,fill:SC.amber}}/>
+                      <Tooltip {...TTP} formatter={(v,n)=>[n==="Energy"?`${v} kWh`:`${v} kW`,n]}/>
+                      <Legend iconSize={8} wrapperStyle={{fontSize:9,fontFamily:"'DM Mono',monospace"}}/>
+                      <Area yAxisId="e" type="monotone" dataKey="E" stroke={SC.teal} strokeWidth={2.5} fill="url(#edg)" dot={false} name="Energy"/>
+                      <Area yAxisId="p" type="stepAfter" dataKey="P" stroke={SC.amber} strokeWidth={1.5} fill="url(#pg2)" dot={false} name="Power"/>
+                      <ReferenceLine yAxisId="e" y={SR.Etot} stroke={SC.green} strokeDasharray="5 3"
+                        label={{value:`Mission: ${SR.Etot} kWh`,fill:SC.green,fontSize:9,position:"insideTopRight"}}/>
+                      <ReferenceLine yAxisId="e" y={SR.PackkWh} stroke="#f59e0b" strokeDasharray="5 3"
+                        label={{value:`Pack cap: ${SR.PackkWh} kWh`,fill:"#f59e0b",fontSize:9,position:"insideBottomRight"}}/>
+                      {SR.tPhases.slice(1,-1).map((tp,i)=>(
+                        <ReferenceLine yAxisId="e" key={i} x={Math.round(tp)} stroke={PHC[i]} strokeDasharray="4 3" strokeWidth={1.5}
+                          label={{value:["Climb","Cruise","Desc","Land","Res"][i],fill:PHC[i],fontSize:9,position:"top"}}/>
+                      ))}
+                    </ComposedChart>
                   </ResponsiveContainer>
                 </Panel>
 
