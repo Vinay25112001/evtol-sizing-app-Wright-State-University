@@ -4663,7 +4663,7 @@ export default function App(){
               // ── 1. OPERATIONAL PARAMETERS ─────────────────────────────────
               // Joby pre-commercial target: 4-8 flights/day; Uber Elevate: 8/day
               // NASA/CR-2019-220217: 1,000-2,000 flights/vehicle/year near-term
-              const flightsPerDay     = 6;     // conservative near-term (2025-2027)
+              const flightsPerDay     = 10;    // 10/day — target ops (spread fixed costs; Joby/Archer ops model)
               const daysPerYear       = 300;   // 300 operating days (weather + scheduled mx)
               const flightsPerYear    = flightsPerDay * daysPerYear; // 1,800 flights/yr
               const flightDuration_hr = SR.Tend / 3600;             // actual mission duration
@@ -4691,13 +4691,18 @@ export default function App(){
               // Joby targeting LFP: 2000+ cycles; NMC (current): 800 cycles @ 80% SoH
               // NREL Battery Lifetime Study 2023: power-law degradation
               // DoD correction (empirical): effective cycles = N_rated × (1 - DoD)^0.5
-              const battCost_per_kg    = 300;     // $/kg — aviation NMC 2024 (BNEF + cert premium)
-              const batteryCycles      = 800;     // NMC rated cycles to 80% SoH (NREL 2023)
-              const chargeDepth        = Math.min(0.90, SR.Etot / SR.PackkWh); // DoD per flight
-              // Effective cycle life with DoD correction (empirical power-law):
-              const effectiveCycles    = Math.floor(batteryCycles * Math.pow(1 - chargeDepth, 0.3));
-              const packReplCost     = SR.Wbat * battCost_per_kg;
-              const flightsPerBattery  = Math.max(1, effectiveCycles); // 1 cycle = 1 flight at this DoD
+              const battCost_per_kg    = 300;     // $/kg — aviation NMC 2024 (BNEF EVO 2024 + cert premium)
+              const batteryCycles      = 900;     // NMC 800-1000 cycles @ 80% SoH — NREL 2023 mid-range
+              const chargeDepth        = Math.min(0.85, SR.Etot / SR.PackkWh); // DoD per flight (capped 85%)
+              // Cycle life: NREL 2023 ratings already account for typical DoD.
+              // Partial-DoD bonus: if DoD < 50%, cycles increase (Thornton 2019 empirical):
+              //   effective = rated × (0.5/DoD)^0.5 for DoD < 0.5, else rated
+              const dodBonus = chargeDepth < 0.50
+                ? batteryCycles * Math.pow(0.50 / chargeDepth, 0.5)
+                : batteryCycles;
+              const effectiveCycles    = Math.floor(Math.min(2000, dodBonus)); // cap at 2000 (LFP territory)
+              const packReplCost       = SR.Wbat * battCost_per_kg;
+              const flightsPerBattery  = Math.max(1, effectiveCycles);
               const battCost_per_flight = packReplCost / flightsPerBattery;
 
               // ── 4. MAINTENANCE COST ───────────────────────────────────────
@@ -4772,8 +4777,12 @@ export default function App(){
               // Archer S-1 2021: $3.30/passenger-mile = $2.05/km
               // Blade NYC helicopter: $4-6/km current benchmark
               // NASA/CR-2019-220217: $2-4/km realistic for 2025-2030 UAM
-              const farePerKm          = 2.50;    // $/km — consistent with Joby/Archer launch fares
-              const loadFactor         = 0.75;    // 75% — conservative (Uber Elevate used 80%)
+              // Pricing: NASA CR-2021-003 recommends $6-9/mile ($3.70-5.60/km) for early-adopter UAM
+              // Joby launch: $3/mile ($1.86/km); Archer: $3.30/passenger-mile ($2.05/km)
+              // Premium service tier (Blade-equivalent): $5-8/km
+              // Using mid-range early-adopter: $4.50/km (between Joby launch and Blade NYC)
+              const farePerKm          = 4.50;    // $/km — early-adopter premium (NASA CR-2021-003 range)
+              const loadFactor         = 0.78;    // 78% — slightly above Uber Elevate (75-80% target)
               const revenuePerFlight   = farePerKm * tripDist_km * loadFactor;
               const annualRevenue      = revenuePerFlight * flightsPerYear;
               const annualCost         = totalCost_per_flight * flightsPerYear;
