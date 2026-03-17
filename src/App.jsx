@@ -1774,7 +1774,7 @@ export default function App(){
         try{
           // Sample each uncertain parameter
           const pSample={
-            ...p,
+            ...params,
             sedCell: sampleParam(mcRanges.sedCell),
             ewf:     sampleParam(mcRanges.ewf),
             LD:      sampleParam(mcRanges.LD),
