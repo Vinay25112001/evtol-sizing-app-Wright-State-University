@@ -8,4 +8,7 @@ export default defineConfig({
     minify: false,
     target: 'es2020',
   },
+  define: {
+    'import.meta.env.VITE_GROQ_KEY': JSON.stringify(process.env.VITE_GROQ_KEY)
+  }
 })
