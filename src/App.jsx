@@ -1903,7 +1903,7 @@ export default function App(){
               <div key={key} style={{marginBottom:12}}>
                 <div style={{fontSize:10,color:SC.muted,fontFamily:"'DM Mono',monospace",
                   textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:5}}>{lbl}</div>
-                <input value={pdfBranding[key]} onChange={evt=>setPdfBranding(prev_b=>({...prev_b,[key]:e.target.value}))}
+                <input value={pdfBranding[key]} onChange={evt=>setPdfBranding(prev_b=>({...prev_b,[key]:evt.target.value}))}
                   placeholder={ph} type="text"
                   style={{width:"100%",boxSizing:"border-box",background:SC.bg,border:`1px solid ${SC.border}`,
                     borderRadius:6,color:SC.text,fontSize:12,padding:"8px 12px",
@@ -3339,7 +3339,7 @@ export default function App(){
                         <span style={{fontSize:10,color:SC.muted,fontFamily:"'DM Mono',monospace"}}>Range: 10⁻¹ → 10⁻¹⁰</span>
                       </div>
                       <input type="range" min={-10} max={-1} step={1} value={params.convTolExp}
-                        onChange={evt=>set("convTolExp")(+e.target.value)}
+                        onChange={evt=>set("convTolExp")(+evt.target.value)}
                         style={{width:"100%",accentColor:"#22d3ee",cursor:"pointer"}}/>
                       <div style={{display:"flex",justifyContent:"space-between",fontSize:9,color:SC.muted,marginTop:2}}>
                         <span>10⁻¹⁰ (tightest)</span><span>10⁻¹ (loosest)</span>
@@ -3565,14 +3565,14 @@ export default function App(){
                             <div style={{flex:1}}>
                               <div style={{fontSize:8,color:SC.muted,fontFamily:"'DM Mono',monospace",marginBottom:2}}>MIN</div>
                               <input type="number" value={r.min} step={key==="payload"?5:key==="sedCell"?5:key==="AR"?0.5:0.01}
-                                onChange={evt=>setMcRanges(prev=>({...prev,[key]:{...prev[key],min:parseFloat(e.target.value)||prev[key].min}}))}
+                                onChange={evt=>setMcRanges(prev=>({...prev,[key]:{...prev[key],min:parseFloat(evt.target.value)||prev[key].min}}))}
                                 style={{width:"100%",boxSizing:"border-box",background:SC.panel,border:`1px solid ${SC.border}`,
                                   borderRadius:4,color:SC.text,fontSize:11,padding:"4px 6px",fontFamily:"'DM Mono',monospace",outline:"none"}}/>
                             </div>
                             <div style={{flex:1}}>
                               <div style={{fontSize:8,color:SC.muted,fontFamily:"'DM Mono',monospace",marginBottom:2}}>MAX</div>
                               <input type="number" value={r.max} step={key==="payload"?5:key==="sedCell"?5:key==="AR"?0.5:0.01}
-                                onChange={evt=>setMcRanges(prev=>({...prev,[key]:{...prev[key],max:parseFloat(e.target.value)||prev[key].max}}))}
+                                onChange={evt=>setMcRanges(prev=>({...prev,[key]:{...prev[key],max:parseFloat(evt.target.value)||prev[key].max}}))}
                                 style={{width:"100%",boxSizing:"border-box",background:SC.panel,border:`1px solid ${SC.border}`,
                                   borderRadius:4,color:SC.text,fontSize:11,padding:"4px 6px",fontFamily:"'DM Mono',monospace",outline:"none"}}/>
                             </div>
@@ -3618,7 +3618,7 @@ export default function App(){
                         </span>
                       </div>
                       <input type="range" min={100} max={5000} step={100} value={mcN}
-                        onChange={evt=>setMcN(+e.target.value)}
+                        onChange={evt=>setMcN(+evt.target.value)}
                         style={{width:"100%",accentColor:"#7c3aed",cursor:"pointer"}}/>
                       <div style={{display:"flex",justifyContent:"space-between",fontSize:9,color:SC.muted,marginTop:2}}>
                         <span>100 (fast)</span><span>5000 (precise)</span>
@@ -5079,7 +5079,7 @@ export default function App(){
                                   <span style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace"}}>{fieldLabels[field]}:</span>
                                   <input type="number" value={ph[field]||0}
                                     onChange={evt=>{
-                                      const v=parseFloat(e.target.value)||0;
+                                      const v=parseFloat(evt.target.value)||0;
                                       setCustomPhases(prev=>prev.map((ph_item,j)=>j===i?{...ph_item,[field]:v}:ph_item));
                                     }}
                                     style={{width:60,background:SC.panel,border:`1px solid ${SC.border}`,
@@ -5235,7 +5235,7 @@ export default function App(){
                 {/* Search */}
                 <Panel title="Search Any City or Airport">
                   <div style={{display:"flex",gap:8,marginBottom:12}}>
-                    <input value={wxSearch} onChange={evt=>setWxSearch(e.target.value)}
+                    <input value={wxSearch} onChange={evt=>setWxSearch(evt.target.value)}
                       onKeyDown={evt => evt.key==="Enter"&&searchCity()}
                       placeholder="Type any city, e.g. Denver, Dubai, Singapore..."
                       style={{flex:1,background:SC.bg,border:`1px solid ${SC.border}`,borderRadius:6,
