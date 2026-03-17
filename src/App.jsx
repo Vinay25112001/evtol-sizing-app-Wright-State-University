@@ -2569,31 +2569,42 @@ export default function App(){
                 </Panel>
 
                 {/* Energy Degradation Over Mission */}
-                <Panel title="Energy Degradation & Battery State — Mission Timeline" ht={290}>
+                <Panel title="Battery Energy Remaining vs Mission Time — starts full, depletes to reserve" ht={290}>
                   <ResponsiveContainer width="100%" height={240}>
-                    <ComposedChart data={SR.energySteps} margin={{top:8,right:20,left:-5,bottom:16}}>
+                    <ComposedChart
+                      data={SR.energySteps.map(s=>({
+                        ...s,
+                        Erem: +Math.max(0, SR.PackkWh - s.E).toFixed(3),
+                        Ereserve: +(SR.PackkWh - SR.Etot).toFixed(3),
+                      }))}
+                      margin={{top:8,right:20,left:-5,bottom:16}}>
                       <defs>
                         <linearGradient id="edg" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor={SC.teal} stopOpacity={0.35}/>
-                          <stop offset="95%" stopColor={SC.teal} stopOpacity={0.02}/>
+                          <stop offset="5%"  stopColor={SC.teal} stopOpacity={0.5}/>
+                          <stop offset="95%" stopColor={SC.teal} stopOpacity={0.05}/>
                         </linearGradient>
                         <linearGradient id="pg2" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor={SC.amber} stopOpacity={0.3}/>
+                          <stop offset="5%"  stopColor={SC.amber} stopOpacity={0.25}/>
                           <stop offset="95%" stopColor={SC.amber} stopOpacity={0.02}/>
                         </linearGradient>
                       </defs>
                       <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
                       <XAxis dataKey="t" tick={{fontSize:9,fill:SC.muted}} label={{value:"Time (s)",position:"insideBottom",offset:-6,fontSize:10,fill:SC.muted}}/>
-                      <YAxis yAxisId="e" tick={{fontSize:9,fill:SC.teal}} label={{value:"Energy Used (kWh)",angle:-90,position:"insideLeft",offset:12,fontSize:9,fill:SC.teal}}/>
-                      <YAxis yAxisId="p" orientation="right" tick={{fontSize:9,fill:SC.amber}} label={{value:"Power (kW)",angle:90,position:"insideRight",offset:12,fontSize:9,fill:SC.amber}}/>
-                      <Tooltip {...TTP} formatter={(v,n)=>[n==="Energy"?`${v} kWh`:`${v} kW`,n]}/>
+                      <YAxis yAxisId="e" domain={[0, SR.PackkWh*1.05]} tick={{fontSize:9,fill:SC.teal}} label={{value:"Energy Remaining (kWh)",angle:-90,position:"insideLeft",offset:14,fontSize:9,fill:SC.teal}}/>
+                      <YAxis yAxisId="p" orientation="right" tick={{fontSize:9,fill:SC.amber}} label={{value:"Power Draw (kW)",angle:90,position:"insideRight",offset:12,fontSize:9,fill:SC.amber}}/>
+                      <Tooltip {...TTP} formatter={(v,n)=>[n==="Energy Remaining"?`${(+v).toFixed(2)} kWh`:`${v} kW`,n]}/>
                       <Legend iconSize={8} wrapperStyle={{fontSize:9,fontFamily:"'DM Mono',monospace"}}/>
-                      <Area yAxisId="e" type="monotone" dataKey="E" stroke={SC.teal} strokeWidth={2.5} fill="url(#edg)" dot={false} name="Energy"/>
-                      <Area yAxisId="p" type="stepAfter" dataKey="P" stroke={SC.amber} strokeWidth={1.5} fill="url(#pg2)" dot={false} name="Power"/>
-                      <ReferenceLine yAxisId="e" y={SR.Etot} stroke={SC.green} strokeDasharray="5 3"
-                        label={{value:`Mission: ${SR.Etot} kWh`,fill:SC.green,fontSize:9,position:"insideTopRight"}}/>
-                      <ReferenceLine yAxisId="e" y={SR.PackkWh} stroke="#f59e0b" strokeDasharray="5 3"
-                        label={{value:`Pack cap: ${SR.PackkWh} kWh`,fill:"#f59e0b",fontSize:9,position:"insideBottomRight"}}/>
+                      {/* Main curve: energy remaining — starts at PackkWh, drains to reserve */}
+                      <Area yAxisId="e" type="monotone" dataKey="Erem" stroke={SC.teal} strokeWidth={2.5} fill="url(#edg)" dot={false} name="Energy Remaining"/>
+                      {/* Power overlay on right axis */}
+                      <Area yAxisId="p" type="stepAfter" dataKey="P" stroke={SC.amber} strokeWidth={1.5} fill="url(#pg2)" dot={false} name="Power Draw"/>
+                      {/* Pack full line (start) */}
+                      <ReferenceLine yAxisId="e" y={SR.PackkWh} stroke={SC.green} strokeDasharray="5 3"
+                        label={{value:`Full: ${SR.PackkWh} kWh`,fill:SC.green,fontSize:9,position:"insideTopLeft"}}/>
+                      {/* Reserve energy floor */}
+                      <ReferenceLine yAxisId="e" y={+(SR.PackkWh-SR.Etot).toFixed(2)} stroke={SC.red} strokeDasharray="5 3"
+                        label={{value:`Reserve floor: ${(SR.PackkWh-SR.Etot).toFixed(1)} kWh`,fill:SC.red,fontSize:9,position:"insideBottomRight"}}/>
+                      {/* Phase markers */}
                       {SR.tPhases.slice(1,-1).map((tp,i)=>(
                         <ReferenceLine yAxisId="e" key={i} x={Math.round(tp)} stroke={PHC[i]} strokeDasharray="4 3" strokeWidth={1.5}
                           label={{value:["Climb","Cruise","Desc","Land","Res"][i],fill:PHC[i],fontSize:9,position:"top"}}/>
