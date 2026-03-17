@@ -1461,109 +1461,101 @@ const TABI=["⬛","🛫","✈️","🔧","🔋","📈","⚖️","🦋","🔄","�
    Ref: Leishman "Principles of Helicopter Aerodynamics" Ch.3
    ════════════════════════════════════════════════════════════════════════ */
 function BEMPanel({ params, SR, SC }) {
-  const [twist,    setTwist]    = useState(-8);   // deg, linear from root to tip
-  const [chord_r,  setChordR]   = useState(0.08); // c/R chord-to-radius ratio
-  const [Nbld,     setNbld]     = useState(SR?.Nbld || 3);
-  const [Cl_alpha, setClAlpha]  = useState(5.73); // rad⁻¹ (2π for thin airfoil)
+  const [twist,    setTwist]    = useState(-8);    // deg, linear twist (root-to-tip)
+  const [chord_r,  setChordR]   = useState(0.08);  // c/R
+  const [Nbld,     setNbld]     = useState(3);
+  const [theta0,   setTheta0]   = useState(10);    // collective pitch at 0.75R (deg)
+  const [Cl_alpha, setClAlpha]  = useState(5.73);
   const [Cd0,      setCd0]      = useState(0.012);
   const [results,  setResults]  = useState(null);
 
   const runBEM = () => {
-    const NR  = 40;           // radial stations
-    const R   = SR ? (SR.Drotor / 2) : (params.propDiam / 2);
-    const B   = Nbld;
-    const rho = 1.225;
-    const g0  = 9.81;
-    const W   = SR ? SR.MTOW * g0 : 2177 * g0;
-    const Omega = SR ? (SR.RPM * Math.PI / 30) : 100;
+    const NR    = 40;
+    const R     = SR ? SR.Drotor / 2 : params.propDiam / 2;
+    const RPM   = SR ? SR.RPM : 400;
+    const B     = Nbld;
+    const rho   = 1.225;
+    const g0    = 9.81;
+    const Omega = RPM * Math.PI / 30;
     const Vtip  = Omega * R;
-    const sigma = B * chord_r / Math.PI; // solidity
+    const c     = chord_r * R;
+    const sigma = B * c / (Math.PI * R);
+    const nRot  = SR ? SR.nPropHover : params.nPropHover;
+    const T_req = SR ? SR.MTOW * g0 / nRot : 2177 * g0 / nRot;
+    const etaHov= SR ? (params.etaHov || 0.70) : params.etaHov;
 
-    let T_total = 0, Q_total = 0, P_total = 0;
+    let T_total = 0, P_total = 0;
     const stations = [];
 
     for (let i = 1; i <= NR; i++) {
-      const r_R = (i - 0.5) / NR;       // non-dimensional radial position
+      const r_R = (i - 0.5) / NR;
       const r   = r_R * R;
-      const chord = chord_r * R;
-      // Linear twist: theta(r) = theta_tip + twist*(1 - r/R)
-      const theta_deg = -4 + twist * (1 - r_R); // collective + twist
-      const theta = theta_deg * Math.PI / 180;
+      // Blade pitch: collective + linear twist (referenced to 0.75R)
+      const theta = (theta0 + twist * (r_R - 0.75)) * Math.PI / 180;
 
-      // Prandtl tip loss factor
-      const f_tip = (B / 2) * (1 - r_R) / Math.max(r_R * 0.001, 0.001);
-      const F = (2 / Math.PI) * Math.acos(Math.min(1, Math.exp(-f_tip)));
+      // Prandtl tip-loss factor
+      const f_tip = (B / 2) * (1 - r_R) / Math.max(r_R, 0.01);
+      const F     = (2 / Math.PI) * Math.acos(Math.min(1.0, Math.exp(-f_tip)));
 
-      // BEM iteration for induction factor a
-      let a = 0.1, a_prime = 0.01;
-      for (let k = 0; k < 50; k++) {
-        const Vz   = Omega * r * a_prime;
-        const Vt   = Omega * r * (1 - a);   // tangential
-        const phi  = Math.atan2(Vtip * (1 + a_prime) * r_R * 0, Vtip * r_R - Vtip * r_R * a);
-        // Simpler: phi = atan(induced_velocity / rotational_velocity)
-        const lam  = (1 - a) * Math.sqrt(2) / (r_R * (1 + a_prime)) * 0.05; // inflow ratio
-        const phi2 = Math.atan((1 + a_prime === 0 ? 1e-6 : lam / (r_R + 1e-6)));
-        const alpha = theta - phi2;
-        const Cl   = Cl_alpha * alpha;
-        const Cd   = Cd0 + Cl * Cl / (Math.PI * 8 * 0.9);
-        // Thrust and torque grading
-        const dCT = 0.5 * sigma * Cl * r_R * r_R;
-        const dCQ = 0.5 * sigma * (Cl * Math.sin(phi2) + Cd * Math.cos(phi2)) * r_R * r_R * r_R;
-        const a_new     = Math.max(0, Math.min(0.5, dCT / (4 * F * r_R * r_R + dCT)));
-        const a_p_new   = Math.max(0, dCQ / (4 * F * r_R * r_R * r_R * (1 - a_new)));
-        a       = 0.6 * a + 0.4 * a_new;
-        a_prime = 0.6 * a_prime + 0.4 * a_p_new;
-      }
+      // Leishman Eq. 3.107: quadratic solution for non-dimensional inflow ratio λ
+      const k   = sigma * Cl_alpha / (16 * Math.max(F, 1e-4));
+      const disc = (k / 2) * (k / 2) + k * theta * r_R;
+      const lam = disc > 0 ? (-k / 2 + Math.sqrt(disc)) : 1e-4;
+      const lam_pos = Math.max(1e-4, lam);
 
-      // Local thrust and torque per unit span
-      const Vr  = Omega * r;
-      const dT  = 4 * Math.PI * r * rho * Vr * Vr * a * (1 - a) * F * (R / NR);
-      const dQ  = 4 * Math.PI * r * r * rho * Vr * Vr * a_prime * (1 - a) * F * (R / NR);
-      const dP  = dQ * Omega;
+      const phi   = Math.atan2(lam_pos, r_R);
+      const alpha = theta - phi;
+      const Cl    = Math.min(1.3, Math.max(-0.2, Cl_alpha * alpha));
+      const Cd    = Cd0 + Cl * Cl / (Math.PI * 8 * 0.9);
+      const Cx    = Cl * Math.cos(phi) - Cd * Math.sin(phi);   // thrust direction
+      const Cy    = Cl * Math.sin(phi) + Cd * Math.cos(phi);   // torque direction
+
+      const V_rel = Vtip * Math.sqrt(r_R * r_R + lam_pos * lam_pos);
+      const q     = 0.5 * rho * V_rel * V_rel;
+      const dr    = R / NR;
+
+      const dT = B * q * c * Cx * dr;
+      const dQ = B * q * c * Cy * r * dr;
+      const dP = dQ * Omega;
 
       T_total += dT;
-      Q_total += dQ;
       P_total += dP;
 
-      const Vind = a * Omega * r;
       stations.push({
-        rR: +r_R.toFixed(3),
-        a:  +a.toFixed(4),
-        dT: +(dT / (R / NR)).toFixed(2),
-        dQ: +(dQ / (R / NR)).toFixed(4),
-        Vind: +Vind.toFixed(2),
-        F:  +F.toFixed(3),
+        rR:     +r_R.toFixed(3),
+        lam:    +lam_pos.toFixed(4),
+        dT:     +(dT / dr).toFixed(1),
+        dQ:     +(dQ / dr).toFixed(4),
+        F:      +F.toFixed(3),
+        alpha:  +(alpha * 180 / Math.PI).toFixed(2),
+        Cl:     +Cl.toFixed(3),
       });
     }
 
-    // Scale to full rotor with B blades
-    T_total *= B;
-    Q_total *= B;
-    P_total *= B;
+    // Actuator disk baseline (single rotor)
+    const A_disk  = Math.PI * R * R;
+    const P_ideal = Math.pow(T_req, 1.5) / Math.sqrt(2 * rho * A_disk);
+    const P_act_1 = (T_req / etaHov) * Math.sqrt(T_req / (2 * rho * A_disk)) / 1000;
 
-    // Actuator disk baseline for comparison
-    const T_act  = W / (SR?.nPropHover || params.nPropHover);
-    const A_disk = Math.PI * R * R;
-    const P_act  = (T_act / (SR?.etaHov || params.etaHov)) * Math.sqrt(T_act / (2 * rho * A_disk)) / 1000;
+    // Figure of Merit from BEM thrust
+    const P_id_1  = Math.pow(Math.max(T_total, 1), 1.5) / Math.sqrt(2 * rho * A_disk) / 1000;
+    const FM      = P_id_1 / Math.max(P_total / 1000, 0.001);
 
-    // Figure of Merit: FM = ideal_power / actual_power
-    const P_ideal = Math.pow(T_total, 1.5) / Math.sqrt(2 * rho * A_disk);
-    const FM = P_ideal / Math.max(P_total, 1);
-
-    // Power correction vs actuator disk
-    const nRot = SR?.nPropHover || params.nPropHover;
     const P_BEM_kW = P_total * nRot / 1000;
-    const P_AKT_kW = P_act * nRot;
-    const delta_pct = ((P_BEM_kW - P_AKT_kW) / P_AKT_kW * 100);
+    const P_AKT_kW = P_act_1 * nRot;
+    const T_ratio  = +(T_total / T_req * 100).toFixed(1);
+    const delta_pct = +((P_BEM_kW - P_AKT_kW) / Math.max(P_AKT_kW, 0.1) * 100).toFixed(1);
 
     setResults({
-      T_total: +T_total.toFixed(1),
-      P_rotor: +(P_total / 1000).toFixed(2),
-      P_BEM_kW: +P_BEM_kW.toFixed(1),
-      P_AKT_kW: +P_AKT_kW.toFixed(1),
-      delta_pct: +delta_pct.toFixed(1),
-      FM: +FM.toFixed(3),
-      Q_total: +Q_total.toFixed(1),
+      T_total:   +T_total.toFixed(1),
+      T_req:     +T_req.toFixed(1),
+      T_ratio,
+      P_rotor:   +(P_total / 1000).toFixed(2),
+      P_BEM_kW:  +P_BEM_kW.toFixed(1),
+      P_AKT_kW:  +P_AKT_kW.toFixed(1),
+      delta_pct,
+      FM:        +Math.min(FM, 1.0).toFixed(3),
+      sigma:     +sigma.toFixed(4),
       stations,
     });
   };
@@ -1572,103 +1564,106 @@ function BEMPanel({ params, SR, SC }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      {/* Header */}
       <div style={{ background: `linear-gradient(135deg,${SC.bg},#0d1f0d)`, border: `1px solid ${SC.green}44`, borderRadius: 10, padding: '16px 20px' }}>
-        <div style={{ fontSize: 9, color: SC.muted, fontFamily: "'DM Mono',monospace", letterSpacing: '0.18em', marginBottom: 4 }}>LEISHMAN BEM — TIP LOSSES (PRANDTL) + WAKE CONTRACTION</div>
+        <div style={{ fontSize: 9, color: SC.muted, fontFamily: "'DM Mono',monospace", letterSpacing: '0.18em', marginBottom: 4 }}>LEISHMAN EQ 3.107 — PRANDTL TIP LOSS — 40 RADIAL STATIONS</div>
         <div style={{ fontSize: 18, fontWeight: 800, color: SC.text, marginBottom: 6 }}>
           <span style={{ color: SC.green }}>Blade Element Momentum</span> Rotor Solver
         </div>
         <div style={{ fontSize: 11, color: SC.muted, lineHeight: 1.7, maxWidth: 760 }}>
-          Computes spanwise aerodynamic loading across 40 radial stations with Prandtl tip-loss correction and iterative wake induction. Actuator disk theory (used everywhere else) over-predicts efficiency by 8–15%. BEM shows the real hover power your rotor actually needs.
+          Computes spanwise blade loading using the quadratic inflow solution (Leishman §3.4) with Prandtl tip-loss. Collective pitch is a free input — adjust it to match your required hover thrust. Actuator disk theory (used in the main sizing) skips blade geometry entirely; BEM shows how blade design choices affect figure of merit and hover power.
         </div>
       </div>
 
       {/* Controls */}
       <div style={{ background: SC.panel, border: `1px solid ${SC.border}`, borderRadius: 8, padding: '14px 16px' }}>
         <div style={{ fontSize: 9, color: SC.muted, fontFamily: "'DM Mono',monospace", textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 12 }}>Blade Geometry Inputs</div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 14 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 16 }}>
           {[
-            ['Linear Twist', twist, setTwist, -20, 0, 1, '°', 'Negative = washout (root more positive pitch than tip). Typical: −8° to −14°.'],
-            ['Chord/Radius (c/R)', chord_r, setChordR, 0.03, 0.15, 0.005, '', 'Non-dimensional chord. Solidity σ = B×c/(πR). Typical: 0.06–0.10.'],
-            ['Blade Count', Nbld, setNbld, 2, 8, 1, 'blades', 'Number of blades per rotor.'],
-            ['Lift Slope Clα', Cl_alpha, setClAlpha, 4.5, 7.0, 0.05, '/rad', '2π = 6.28 for thin airfoil. Typical cambered: 5.5–6.2.'],
-            ['Profile Drag Cd₀', Cd0, setCd0, 0.005, 0.030, 0.001, '', 'Minimum section drag. NACA 0012: 0.012.'],
-          ].map(([label, val, setter, min, max, step, unit]) => (
+            ['Collective Pitch θ₀.₇₅', theta0, setTheta0, 2, 20, 0.5, '°', 'Pitch at 0.75R. Increase until T_BEM ≈ T_required.'],
+            ['Linear Twist', twist, setTwist, -18, 0, 1, '°/R', 'Twist from root to tip. Negative = washout (typical −6° to −14°).'],
+            ['Chord/Radius c/R', chord_r, setChordR, 0.03, 0.15, 0.005, '', 'Higher c/R → higher solidity → more thrust at same RPM.'],
+            ['Blade Count B', Nbld, setNbld, 2, 8, 1, 'blades', ''],
+            ['Lift Slope Clα', Cl_alpha, setClAlpha, 4.0, 7.0, 0.05, '/rad', '2π=6.28 thin airfoil. Typical: 5.5–5.9 for NACA 0012.'],
+            ['Profile Drag Cd₀', Cd0, setCd0, 0.005, 0.030, 0.001, '', 'NACA 0012 at low Re ≈ 0.012.'],
+          ].map(([label, val, setter, min, max, step]) => (
             <div key={label}>
               <div style={{ ...S, marginBottom: 4 }}>{label}</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <input type="range" min={min} max={max} step={step} value={val}
-                  onChange={evt => setter(+evt.target.value)}
-                  style={{ flex: 1 }} />
-                <span style={{ ...S, color: SC.amber, fontWeight: 700, minWidth: 55 }}>{val} {unit}</span>
+                  onChange={evt => setter(+evt.target.value)} style={{ flex: 1 }} />
+                <span style={{ ...S, color: SC.amber, fontWeight: 700, minWidth: 48, textAlign: 'right' }}>{val}</span>
               </div>
             </div>
           ))}
         </div>
-        <div style={{ marginTop: 12, display: 'flex', gap: 12, alignItems: 'center' }}>
+        <div style={{ marginTop: 14, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
           <button onClick={runBEM} type="button"
-            style={{ padding: '9px 28px', background: `linear-gradient(135deg,#052e16,${SC.green}99)`, border: `2px solid ${SC.green}`, borderRadius: 7, color: SC.green, fontSize: 12, fontWeight: 800, cursor: 'pointer', fontFamily: "'DM Mono',monospace" }}>
+            style={{ padding: '9px 28px', background: `linear-gradient(135deg,#052e16,${SC.green}88)`, border: `2px solid ${SC.green}`, borderRadius: 7, color: SC.green, fontSize: 12, fontWeight: 800, cursor: 'pointer', fontFamily: "'DM Mono',monospace" }}>
             🔬 Run BEM Analysis
           </button>
-          {SR && <span style={{ ...S, color: SC.muted }}>Using rotor: R = {(SR.Drotor/2).toFixed(2)} m · RPM = {SR.RPM} · {SR.nPropHover || params.nPropHover} rotors</span>}
+          {SR && (
+            <span style={{ ...S, color: SC.muted, fontSize: 9 }}>
+              From sizing: R = {(SR.Drotor/2).toFixed(2)} m · RPM = {SR.RPM} · {SR.nPropHover} rotors · T_req/rotor = {(SR.MTOW*9.81/SR.nPropHover).toFixed(0)} N
+            </span>
+          )}
         </div>
       </div>
 
-      {/* Results */}
       {results && (<>
-        {/* KPI comparison */}
+        {/* KPI row */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 10 }}>
           {[
-            ['BEM Hover Power', `${results.P_BEM_kW} kW`, results.delta_pct > 0 ? SC.red : SC.green],
-            ['Actuator Disk Power', `${results.P_AKT_kW} kW`, SC.amber],
-            ['BEM vs Disk', `${results.delta_pct > 0 ? '+' : ''}${results.delta_pct}%`, results.delta_pct > 0 ? SC.red : SC.green],
-            ['Figure of Merit', results.FM, results.FM > 0.75 ? SC.green : results.FM > 0.65 ? SC.amber : SC.red],
-            ['Single Rotor Thrust', `${results.T_total} N`, SC.teal],
+            ['BEM Thrust', `${results.T_total} N`, results.T_ratio >= 90 ? SC.green : results.T_ratio >= 60 ? SC.amber : SC.red],
+            ['Required Thrust', `${results.T_req} N`, SC.muted],
+            ['T_BEM / T_req', `${results.T_ratio}%`, results.T_ratio >= 90 ? SC.green : SC.red],
+            ['Figure of Merit', results.FM.toFixed(3), results.FM >= 0.75 ? SC.green : results.FM >= 0.65 ? SC.amber : SC.red],
+            ['Rotor Solidity σ', results.sigma, SC.teal],
           ].map(([label, val, col]) => (
             <div key={label} style={{ background: SC.panel, border: `1px solid ${SC.border}`, borderRadius: 8, padding: '10px 14px', textAlign: 'center', borderTop: `2px solid ${col}` }}>
               <div style={{ fontSize: 8, color: SC.muted, fontFamily: "'DM Mono',monospace", textTransform: 'uppercase', marginBottom: 4 }}>{label}</div>
-              <div style={{ fontSize: 16, fontWeight: 800, color: col, fontFamily: "'DM Mono',monospace" }}>{val}</div>
+              <div style={{ fontSize: 15, fontWeight: 800, color: col, fontFamily: "'DM Mono',monospace" }}>{val}</div>
             </div>
           ))}
         </div>
 
-        {/* Insight box */}
-        <div style={{ padding: '12px 16px', background: results.delta_pct > 5 ? `${SC.red}0e` : `${SC.green}0e`, border: `1px solid ${results.delta_pct > 5 ? SC.red : SC.green}44`, borderRadius: 8, fontSize: 11, color: SC.text, fontFamily: "'DM Mono',monospace", lineHeight: 1.8 }}>
-          {results.delta_pct > 0
-            ? `⚠️ BEM predicts hover power is ${results.delta_pct}% HIGHER than actuator disk theory. Your current sizing underestimates hover power by ~${(results.P_BEM_kW - results.P_AKT_kW).toFixed(1)} kW. Recommendation: reduce blade twist by 2–4° or increase chord by 10% to improve figure of merit.`
-            : `✅ BEM confirms actuator disk result within ${Math.abs(results.delta_pct)}%. Blade geometry is well-optimised. Figure of Merit = ${results.FM} (${results.FM > 0.75 ? 'excellent' : results.FM > 0.65 ? 'good' : 'consider redesign'}).`
+        {/* Insight */}
+        <div style={{ padding: '12px 16px', background: results.T_ratio < 80 ? `${SC.amber}0e` : `${SC.green}0e`, border: `1px solid ${results.T_ratio < 80 ? SC.amber : SC.green}44`, borderRadius: 8, fontSize: 11, color: SC.text, fontFamily: "'DM Mono',monospace", lineHeight: 1.8 }}>
+          {results.T_ratio < 80
+            ? `⚠️ BEM thrust (${results.T_total} N) is only ${results.T_ratio}% of required (${results.T_req} N). Increase collective pitch θ₀.₇₅ or chord/radius ratio. FM = ${results.FM} — blade geometry is ${results.FM > 0.75 ? 'efficient' : 'suboptimal'}.`
+            : `✅ BEM confirms blade can generate required thrust at θ₀.₇₅ = ${theta0}°. FM = ${results.FM} (${results.FM >= 0.75 ? 'excellent — rotor is aerodynamically efficient' : results.FM >= 0.65 ? 'acceptable' : 'consider reducing Cd0 or increasing solidity'}). Total fleet hover power: ${results.P_BEM_kW} kW.`
           }
         </div>
 
-        {/* Spanwise distribution chart */}
+        {/* Charts */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
           <div style={{ background: SC.panel, border: `1px solid ${SC.border}`, borderRadius: 8, padding: '12px 14px' }}>
             <div style={{ fontSize: 10, fontWeight: 700, color: SC.text, fontFamily: "'DM Mono',monospace", marginBottom: 8 }}>Thrust Grading dT/dr vs r/R</div>
             <ResponsiveContainer width="100%" height={200}>
-              <AreaChart data={results.stations} margin={{ top: 5, right: 16, left: -10, bottom: 16 }}>
+              <AreaChart data={results.stations} margin={{ top: 5, right: 16, left: -5, bottom: 16 }}>
                 <defs><linearGradient id="bemg" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor={SC.green} stopOpacity={0.4} />
-                  <stop offset="95%" stopColor={SC.green} stopOpacity={0.02} />
+                  <stop offset="5%" stopColor={SC.green} stopOpacity={0.4}/>
+                  <stop offset="95%" stopColor={SC.green} stopOpacity={0.02}/>
                 </linearGradient></defs>
-                <CartesianGrid strokeDasharray="2 2" stroke={SC.border} />
-                <XAxis dataKey="rR" tick={{ fontSize: 9, fill: SC.muted }} label={{ value: 'r/R', position: 'insideBottom', offset: -6, fontSize: 10, fill: SC.muted }} />
-                <YAxis tick={{ fontSize: 9, fill: SC.muted }} label={{ value: 'dT/dr (N/m)', angle: -90, position: 'insideLeft', fontSize: 9, fill: SC.muted }} />
-                <Tooltip formatter={(v) => [`${v} N/m`, 'Thrust grading']} contentStyle={{ background: SC.panel, border: `1px solid ${SC.border}`, fontSize: 9 }} />
-                <Area type="monotone" dataKey="dT" stroke={SC.green} strokeWidth={2} fill="url(#bemg)" dot={false} name="dT/dr" />
+                <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
+                <XAxis dataKey="rR" tick={{fontSize:9,fill:SC.muted}} label={{value:'r/R',position:'insideBottom',offset:-6,fontSize:10,fill:SC.muted}}/>
+                <YAxis tick={{fontSize:9,fill:SC.muted}} label={{value:'dT/dr (N/m)',angle:-90,position:'insideLeft',fontSize:9,fill:SC.muted}}/>
+                <Tooltip formatter={(v)=>[`${v} N/m`,'Thrust grading']} contentStyle={{background:SC.panel,border:`1px solid ${SC.border}`,fontSize:9}}/>
+                <Area type="monotone" dataKey="dT" stroke={SC.green} strokeWidth={2.5} fill="url(#bemg)" dot={false} name="dT/dr"/>
               </AreaChart>
             </ResponsiveContainer>
           </div>
 
           <div style={{ background: SC.panel, border: `1px solid ${SC.border}`, borderRadius: 8, padding: '12px 14px' }}>
-            <div style={{ fontSize: 10, fontWeight: 700, color: SC.text, fontFamily: "'DM Mono',monospace", marginBottom: 8 }}>Induction Factor a & Tip-Loss F vs r/R</div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: SC.text, fontFamily: "'DM Mono',monospace", marginBottom: 8 }}>Inflow λ, Tip-Loss F & Blade α vs r/R</div>
             <ResponsiveContainer width="100%" height={200}>
-              <LineChart data={results.stations} margin={{ top: 5, right: 16, left: -10, bottom: 16 }}>
-                <CartesianGrid strokeDasharray="2 2" stroke={SC.border} />
-                <XAxis dataKey="rR" tick={{ fontSize: 9, fill: SC.muted }} label={{ value: 'r/R', position: 'insideBottom', offset: -6, fontSize: 10, fill: SC.muted }} />
-                <YAxis domain={[0, 1.1]} tick={{ fontSize: 9, fill: SC.muted }} />
-                <Tooltip contentStyle={{ background: SC.panel, border: `1px solid ${SC.border}`, fontSize: 9 }} />
-                <Line type="monotone" dataKey="a" stroke={SC.teal} strokeWidth={2} dot={false} name="Induction a" />
-                <Line type="monotone" dataKey="F" stroke={SC.amber} strokeWidth={2} dot={false} name="Tip Loss F" />
+              <LineChart data={results.stations} margin={{ top: 5, right: 16, left: -5, bottom: 16 }}>
+                <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
+                <XAxis dataKey="rR" tick={{fontSize:9,fill:SC.muted}} label={{value:'r/R',position:'insideBottom',offset:-6,fontSize:10,fill:SC.muted}}/>
+                <YAxis tick={{fontSize:9,fill:SC.muted}}/>
+                <Tooltip contentStyle={{background:SC.panel,border:`1px solid ${SC.border}`,fontSize:9}}/>
+                <Line type="monotone" dataKey="lam" stroke={SC.teal}  strokeWidth={2} dot={false} name="Inflow λ"/>
+                <Line type="monotone" dataKey="F"   stroke={SC.amber} strokeWidth={2} dot={false} name="Tip-Loss F"/>
+                <Line type="monotone" dataKey="Cl"  stroke={SC.blue}  strokeWidth={1.5} dot={false} name="Cl"/>
               </LineChart>
             </ResponsiveContainer>
           </div>
@@ -1677,6 +1672,7 @@ function BEMPanel({ params, SR, SC }) {
     </div>
   );
 }
+
 
 /* ════════════════════════════════════════════════════════════════════════
    REGULATORY CHANGE TRACKER
@@ -1765,13 +1761,18 @@ Respond in plain text, clearly structured. Be specific about rule IDs and numeri
 
       const res = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "anthropic-version": "2023-06-01",
+          "anthropic-dangerous-direct-browser-access": "true",
+        },
         body: JSON.stringify({
           model: "claude-sonnet-4-20250514",
           max_tokens: 1000,
           messages: [{ role: "user", content: prompt }]
         })
       });
+      if (!res.ok) { const t = await res.text(); throw new Error(`API ${res.status}: ${t.slice(0,120)}`); }
       const data = await res.json();
       const text = data.content?.map(c => c.text || "").join("") || "";
       if (!text) throw new Error("No response from AI");
@@ -1946,7 +1947,11 @@ When the user describes requirements, use run_sizing to find an optimised soluti
         iters++;
         const res = await fetch("https://api.anthropic.com/v1/messages", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "anthropic-version": "2023-06-01",
+            "anthropic-dangerous-direct-browser-access": "true",
+          },
           body: JSON.stringify({
             model: "claude-sonnet-4-20250514",
             max_tokens: 1000,
@@ -1955,6 +1960,7 @@ When the user describes requirements, use run_sizing to find an optimised soluti
             messages: loopHistory,
           })
         });
+        if (!res.ok) { const t = await res.text(); throw new Error(`API ${res.status}: ${t.slice(0,120)}`); }
         const data = await res.json();
 
         // Collect text blocks
