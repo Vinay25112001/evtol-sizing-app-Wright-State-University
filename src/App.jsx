@@ -2568,52 +2568,42 @@ export default function App(){
                   </ResponsiveContainer>
                 </Panel>
 
-                {/* Energy Degradation Over Mission */}
-                <Panel title="Battery Energy Remaining vs Mission Time — starts full, depletes to reserve" ht={290}>
-                  <ResponsiveContainer width="100%" height={240}>
-                    <ComposedChart
-                      data={SR.energySteps.map(s=>({
-                        ...s,
-                        Erem: +Math.max(0, SR.PackkWh - s.E).toFixed(3),
-                        Ereserve: +(SR.PackkWh - SR.Etot).toFixed(3),
-                      }))}
-                      margin={{top:8,right:20,left:-5,bottom:16}}>
-                      <defs>
-                        <linearGradient id="edg" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%"  stopColor={SC.teal} stopOpacity={0.5}/>
-                          <stop offset="95%" stopColor={SC.teal} stopOpacity={0.05}/>
-                        </linearGradient>
-                        <linearGradient id="pg2" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%"  stopColor={SC.amber} stopOpacity={0.25}/>
-                          <stop offset="95%" stopColor={SC.amber} stopOpacity={0.02}/>
-                        </linearGradient>
-                      </defs>
+                {/* Energy Remaining Over Mission */}
+                <Panel title="Battery Energy Remaining vs Mission Time" ht={270}>
+                  <ResponsiveContainer width="100%" height={220}>
+                    <AreaChart
+                      data={SR.energySteps.map(s=>({t:s.t, Erem:+Math.max(0,SR.PackkWh-s.E).toFixed(3)}))}
+                      margin={{top:10,right:24,left:10,bottom:20}}>
+                      <defs><linearGradient id="edg" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor={SC.teal} stopOpacity={0.55}/>
+                        <stop offset="95%" stopColor={SC.teal} stopOpacity={0.04}/>
+                      </linearGradient></defs>
                       <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
-                      <XAxis dataKey="t" tick={{fontSize:9,fill:SC.muted}} label={{value:"Time (s)",position:"insideBottom",offset:-6,fontSize:10,fill:SC.muted}}/>
-                      <YAxis yAxisId="e" domain={[0, SR.PackkWh*1.05]} tick={{fontSize:9,fill:SC.teal}} label={{value:"Energy Remaining (kWh)",angle:-90,position:"insideLeft",offset:14,fontSize:9,fill:SC.teal}}/>
-                      <YAxis yAxisId="p" orientation="right" tick={{fontSize:9,fill:SC.amber}} label={{value:"Power Draw (kW)",angle:90,position:"insideRight",offset:12,fontSize:9,fill:SC.amber}}/>
-                      <Tooltip {...TTP} formatter={(v,n)=>[n==="Energy Remaining"?`${(+v).toFixed(2)} kWh`:`${v} kW`,n]}/>
-                      <Legend iconSize={8} wrapperStyle={{fontSize:9,fontFamily:"'DM Mono',monospace"}}/>
-                      {/* Main curve: energy remaining — starts at PackkWh, drains to reserve */}
-                      <Area yAxisId="e" type="monotone" dataKey="Erem" stroke={SC.teal} strokeWidth={2.5} fill="url(#edg)" dot={false} name="Energy Remaining"/>
-                      {/* Power overlay on right axis */}
-                      <Area yAxisId="p" type="stepAfter" dataKey="P" stroke={SC.amber} strokeWidth={1.5} fill="url(#pg2)" dot={false} name="Power Draw"/>
-                      {/* Pack full line (start) */}
-                      <ReferenceLine yAxisId="e" y={SR.PackkWh} stroke={SC.green} strokeDasharray="5 3"
-                        label={{value:`Full: ${SR.PackkWh} kWh`,fill:SC.green,fontSize:9,position:"insideTopLeft"}}/>
-                      {/* Reserve energy floor */}
-                      <ReferenceLine yAxisId="e" y={+(SR.PackkWh-SR.Etot).toFixed(2)} stroke={SC.red} strokeDasharray="5 3"
-                        label={{value:`Reserve floor: ${(SR.PackkWh-SR.Etot).toFixed(1)} kWh`,fill:SC.red,fontSize:9,position:"insideBottomRight"}}/>
-                      {/* Phase markers */}
+                      <XAxis dataKey="t" type="number" domain={["dataMin","dataMax"]}
+                        tick={{fontSize:9,fill:SC.muted}}
+                        label={{value:"Mission Time (s)",position:"insideBottom",offset:-8,fontSize:10,fill:SC.muted}}/>
+                      <YAxis
+                        domain={[0, +(SR.PackkWh*1.08).toFixed(1)]}
+                        tickCount={6}
+                        tickFormatter={v=>v.toFixed(0)}
+                        tick={{fontSize:9,fill:SC.muted}}
+                        label={{value:"Energy Remaining (kWh)",angle:-90,position:"insideLeft",offset:0,fontSize:9,fill:SC.muted}}/>
+                      <Tooltip {...TTP} formatter={(v)=>[`${(+v).toFixed(2)} kWh`,"Energy Remaining"]}/>
+                      <Area type="monotone" dataKey="Erem" stroke={SC.teal} strokeWidth={2.5}
+                        fill="url(#edg)" dot={false} name="Energy Remaining"/>
+                      <ReferenceLine y={SR.PackkWh} stroke={SC.green} strokeDasharray="5 3"
+                        label={{value:`Pack full: ${SR.PackkWh} kWh`,fill:SC.green,fontSize:9,position:"insideTopLeft"}}/>
+                      <ReferenceLine y={+Math.max(0,SR.PackkWh-SR.Etot).toFixed(2)} stroke={SC.red} strokeDasharray="5 3"
+                        label={{value:`Reserve: ${Math.max(0,SR.PackkWh-SR.Etot).toFixed(1)} kWh`,fill:SC.red,fontSize:9,position:"insideBottomRight"}}/>
                       {SR.tPhases.slice(1,-1).map((tp,i)=>(
-                        <ReferenceLine yAxisId="e" key={i} x={Math.round(tp)} stroke={PHC[i]} strokeDasharray="4 3" strokeWidth={1.5}
+                        <ReferenceLine key={i} x={Math.round(tp)} stroke={PHC[i]} strokeDasharray="4 3" strokeWidth={1.5}
                           label={{value:["Climb","Cruise","Desc","Land","Res"][i],fill:PHC[i],fontSize:9,position:"top"}}/>
                       ))}
-                    </ComposedChart>
+                    </AreaChart>
                   </ResponsiveContainer>
                 </Panel>
 
-                {/* Velocity vs Time */}
+                                {/* Velocity vs Time */}
                 <Panel title="Velocity vs Mission Time (m/s)" ht={230}>
                   <ResponsiveContainer width="100%" height={185}>
                     <AreaChart data={SR.velSteps} margin={{top:5,right:16,left:-5,bottom:16}}>
