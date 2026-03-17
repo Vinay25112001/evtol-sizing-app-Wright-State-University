@@ -651,19 +651,24 @@ export function CollabPanel({ user, params, onParamChange, C }) {
   const cleanups = useRef({});
   const lastPushAt = useRef(0);
   const lastSeenUpdatedAt = useRef(""); // track last state_json update we applied
+  const roleRef = useRef("viewer"); // always-live mirror of role — avoids stale closure
 
   const addLog = useCallback(msg =>
     setLog(p => [{ msg, t: new Date().toLocaleTimeString(), id: Math.random() }, ...p].slice(0, 30))
   , []);
 
+  // Syncs both roleRef (for effects) and role state (for UI)
+  const setRoleBoth = useCallback((r) => { roleRef.current = r; setRole(r); }, []);
+
   // ── PARAM PUSH — any editor (host or guest) pushes on every change ──
+  // roleRef.current is read directly — never a stale closure value
   useEffect(() => {
-    if (!inSession || role !== "editor") return;
+    if (!inSession || roleRef.current !== "editor") return;
     const now = Date.now();
     if (now - lastPushAt.current < 1200) return; // throttle 1.2s
     lastPushAt.current = now;
     pushCollabState(sidRef.current, params, myId.current);
-  }, [params, inSession, role]);
+  }, [params, inSession]);
 
   // ── STATE SYNC — poll session row every 1.5s, apply when updated_at changed ──
   // Uses syncRow() which checks updated_at, not created_at
@@ -688,14 +693,20 @@ export function CollabPanel({ user, params, onParamChange, C }) {
 
   const startMemberSync = useCallback((sessionId) => {
     cleanups.current.members?.();
-    cleanups.current.members = syncRow(
-      `evtol_collab_sessions?session_id=eq.${sessionId}`,
-      4000,
-      () => getMembers(sessionId).then(setMembers)
-    );
-    // Immediate fetch
-    getMembers(sessionId).then(setMembers);
-  }, []);
+    const fetchAndApply = async () => {
+      const mems = await getMembers(sessionId);
+      if (!mems.length) return;
+      setMembers(mems);
+      // Update this user's own role if host promoted/demoted them
+      const me = mems.find(m => m.user_id === myId.current);
+      if (me && me.role !== roleRef.current) {
+        setRoleBoth(me.role);
+      }
+    };
+    fetchAndApply(); // immediate
+    const timer = setInterval(fetchAndApply, 2000);
+    cleanups.current.members = () => clearInterval(timer);
+  }, [setRoleBoth]);
 
   const stopAll = useCallback(() => {
     Object.values(cleanups.current).forEach(fn => { try { fn?.(); } catch {} });
@@ -706,7 +717,7 @@ export function CollabPanel({ user, params, onParamChange, C }) {
     stopAll(); voice.stopMic();
     setIn(false); setHost(false); setSid(""); sidRef.current = "";
     setJoinId(""); setMembers([]); setPending([]); setLog([]);
-    setWaiting(false); setRole("viewer");
+    setWaiting(false); setRoleBoth("viewer");
     lastSeenUpdatedAt.current = "";
   }, [stopAll, voice]);
 
@@ -717,7 +728,7 @@ export function CollabPanel({ user, params, onParamChange, C }) {
     try {
       const newSid = await createCollabSession(myId.current, myName, params);
       setSid(newSid); sidRef.current = newSid;
-      setIn(true); setHost(true); setRole("editor");
+      setIn(true); setHost(true); setRoleBoth("editor");
       addLog("🏠 Session started. Share the session ID with collaborators.");
 
       // Poll for pending join requests (new rows — created_at filter is correct here)
@@ -771,7 +782,7 @@ export function CollabPanel({ user, params, onParamChange, C }) {
           // Load role and members
           const mems = await getMembers(joinId.trim());
           const me = mems.find(m => m.user_id === myId.current);
-          setRole(me?.role || "viewer");
+          setRoleBoth(me?.role || "viewer");
           setMembers(mems);
 
           // Load current params
