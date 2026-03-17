@@ -580,13 +580,12 @@ export function LeaderboardPanel({ C, onLoadDesign }) {
 /* ══════════════════════════════════════════════════════
    COLLABORATION PANEL v6
    ══════════════════════════════════════════════════════ */
-export function CollabPanel({ user, params, onParamChange, C, onPendingChange }) {
+export function CollabPanel({ user, params, onParamChange, C }) {
   const [sid,      setSid]      = useState("");
   const [joinId,   setJoinId]   = useState("");
   const [inSession,setIn]       = useState(false);
   const [isHost,   setHost]     = useState(false);
   const [role,     setRole]     = useState("viewer");
-  const roleRef = useRef("viewer"); // ref so effects always see latest role
   const [members,  setMembers]  = useState([]);
   const [pending,  setPending]  = useState([]);
   const [log,      setLog]      = useState([]);
@@ -612,15 +611,13 @@ export function CollabPanel({ user, params, onParamChange, C, onPendingChange })
   , []);
 
   // ── PARAM PUSH — any editor (host or guest) pushes on every change ──
-  // Use roleRef.current (not role state) so we always read the LIVE role
-  // even if React hasn't re-rendered since the host changed our role
   useEffect(() => {
-    if (!inSession || roleRef.current !== "editor") return;
+    if (!inSession || role !== "editor") return;
     const now = Date.now();
     if (now - lastPushAt.current < 1200) return; // throttle 1.2s
     lastPushAt.current = now;
     pushCollabState(sidRef.current, params, myId.current);
-  }, [params, inSession]);
+  }, [params, inSession, role]);
 
   // ── STATE SYNC — poll session row every 1.5s, apply when updated_at changed ──
   // Uses syncRow() which checks updated_at, not created_at
@@ -643,32 +640,15 @@ export function CollabPanel({ user, params, onParamChange, C, onPendingChange })
     );
   }, [onParamChange, addLog]);
 
-  // Keep roleRef synced so param-push effect always reads latest role
-  const setRoleSync = useCallback((newRole) => {
-    roleRef.current = newRole;
-    setRole(newRole);
-  }, []);
-
   const startMemberSync = useCallback((sessionId) => {
     cleanups.current.members?.();
-    // Poll evtol_collab_members every 2s — when host changes a role,
-    // updated_at changes on that member row, syncRow fires the callback.
-    // We use a simple interval here since syncRow watches a single row.
-    const memberTimer = setInterval(async () => {
-      const mems = await getMembers(sessionId);
-      if (!mems.length) return;
-      setMembers(mems);
-      // KEY FIX: update guest's own role if host changed it
-      const me = mems.find(m => m.user_id === myId.current);
-      if (me) setRoleSync(me.role);
-    }, 2000);
-    cleanups.current.members = () => clearInterval(memberTimer);
+    cleanups.current.members = syncRow(
+      `evtol_collab_sessions?session_id=eq.${sessionId}`,
+      4000,
+      () => getMembers(sessionId).then(setMembers)
+    );
     // Immediate fetch
-    getMembers(sessionId).then(mems => {
-      setMembers(mems);
-      const me = mems.find(m => m.user_id === myId.current);
-      if (me) setRoleSync(me.role);
-    });
+    getMembers(sessionId).then(setMembers);
   }, []);
 
   const stopAll = useCallback(() => {
@@ -680,7 +660,7 @@ export function CollabPanel({ user, params, onParamChange, C, onPendingChange })
     stopAll(); voice.stopMic();
     setIn(false); setHost(false); setSid(""); sidRef.current = "";
     setJoinId(""); setMembers([]); setPending([]); setLog([]);
-    setWaiting(false); setRoleSync("viewer");
+    setWaiting(false); setRole("viewer");
     lastSeenUpdatedAt.current = "";
   }, [stopAll, voice]);
 
@@ -691,25 +671,23 @@ export function CollabPanel({ user, params, onParamChange, C, onPendingChange })
     try {
       const newSid = await createCollabSession(myId.current, myName, params);
       setSid(newSid); sidRef.current = newSid;
-      setIn(true); setHost(true); setRoleSync("editor");
+      setIn(true); setHost(true); setRole("editor");
       addLog("🏠 Session started. Share the session ID with collaborators.");
 
       // Poll for pending join requests (new rows — created_at filter is correct here)
-      // Single robust polling approach: direct fetch every 2s, no created_at filter.
-      // This catches ALL pending requests regardless of when they were created.
+      cleanups.current.reqPoll = pollNew(
+        "evtol_collab_requests", `session_id=eq.${newSid}&status=eq.pending`,
+        req => setPending(p => p.find(r => r.id === req.id) ? p : [...p, req]),
+        2000
+      );
+      // Backup direct fetch every 3s
       const reqTimer = setInterval(async () => {
         const rows = await dbGet(`evtol_collab_requests?session_id=eq.${newSid}&status=eq.pending`);
-        setPending(prev => {
-          // Add any new requests not already in the list
-          const merged = [...prev];
-          rows.forEach(r => { if (!merged.find(x => x.id === r.id)) merged.push(r); });
-          // Remove any that are no longer pending (host approved/denied in another window)
-          const filtered = merged.filter(r => rows.find(x => x.id === r.id));
-          // Notify parent of count change
-          if (filtered.length !== prev.length) onPendingChange?.(filtered.length);
-          return filtered.length !== prev.length ? filtered : prev;
+        if (rows.length) setPending(p => {
+          const newOnes = rows.filter(r => !p.find(x => x.id === r.id));
+          return newOnes.length ? [...p, ...newOnes] : p;
         });
-      }, 2000);
+      }, 3000);
       cleanups.current.reqTimer = () => clearInterval(reqTimer);
 
       startStateSync(newSid);
@@ -747,7 +725,7 @@ export function CollabPanel({ user, params, onParamChange, C, onPendingChange })
           // Load role and members
           const mems = await getMembers(joinId.trim());
           const me = mems.find(m => m.user_id === myId.current);
-          setRoleSync(me?.role || "viewer");
+          setRole(me?.role || "viewer");
           setMembers(mems);
 
           // Load current params
@@ -786,11 +764,7 @@ export function CollabPanel({ user, params, onParamChange, C, onPendingChange })
       } else {
         addLog(`❌ Denied ${req.display_name}`);
       }
-      setPending(p => {
-        const newP = p.filter(r => r.id !== req.id);
-        onPendingChange?.(newP.length);
-        return newP;
-      });
+      setPending(p => p.filter(r => r.id !== req.id));
     } catch(e) { setErr(e.message); }
   };
 
