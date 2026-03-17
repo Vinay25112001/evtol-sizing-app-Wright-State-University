@@ -3,7 +3,7 @@ import { AuthModal, AuthGate, UserHeaderBar, getSession, saveSession, clearSessi
 import { ShareDesignButton, LeaderboardPanel, CollabPanel, PublicDesignBanner } from "./CommunityFeatures";
 import {
   AreaChart, Area, LineChart, Line, BarChart, Bar, RadarChart, Radar,
-  ComposedChart,
+  ComposedChart, ScatterChart, Scatter,
   PolarGrid, PolarAngleAxis, XAxis, YAxis, CartesianGrid, Tooltip,
   Legend, ResponsiveContainer, ReferenceLine, Cell, PieChart, Pie
 } from "recharts";
@@ -512,7 +512,7 @@ function runSizing(p) {
     Vstall:+Vstall.toFixed(2),VA:+VA.toFixed(2),VD:+VD.toFixed(2),
     vnData,rpData,polarData,powerSteps,socSteps,velSteps,energySteps,convData,twSweepData,tolSweepData,weightBreak,dragComp,tPhases,
     checks,feasible:checks.every(chk=>chk.ok),
-    TW_hover:+TW_hover.toFixed(3),TW_cruise:+TW_cruise.toFixed(3),
+    Trotor:+Trotor.toFixed(1),TW_hover:+TW_hover.toFixed(3),TW_cruise:+TW_cruise.toFixed(3),
     itersR1,itersR2,tol,r2Converged,
     vtGamma_opt:+vtGamma_opt_deg.toFixed(1),Svt_total:+Svt_total.toFixed(3),Svt_panel:+Svt_panel.toFixed(3),governs_pitch:Svt_panel_pitch>=Svt_panel_yaw,ruddervator_combined_auth:+ruddervator_combined_auth.toFixed(3),delta_yaw_rv_deg:+delta_yaw_rv_deg.toFixed(2),
     Sh_req:+Sh_req.toFixed(3),Sv_req:+Sv_req.toFixed(3),Sh_eff:+Sh_eff.toFixed(3),Sv_eff:+Sv_eff.toFixed(3),
@@ -964,6 +964,51 @@ function generateReport(p, SR, branding={}) {
   </tbody></table>
   `);
 
+  // ── V-n DIAGRAM + OEI section ─────────────────────────────────────
+  const g0d_vn=9.81,rhoMSLd_vn=1.225;
+  const Kg_vn=0.88*p.AR/(5.3+p.AR);
+  const CLa_vn=2*Math.PI*(1+0.77*p.tc);
+  const nPosLim=3.5,nNegLim=-1.5;
+  const Ug_c=15.2,Ug_d=7.6;
+  const ngust_c_pdf=1+(Kg_vn*rhoMSLd_vn*Ug_c*p.vCruise*CLa_vn)/(2*SR.WL);
+  const ngust_d_pdf=1+(Kg_vn*rhoMSLd_vn*Ug_d*SR.VD*CLa_vn)/(2*SR.WL);
+  // OEI
+  const N_oei=p.nPropHover;
+  const T_each=(SR.MTOW*g0d_vn)/N_oei;
+  const T_oei=(N_oei-1)*T_each;
+  const OEI_margin=((T_oei-SR.MTOW*g0d_vn)/(SR.MTOW*g0d_vn)*100);
+  const P_mot_nom=SR.Phov*1000/N_oei;
+  const P_mot_oei=SR.Phov*1000/(N_oei-1);
+  const motorOK=P_mot_oei<=(SR.PpeakKW*1000);
+
+  const s_vn = sec("vn-oei","11. V-n Diagram & One-Engine-Inoperative Analysis",`
+  <p>Maneuvering envelope and structural load factors per CS-VTOL Special Condition and CS-23 Amendment 5. Gust load factors computed using the Pratt alleviation method. OEI analysis per CS-VTOL AMC 27.65.</p>
+  ${table(["Parameter","Symbol","Value","Unit"],[
+    row("Stall Speed","V<sub>S</sub>",SR.Vstall.toFixed(2),"m/s"),
+    row("Manoeuvre Speed","V<sub>A</sub>",SR.VA.toFixed(2),"m/s"),
+    row("Cruise Speed","V<sub>C</sub>",p.vCruise.toFixed(1),"m/s"),
+    row("Dive Speed","V<sub>D</sub>",SR.VD.toFixed(2),"m/s"),
+    row("Pos. Limit Load","n<sub>+lim</sub>",nPosLim.toFixed(1),"g"),
+    row("Neg. Limit Load","n<sub>−lim</sub>",nNegLim.toFixed(1),"g"),
+    row("Ultimate Pos.","n<sub>+ult</sub>",(nPosLim*1.5).toFixed(1),"g"),
+    row("Gust Alleviation","K<sub>g</sub>",Kg_vn.toFixed(3),""),
+    row("Gust n (cruise)","n<sub>g,C</sub>",ngust_c_pdf.toFixed(3),"g"),
+    row("Gust n (dive)","n<sub>g,D</sub>",ngust_d_pdf.toFixed(3),"g"),
+  ])}
+  <h3 style="font-size:11pt;font-weight:700;color:#1e3a5f;margin:16px 0 8px">One-Engine-Inoperative Analysis</h3>
+  ${table(["Parameter","Symbol","Value","Unit"],[
+    row("Number of Rotors","N",N_oei,""),
+    row("Total Hover Thrust","T<sub>tot</sub>",fmt(SR.MTOW*g0d_vn/1000,3),"kN"),
+    row("OEI Thrust Available","T<sub>OEI</sub>",fmt(T_oei/1000,3),"kN"),
+    row("OEI Thrust Margin","ΔT",fmt(OEI_margin,2),"%"),
+    row("Nominal Motor Power","P<sub>mot,nom</sub>",fmt(P_mot_nom/1000,2),"kW"),
+    row("OEI Motor Power","P<sub>mot,OEI</sub>",fmt(P_mot_oei/1000,2),"kW"),
+    row("Peak Motor Rating","P<sub>peak</sub>",fmt(SR.PpeakKW,2),"kW"),
+    row("Motor Survivable","",motorOK?"YES ✅":"NO ❌",""),
+    row("OEI Verdict","",OEI_margin>0?"SURVIVABLE ✅":"CRITICAL ❌",""),
+  ])}
+  `);
+
   // ══════════════════════════════════════════════════════════════════════
   //  DETAILED CALCULATION SECTIONS  (D1–D9)
   // ══════════════════════════════════════════════════════════════════════
@@ -1266,7 +1311,7 @@ function generateReport(p, SR, branding={}) {
 </head>
 <body>
 ${cover}
-${s1}${s2}${sd1}${sd2}${s3}${sd3}${sd4}${s4}${sd5}${s5}${sd6}${s6}${sd7}${s7}${sd8}${s8}${sd9}${s9}${s10}
+${s1}${s2}${sd1}${sd2}${s3}${sd3}${sd4}${s4}${sd5}${s5}${sd6}${s6}${sd7}${s7}${sd8}${s8}${sd9}${s9}${s10}${s_vn}
 <section style="padding:28px 56px;page-break-inside:avoid;border-bottom:1px solid #e5e7eb">
   <h2 style="font-size:14pt;font-weight:800;color:#0f172a;margin-bottom:14px;padding-bottom:6px;border-bottom:2px solid #8b5cf6;">
     Community Design Benchmarks
@@ -1397,13 +1442,173 @@ function Acc({title,icon,children}){
   );
 }
 
-const TABS=["Overview","Mission","Wing & Aero","Propulsion","Battery","Performance","Stability","V-Tail","Convergence","Monte Carlo","Certification","Noise","Cost","Mission Builder","Weather & Atmos","OpenVSP","Community","Collaboration"];
-const TABI=["⬛","🛫","✈️","🔧","🔋","📈","⚖️","🦋","🔄","🎲","📋","🔊","💰","🗺️","🌤️","🛩️","🌐","👥"];
+const TABS=["Overview","Mission","Wing & Aero","Propulsion","Battery","Performance","Stability","V-Tail","Convergence","Monte Carlo","Certification","Noise","Cost","Mission Builder","Weather & Atmos","OpenVSP","Community","Collaboration","V-n Diagram","Design Space"];
+const TABI=["⬛","🛫","✈️","🔧","🔋","📈","⚖️","🦋","🔄","🎲","📋","🔊","💰","🗺️","🌤️","🛩️","🌐","👥","📐","🎯"];
 /* TTP is defined inside App() so it reads the current C theme */
 
 /* ═══════════════════════════════════
    APP
    ═══════════════════════════════════ */
+
+/* ══════════════════════════════════════════════════════════════════
+   DESIGN SPACE EXPLORER — Latin Hypercube Sampling + Pareto Front
+   ══════════════════════════════════════════════════════════════════ */
+function DesignSpacePanel({ params, SC, TTP, runSizingFn }) {
+  const [results,  setResults]  = React.useState(null);
+  const [running,  setRunning]  = React.useState(false);
+  const [nSamples, setNSamples] = React.useState(300);
+  const [xAxis,    setXAxis]    = React.useState("range");
+  const [yAxis,    setYAxis]    = React.useState("MTOW");
+  const [colorBy,  setColorBy]  = React.useState("feasible");
+
+  const lhs = (n, dims) => {
+    const result = [];
+    for (let d = 0; d < dims; d++) {
+      const col = Array.from({length:n}, (_,i) => (i + Math.random()) / n);
+      for (let i = n-1; i > 0; i--) { const j = Math.floor(Math.random()*(i+1)); [col[i],col[j]]=[col[j],col[i]]; }
+      result.push(col);
+    }
+    return result;
+  };
+
+  const runDSE = () => {
+    setRunning(true); setResults(null);
+    setTimeout(() => {
+      const N = nSamples;
+      const vars = [
+        {key:"range",   base:params.range,   pct:0.40},
+        {key:"payload", base:params.payload, pct:0.40},
+        {key:"LD",      base:params.LD,      pct:0.25},
+        {key:"sedCell", base:params.sedCell, pct:0.30},
+        {key:"ewf",     base:params.ewf,     pct:0.20},
+        {key:"AR",      base:params.AR,      pct:0.30},
+        {key:"etaHov",  base:params.etaHov,  pct:0.15},
+        {key:"etaSys",  base:params.etaSys,  pct:0.15},
+      ];
+      const samples = lhs(N, vars.length);
+      const pts = [];
+      for (let i = 0; i < N; i++) {
+        const pS = {...params};
+        vars.forEach((v,d) => { pS[v.key] = v.base*(1-v.pct) + samples[d][i]*v.base*2*v.pct; });
+        pS.AR = Math.round(pS.AR*10)/10;
+        pS.payload = Math.round(pS.payload);
+        try {
+          const R = runSizingFn(pS);
+          if (!R||!isFinite(R.MTOW)||R.MTOW>8000||R.MTOW<200) continue;
+          pts.push({range:+pS.range.toFixed(1),payload:+pS.payload.toFixed(0),MTOW:+R.MTOW.toFixed(1),Etot:+R.Etot.toFixed(2),Wbat:+R.Wbat.toFixed(1),LDact:+R.LDact.toFixed(2),feasible:R.feasible,batFrac:+(R.Wbat/R.MTOW*100).toFixed(1),AR:+pS.AR.toFixed(1),sedCell:+pS.sedCell.toFixed(0),pareto:false});
+        } catch {}
+      }
+      const fp = pts.filter(p=>p.feasible);
+      fp.forEach(p => { p.pareto = !fp.some(q=>q.MTOW<=p.MTOW&&q.range>=p.range&&q.payload>=p.payload&&(q.MTOW<p.MTOW||q.range>p.range||q.payload>p.payload)); });
+      setResults({pts,feasCount:fp.length,paretoCount:fp.filter(p=>p.pareto).length,total:pts.length});
+      setRunning(false);
+    }, 80);
+  };
+
+  const axes=[{key:"range",label:"Range (km)"},{key:"payload",label:"Payload (kg)"},{key:"MTOW",label:"MTOW (kg)"},{key:"Etot",label:"Energy (kWh)"},{key:"LDact",label:"L/D"},{key:"batFrac",label:"Battery Frac (%)"}];
+  const colorOpts=[{key:"feasible",label:"Feasible/Infeasible"},{key:"pareto",label:"Pareto Front"},{key:"LDact",label:"L/D ratio"},{key:"batFrac",label:"Battery Fraction"}];
+  const getColor = pt => {
+    if(colorBy==="feasible") return pt.feasible?"#22c55e":"#ef4444";
+    if(colorBy==="pareto")   return pt.pareto?"#f59e0b":(pt.feasible?"#22c55e88":"#ef444455");
+    if(colorBy==="LDact")    return `hsl(${Math.min(pt.LDact/20*120,120)},90%,55%)`;
+    if(colorBy==="batFrac")  return `hsl(${Math.max(0,120-pt.batFrac*2)},90%,55%)`;
+    return "#60a5fa";
+  };
+  const sel={background:SC.bg,border:`1px solid ${SC.border}`,color:SC.text,borderRadius:4,padding:"4px 8px",fontSize:10,fontFamily:"'DM Mono',monospace",outline:"none"};
+  const sm={fontSize:10,fontFamily:"'DM Mono',monospace",color:SC.muted};
+
+  return(
+    <div style={{display:"flex",flexDirection:"column",gap:12}}>
+      <div style={{background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:8,padding:"12px 16px",display:"flex",gap:14,alignItems:"center",flexWrap:"wrap"}}>
+        <div style={{display:"flex",alignItems:"center",gap:8}}><span style={sm}>Samples:</span><input type="range" min={100} max={800} step={50} value={nSamples} onChange={evt=>setNSamples(+evt.target.value)} style={{width:100}}/><span style={{...sm,color:SC.amber,fontWeight:700}}>{nSamples}</span></div>
+        <div style={{display:"flex",alignItems:"center",gap:6}}><span style={sm}>X:</span><select value={xAxis} onChange={evt=>setXAxis(evt.target.value)} style={sel}>{axes.map(a=><option key={a.key} value={a.key}>{a.label}</option>)}</select></div>
+        <div style={{display:"flex",alignItems:"center",gap:6}}><span style={sm}>Y:</span><select value={yAxis} onChange={evt=>setYAxis(evt.target.value)} style={sel}>{axes.map(a=><option key={a.key} value={a.key}>{a.label}</option>)}</select></div>
+        <div style={{display:"flex",alignItems:"center",gap:6}}><span style={sm}>Color:</span><select value={colorBy} onChange={evt=>setColorBy(evt.target.value)} style={sel}>{colorOpts.map(a=><option key={a.key} value={a.key}>{a.label}</option>)}</select></div>
+        <button onClick={runDSE} disabled={running} type="button" style={{padding:"7px 20px",background:running?"transparent":`linear-gradient(135deg,#4c1d95,#7c3aed)`,border:"2px solid #7c3aed",borderRadius:6,color:running?SC.muted:"#e9d5ff",fontSize:11,fontWeight:800,cursor:running?"not-allowed":"pointer",fontFamily:"'DM Mono',monospace"}}>
+          {running?"⟳ Computing…":"🎯 Run Design Space Exploration"}
+        </button>
+      </div>
+
+      {!results&&!running&&(
+        <div style={{background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:8,padding:32,textAlign:"center"}}>
+          <div style={{fontSize:32,marginBottom:12}}>🎯</div>
+          <div style={{fontSize:13,fontWeight:700,color:SC.text,fontFamily:"'DM Mono',monospace",marginBottom:8}}>Click "Run Design Space Exploration"</div>
+          <div style={{fontSize:10,color:SC.muted,fontFamily:"'DM Mono',monospace",lineHeight:1.8,maxWidth:500,margin:"0 auto"}}>
+            Latin Hypercube Sampling sweeps 8 design variables (±20-40% range).<br/>
+            Each sample = complete sizing solution. Green = feasible, Red = infeasible.<br/>
+            <strong style={{color:"#f59e0b"}}>Yellow = Pareto-optimal</strong> — no design beats them on all 3 objectives simultaneously.<br/>
+            This is what Joby & Archer compute with proprietary tools. Now interactive and free.
+          </div>
+        </div>
+      )}
+
+      {running&&(
+        <div style={{background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:8,padding:32,textAlign:"center"}}>
+          <div style={{fontSize:28,marginBottom:8}}>⟳</div>
+          <div style={{fontSize:12,color:SC.muted,fontFamily:"'DM Mono',monospace"}}>Running {nSamples} Latin Hypercube samples…</div>
+        </div>
+      )}
+
+      {results&&(<>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
+          {[["Total Samples",results.total,SC.text],["Feasible",`${results.feasCount} (${(results.feasCount/results.total*100).toFixed(0)}%)`,SC.green],["Infeasible",results.total-results.feasCount,SC.red],["Pareto-Optimal",`${results.paretoCount} ⭐`,"#f59e0b"]].map(([label,val,col])=>(
+            <div key={label} style={{background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:8,padding:"10px 14px",textAlign:"center"}}>
+              <div style={{fontSize:8,color:SC.muted,fontFamily:"'DM Mono',monospace",textTransform:"uppercase",marginBottom:4}}>{label}</div>
+              <div style={{fontSize:18,fontWeight:800,color:col,fontFamily:"'DM Mono',monospace"}}>{val}</div>
+            </div>
+          ))}
+        </div>
+
+        <div style={{background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:8,padding:"12px 14px"}}>
+          <div style={{fontSize:10,fontWeight:700,color:SC.text,fontFamily:"'DM Mono',monospace",marginBottom:8}}>
+            {axes.find(a=>a.key===xAxis)?.label} vs {axes.find(a=>a.key===yAxis)?.label}
+            {colorBy==="pareto"&&<span style={{color:"#f59e0b",marginLeft:12}}>● Pareto-optimal</span>}
+            {colorBy==="feasible"&&<><span style={{color:SC.green,marginLeft:12}}>● Feasible</span><span style={{color:SC.red,marginLeft:8}}>● Infeasible</span></>}
+          </div>
+          <ResponsiveContainer width="100%" height={380}>
+            <ScatterChart margin={{top:10,right:20,bottom:35,left:10}}>
+              <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
+              <XAxis type="number" dataKey={xAxis} name={axes.find(a=>a.key===xAxis)?.label} tick={{fontSize:9,fill:SC.muted}} label={{value:axes.find(a=>a.key===xAxis)?.label,position:"insideBottom",offset:-15,fontSize:10,fill:SC.muted}}/>
+              <YAxis type="number" dataKey={yAxis} name={axes.find(a=>a.key===yAxis)?.label} tick={{fontSize:9,fill:SC.muted}} label={{value:axes.find(a=>a.key===yAxis)?.label,angle:-90,position:"insideLeft",fontSize:10,fill:SC.muted}}/>
+              <Tooltip cursor={{strokeDasharray:"3 3"}} content={({payload})=>{
+                if(!payload?.length) return null;
+                const d=payload[0].payload;
+                return(<div style={{background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:6,padding:"8px 12px",fontSize:9,fontFamily:"'DM Mono',monospace"}}>
+                  {[["Range",d.range+" km"],["Payload",d.payload+" kg"],["MTOW",d.MTOW+" kg"],["Energy",d.Etot+" kWh"],["L/D",d.LDact],["Bat%",d.batFrac+"%"],["Status",d.feasible?"✅ Feasible":"❌ Infeasible"],["Pareto",d.pareto?"⭐ Yes":"—"]].map(([k,v])=>(
+                    <div key={k} style={{display:"flex",gap:12,justifyContent:"space-between"}}><span style={{color:SC.muted}}>{k}</span><span style={{color:SC.text,fontWeight:700}}>{v}</span></div>
+                  ))}
+                </div>);
+              }}/>
+              {results.pts.map((pt,i)=>(
+                <Scatter key={i} data={[pt]} fill={getColor(pt)} opacity={pt.feasible?0.85:0.35}
+                  shape={(props)=>{const {cx,cy}=props;return<circle cx={cx} cy={cy} r={colorBy==="pareto"&&pt.pareto?5:3} fill={getColor(pt)} opacity={pt.feasible?0.85:0.35}/>;}}/>
+              ))}
+            </ScatterChart>
+          </ResponsiveContainer>
+        </div>
+
+        {results.feasCount>0&&(
+          <div style={{background:SC.panel,border:"1px solid #f59e0b44",borderRadius:8,padding:"12px 14px"}}>
+            <div style={{fontSize:10,fontWeight:700,color:"#f59e0b",fontFamily:"'DM Mono',monospace",marginBottom:8}}>⭐ Pareto-Optimal Designs ({results.paretoCount}) — Non-dominated frontier</div>
+            <div style={{overflowX:"auto"}}>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:9,fontFamily:"'DM Mono',monospace"}}>
+                <thead><tr style={{background:SC.bg}}>{["Range km","Payload kg","MTOW kg","Energy kWh","L/D","Bat%"].map(h=><th key={h} style={{padding:"5px 8px",textAlign:"right",color:SC.muted,fontWeight:700,borderBottom:`1px solid ${SC.border}`}}>{h}</th>)}</tr></thead>
+                <tbody>{results.pts.filter(p=>p.pareto).sort((a,b)=>b.range-a.range).slice(0,10).map((pt,i)=>(
+                  <tr key={i} style={{background:i%2===0?"#f59e0b08":"transparent"}}>
+                    {[pt.range,pt.payload,pt.MTOW,pt.Etot,pt.LDact,pt.batFrac+"%"].map((v,j)=>(
+                      <td key={j} style={{padding:"5px 8px",textAlign:"right",color:j===0?"#f59e0b":SC.text,fontWeight:j===0?800:400,borderBottom:`1px solid ${SC.border}22`}}>{v}</td>
+                    ))}
+                  </tr>
+                ))}</tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </>)}
+    </div>
+  );
+}
+
 export default function App(){
   const[params,setParams]=useState({
     // ── Mission ──────────────────────────────────────────────────────────
@@ -5616,6 +5821,177 @@ export default function App(){
             )}
 
             </>}
+
+            {/* ──── TAB 18: V-n DIAGRAM + OEI CHECK ──── */}
+            {tab===18&&SR&&(()=>{
+              const g0=9.81,rhoMSL=1.225;
+              const MTOW=SR.MTOW,WL=SR.WL,g=g0;
+              const Vstall=SR.Vstall,VA=SR.VA,VD=SR.VD,VC=params.vCruise;
+              const nPosLimit=3.5,nNegLimit=-1.5,nUltPos=nPosLimit*1.5,nUltNeg=nNegLimit*1.5;
+              // Gust load factors per CS-23 Amd 5 / FAR Part 23
+              const Kg=0.88*params.AR/(5.3+params.AR); // alleviation factor
+              const CLa=2*Math.PI*(1+0.77*params.tc);   // lift curve slope
+              const mu=2*(WL)/(rhoMSL*VC*CLa*params.MAC||SR.MAC);
+              const Ug_cruise=15.2,Ug_dive=7.6; // gust velocities m/s (CS-23)
+              const ngust_c=1+(Kg*rhoMSL*Ug_cruise*VC*CLa)/(2*WL);
+              const ngust_d=1+(Kg*rhoMSL*Ug_dive*VD*CLa)/(2*WL);
+              const ngust_cn=1-(Kg*rhoMSL*Ug_cruise*VC*CLa)/(2*WL);
+              // Build V-n envelope
+              const pts=[];
+              for(let i=0;i<=80;i++){const v=VD*1.15*i/80;pts.push({v:+v.toFixed(1),nPos:+Math.min(0.5*rhoMSL*v*v*(params.clDesign||1.2)/WL,nPosLimit).toFixed(3),nNeg:+Math.max(-0.5*rhoMSL*v*v*0.8*(params.clDesign||1.2)/WL,nNegLimit).toFixed(3)});}
+              // OEI hover analysis — CS-VTOL SC.VTOL AMC 27.65
+              const N=params.nPropHover,Phov_tot=SR.Phov*1000; // W total hover power
+              const P_per_motor=Phov_tot/N;         // nominal power per motor (W)
+              const T_per_motor=SR.Trotor||((MTOW*g)/N); // thrust per motor (N)
+              const T_remaining=(N-1)*T_per_motor;   // OEI thrust available
+              const T_required=MTOW*g;               // weight to overcome
+              const OEI_margin_pct=((T_remaining-T_required)/T_required*100);
+              // Power reallocation: remaining motors absorb failed motor's load
+              const P_per_motor_OEI=Phov_tot/(N-1);  // each remaining motor
+              const P_overhead_pct=((P_per_motor_OEI-P_per_motor)/P_per_motor*100);
+              const motorSurvivable=P_per_motor_OEI<=(SR.PpeakKW*1000); // within peak rating?
+              // Yaw moment from OEI (assume symmetric layout, worst-case arm = propDiam)
+              const Larm=params.propDiam;             // moment arm (m) — conservative
+              const Myaw_OEI=T_per_motor*Larm;        // yaw moment (N·m)
+              const Myaw_avail=SR.Sv_eff*(0.5*rhoMSL*VC*VC)*SR.lv*0.3; // available yaw authority
+              const yawControllable=Myaw_avail>=Myaw_OEI;
+              // Structural margins
+              const nLimitCheck=nPosLimit>=2.5; // CS-VTOL minimum
+              const gustCheck=ngust_c<=nPosLimit;
+              return(
+              <div style={{display:"flex",flexDirection:"column",gap:12}}>
+                <div style={{background:`linear-gradient(135deg,${SC.bg},#0f1a2e)`,border:`1px solid #3b82f644`,borderRadius:10,padding:"16px 20px"}}>
+                  <div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace",letterSpacing:"0.18em",marginBottom:4}}>CS-VTOL / CS-23 AMD 5 COMPLIANT</div>
+                  <div style={{fontSize:18,fontWeight:800,color:SC.text,marginBottom:6}}>
+                    <span style={{color:"#60a5fa"}}>V-n Diagram</span> & One-Engine-Inoperative Analysis
+                  </div>
+                  <div style={{fontSize:11,color:SC.muted,lineHeight:1.7,maxWidth:760}}>
+                    Manoeuvring envelope per CS-VTOL Special Condition and CS-23 Amendment 5. Gust loads computed using Pratt method with alleviation factor. OEI control authority per CS-VTOL AMC 27.65 — survivability requires remaining motors to absorb load within peak power rating.
+                  </div>
+                </div>
+                {/* V-n Chart */}
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+                  <div style={{background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:8,padding:"12px 14px"}}>
+                    <div style={{fontSize:10,fontWeight:700,color:SC.text,fontFamily:"'DM Mono',monospace",marginBottom:8}}>📐 V-n Maneuvering Envelope</div>
+                    <ResponsiveContainer width="100%" height={280}>
+                      <ComposedChart data={pts} margin={{top:10,right:20,left:0,bottom:20}}>
+                        <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
+                        <XAxis dataKey="v" type="number" domain={[0,VD*1.15]} tick={{fontSize:9,fill:SC.muted}} label={{value:"EAS (m/s)",position:"insideBottom",offset:-8,fontSize:10,fill:SC.muted}}/>
+                        <YAxis domain={[-2.5,5]} tick={{fontSize:9,fill:SC.muted}} label={{value:"Load Factor n",angle:-90,position:"insideLeft",fontSize:10,fill:SC.muted}}/>
+                        <Tooltip {...TTP} formatter={(v,n)=>[+v.toFixed(3),n]}/>
+                        <ReferenceLine y={0} stroke={SC.border} strokeWidth={1}/>
+                        <ReferenceLine y={nPosLimit} stroke={SC.green} strokeDasharray="5 3" label={{value:`n+lim ${nPosLimit}`,fill:SC.green,fontSize:9,position:"right"}}/>
+                        <ReferenceLine y={nNegLimit} stroke={SC.red} strokeDasharray="5 3" label={{value:`n-lim ${nNegLimit}`,fill:SC.red,fontSize:9,position:"right"}}/>
+                        <ReferenceLine x={Vstall} stroke={SC.amber} strokeDasharray="4 2" label={{value:"VS",fill:SC.amber,fontSize:9,position:"top"}}/>
+                        <ReferenceLine x={VA} stroke="#a78bfa" strokeDasharray="4 2" label={{value:"VA",fill:"#a78bfa",fontSize:9,position:"top"}}/>
+                        <ReferenceLine x={VC} stroke={SC.teal} strokeDasharray="4 2" label={{value:"VC",fill:SC.teal,fontSize:9,position:"top"}}/>
+                        <ReferenceLine x={VD} stroke={SC.red} strokeDasharray="4 2" label={{value:"VD",fill:SC.red,fontSize:9,position:"top"}}/>
+                        <Line type="monotone" dataKey="nPos" stroke="#60a5fa" strokeWidth={2.5} dot={false} name="n+ (manoeuvre)"/>
+                        <Line type="monotone" dataKey="nNeg" stroke="#f87171" strokeWidth={2} dot={false} name="n- (manoeuvre)"/>
+                        {/* Gust lines */}
+                        <ReferenceLine y={ngust_c} stroke={SC.amber} strokeDasharray="3 3" label={{value:`Gust VC: ${ngust_c.toFixed(2)}`,fill:SC.amber,fontSize:8,position:"insideTopRight"}}/>
+                        <ReferenceLine y={ngust_d} stroke={SC.red} strokeDasharray="3 3" label={{value:`Gust VD: ${ngust_d.toFixed(2)}`,fill:SC.red,fontSize:8,position:"insideTopRight"}}/>
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  </div>
+                  {/* Key values */}
+                  <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                    <div style={{background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:8,padding:"12px 14px"}}>
+                      <div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace",textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:10}}>Envelope Speeds</div>
+                      {[["Stall Speed VS",`${SR.Vstall.toFixed(1)} m/s (${(SR.Vstall*1.944).toFixed(0)} kt)`,SC.amber],
+                        ["Manoeuvre Speed VA",`${SR.VA.toFixed(1)} m/s (${(SR.VA*1.944).toFixed(0)} kt)`,SC.green],
+                        ["Cruise Speed VC",`${VC.toFixed(1)} m/s (${(VC*1.944).toFixed(0)} kt)`,SC.teal],
+                        ["Dive Speed VD",`${SR.VD.toFixed(1)} m/s (${(SR.VD*1.944).toFixed(0)} kt)`,SC.red],
+                        ["Max Load Factor n+",`${nPosLimit} g (ult. ${nUltPos})`,SC.green],
+                        ["Min Load Factor n−",`${nNegLimit} g (ult. ${nUltNeg})`,SC.red],
+                        ["Gust n (cruise)",`${ngust_c.toFixed(3)} g`,gustCheck?SC.green:SC.red],
+                        ["Gust n (dive)",`${ngust_d.toFixed(3)} g`,SC.amber],
+                        ["Gust alleviation Kg",`${Kg.toFixed(3)}`,SC.muted],
+                      ].map(([k,v,col])=>(
+                        <div key={k} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:`1px solid ${SC.border}22`}}>
+                          <span style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace"}}>{k}</span>
+                          <span style={{fontSize:10,color:col,fontFamily:"'DM Mono',monospace",fontWeight:700}}>{v}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div style={{background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:8,padding:"12px 14px"}}>
+                      <div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace",textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:10}}>Structural Checks (CS-VTOL)</div>
+                      {[
+                        ["n+ limit ≥ 2.5 g",nLimitCheck,"PASS","FAIL"],
+                        ["Gust n ≤ n+limit",gustCheck,"PASS","FAIL"],
+                        ["VD ≥ 1.25 VC",SR.VD>=VC*1.25,"PASS","FAIL"],
+                        ["VA = VS×√n+",Math.abs(SR.VA-SR.Vstall*Math.sqrt(nPosLimit))<0.5,"PASS","FAIL"],
+                      ].map(([label,ok,p,f])=>(
+                        <div key={label} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 0",borderBottom:`1px solid ${SC.border}22`}}>
+                          <span style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace"}}>{label}</span>
+                          <span style={{fontSize:10,fontWeight:800,fontFamily:"'DM Mono',monospace",color:ok?SC.green:SC.red}}>{ok?`✅ ${p}`:`❌ ${f}`}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+                {/* OEI Analysis */}
+                <div style={{background:SC.panel,border:`2px solid ${OEI_margin_pct>0?SC.green:SC.red}`,borderRadius:8,padding:"14px 16px"}}>
+                  <div style={{fontSize:11,fontWeight:700,color:OEI_margin_pct>0?SC.green:SC.red,fontFamily:"'DM Mono',monospace",marginBottom:10}}>
+                    {OEI_margin_pct>0?"✅":"❌"} One-Engine-Inoperative (OEI) — CS-VTOL AMC 27.65
+                  </div>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:12}}>
+                    {[["Rotors",N,""],["OEI Thrust Margin",`${OEI_margin_pct.toFixed(1)}%`,OEI_margin_pct>0?SC.green:SC.red],["Power per Motor (OEI)",`${(P_per_motor_OEI/1000).toFixed(1)} kW`,motorSurvivable?SC.green:SC.red],["Motor Overload",`+${P_overhead_pct.toFixed(1)}%`,P_overhead_pct<50?SC.green:SC.red],
+                    ].map(([k,v,col])=>(
+                      <div key={k} style={{background:SC.bg,borderRadius:6,padding:"10px 12px",border:`1px solid ${SC.border}`}}>
+                        <div style={{fontSize:8,color:SC.muted,fontFamily:"'DM Mono',monospace",marginBottom:4}}>{k}</div>
+                        <div style={{fontSize:14,fontWeight:800,color:col||SC.text,fontFamily:"'DM Mono',monospace"}}>{v}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+                    <div>
+                      <div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace",marginBottom:6}}>Thrust Analysis</div>
+                      {[["Total hover thrust req.",`${(T_required/1000).toFixed(2)} kN`],["OEI thrust available",`${(T_remaining/1000).toFixed(2)} kN`],["Thrust margin",`${OEI_margin_pct.toFixed(2)}%`],["Each motor thrust",`${(T_per_motor/1000).toFixed(2)} kN`],
+                      ].map(([k,v])=>(
+                        <div key={k} style={{display:"flex",justifyContent:"space-between",padding:"3px 0",borderBottom:`1px solid ${SC.border}22`,fontSize:9,fontFamily:"'DM Mono',monospace"}}>
+                          <span style={{color:SC.muted}}>{k}</span><span style={{color:SC.text,fontWeight:700}}>{v}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div>
+                      <div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace",marginBottom:6}}>Power & Control</div>
+                      {[["Nominal motor power",`${(P_per_motor/1000).toFixed(1)} kW`],["OEI motor power",`${(P_per_motor_OEI/1000).toFixed(1)} kW`],["Peak motor rating",`${SR.PpeakKW.toFixed(1)} kW`],["Motor survivable",motorSurvivable?"YES ✅":"NO ❌"],["Yaw controllable",yawControllable?"YES ✅":"NO ❌"],["OEI yaw moment",`${(Myaw_OEI/1000).toFixed(2)} kN·m`],
+                      ].map(([k,v])=>(
+                        <div key={k} style={{display:"flex",justifyContent:"space-between",padding:"3px 0",borderBottom:`1px solid ${SC.border}22`,fontSize:9,fontFamily:"'DM Mono',monospace"}}>
+                          <span style={{color:SC.muted}}>{k}</span><span style={{color:SC.text,fontWeight:700}}>{v}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div style={{marginTop:10,padding:"8px 12px",background:OEI_margin_pct>0?`${SC.green}11`:`${SC.red}11`,borderRadius:6,fontSize:10,color:OEI_margin_pct>0?SC.green:SC.red,fontFamily:"'DM Mono',monospace",lineHeight:1.7}}>
+                    {OEI_margin_pct>0
+                      ?`✅ OEI SURVIVABLE: With ${N-1} of ${N} motors operating, thrust margin is +${OEI_margin_pct.toFixed(1)}%. Each remaining motor needs ${(P_per_motor_OEI/1000).toFixed(1)} kW (${P_overhead_pct.toFixed(0)}% overload vs nominal, ${motorSurvivable?"within":"EXCEEDS"} ${SR.PpeakKW.toFixed(0)} kW peak rating).`
+                      :`❌ OEI NOT SURVIVABLE: With 1 motor failed, remaining thrust (${(T_remaining/1000).toFixed(1)} kN) < weight (${(T_required/1000).toFixed(1)} kN). Increase rotor count or T/W ratio. Consider adding a ${Math.ceil(N*1.15)}-rotor configuration.`
+                    }
+                  </div>
+                </div>
+              </div>
+              );
+            })()}
+
+            {/* ──── TAB 19: DESIGN SPACE EXPLORER (Pareto Front) ──── */}
+            {tab===19&&SR&&(()=>{
+              return(
+              <div style={{display:"flex",flexDirection:"column",gap:12}}>
+                <div style={{background:`linear-gradient(135deg,${SC.bg},#1a0a2e)`,border:`1px solid #8b5cf644`,borderRadius:10,padding:"16px 20px"}}>
+                  <div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace",letterSpacing:"0.18em",marginBottom:4}}>LATIN HYPERCUBE SAMPLING — PARETO ANALYSIS</div>
+                  <div style={{fontSize:18,fontWeight:800,color:SC.text,marginBottom:6}}>
+                    <span style={{color:"#a78bfa"}}>Design Space</span> Explorer
+                  </div>
+                  <div style={{fontSize:11,color:SC.muted,lineHeight:1.7,maxWidth:760}}>
+                    Simultaneously sweeps Range × Payload × MTOW design space using Latin Hypercube Sampling across 8 key design variables. Each point is a full sizing solution. Feasible (green) vs infeasible (red) boundary shows the true design frontier — what Joby and Archer compute with proprietary tools.
+                  </div>
+                </div>
+                <DesignSpacePanel params={params} SC={SC} TTP={TTP} runSizingFn={runSizing}/>
+              </div>
+              );
+            })()}
 
             {/* ──── TAB 17: REAL-TIME COLLABORATION ────
                 OUTSIDE SR&&<> so it NEVER unmounts on tab switch.
