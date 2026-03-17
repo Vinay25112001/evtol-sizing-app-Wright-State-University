@@ -605,14 +605,17 @@ export function CollabPanel({ user, params, onParamChange, C }) {
   const cleanups = useRef({});
   const lastPushAt = useRef(0);
   const lastSeenUpdatedAt = useRef(""); // track last state_json update we applied
+  const isApplyingRemote = useRef(false); // true while applying remote params — skip push
 
   const addLog = useCallback(msg =>
     setLog(p => [{ msg, t: new Date().toLocaleTimeString(), id: Math.random() }, ...p].slice(0, 30))
   , []);
 
-  // ── PARAM PUSH — any editor (host or guest) pushes on every change ──
+  // ── PARAM PUSH — any editor pushes on every local change ──
+  // Skip when params changed due to a remote update (isApplyingRemote flag)
   useEffect(() => {
     if (!inSession || role !== "editor") return;
+    if (isApplyingRemote.current) return; // don't echo back remote changes
     const now = Date.now();
     if (now - lastPushAt.current < 1200) return; // throttle 1.2s
     lastPushAt.current = now;
@@ -633,7 +636,11 @@ export function CollabPanel({ user, params, onParamChange, C }) {
         lastSeenUpdatedAt.current = row.updated_at;
         try {
           const st = JSON.parse(row.state_json || "{}");
+          // Set flag so push useEffect knows not to echo these back
+          isApplyingRemote.current = true;
           Object.entries(st).forEach(([k, v]) => onParamChange(k)(v));
+          // Clear flag after React has processed the state updates (next tick)
+          setTimeout(() => { isApplyingRemote.current = false; }, 100);
           addLog("🔄 " + (row.updated_by ? "Collaborator" : "Session") + " updated params");
         } catch {}
       }
@@ -642,13 +649,20 @@ export function CollabPanel({ user, params, onParamChange, C }) {
 
   const startMemberSync = useCallback((sessionId) => {
     cleanups.current.members?.();
-    cleanups.current.members = syncRow(
-      `evtol_collab_sessions?session_id=eq.${sessionId}`,
-      4000,
-      () => getMembers(sessionId).then(setMembers)
-    );
-    // Immediate fetch
-    getMembers(sessionId).then(setMembers);
+    // Poll evtol_collab_members every 2s using a plain interval.
+    // syncRow watches a single row by updated_at — but members table has
+    // multiple rows (one per member). A plain interval is simpler and reliable.
+    const tick = async () => {
+      const mems = await getMembers(sessionId);
+      if (!mems.length) return;
+      setMembers(mems);
+      // KEY: update this guest's own role when host promotes/demotes them
+      const me = mems.find(m => m.user_id === myId.current);
+      if (me) setRole(me.role);
+    };
+    tick(); // immediate fetch
+    const timer = setInterval(tick, 2000);
+    cleanups.current.members = () => clearInterval(timer);
   }, []);
 
   const stopAll = useCallback(() => {
@@ -732,8 +746,10 @@ export function CollabPanel({ user, params, onParamChange, C }) {
           const sess = await getCollabSession(joinId.trim());
           if (sess?.state_json) {
             try {
+              isApplyingRemote.current = true;
               Object.entries(JSON.parse(sess.state_json)).forEach(([k,v]) => onParamChange(k)(v));
               lastSeenUpdatedAt.current = sess.updated_at || "";
+              setTimeout(() => { isApplyingRemote.current = false; }, 100);
             } catch {}
           }
           addLog("✅ Approved! You joined the session.");
