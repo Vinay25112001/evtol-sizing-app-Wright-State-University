@@ -580,7 +580,7 @@ export function LeaderboardPanel({ C, onLoadDesign }) {
 /* ══════════════════════════════════════════════════════
    COLLABORATION PANEL v6
    ══════════════════════════════════════════════════════ */
-export function CollabPanel({ user, params, onParamChange, C }) {
+export function CollabPanel({ user, params, onParamChange, C, onPendingChange }) {
   const [sid,      setSid]      = useState("");
   const [joinId,   setJoinId]   = useState("");
   const [inSession,setIn]       = useState(false);
@@ -695,19 +695,21 @@ export function CollabPanel({ user, params, onParamChange, C }) {
       addLog("🏠 Session started. Share the session ID with collaborators.");
 
       // Poll for pending join requests (new rows — created_at filter is correct here)
-      cleanups.current.reqPoll = pollNew(
-        "evtol_collab_requests", `session_id=eq.${newSid}&status=eq.pending`,
-        req => setPending(p => p.find(r => r.id === req.id) ? p : [...p, req]),
-        2000
-      );
-      // Backup direct fetch every 3s
+      // Single robust polling approach: direct fetch every 2s, no created_at filter.
+      // This catches ALL pending requests regardless of when they were created.
       const reqTimer = setInterval(async () => {
         const rows = await dbGet(`evtol_collab_requests?session_id=eq.${newSid}&status=eq.pending`);
-        if (rows.length) setPending(p => {
-          const newOnes = rows.filter(r => !p.find(x => x.id === r.id));
-          return newOnes.length ? [...p, ...newOnes] : p;
+        setPending(prev => {
+          // Add any new requests not already in the list
+          const merged = [...prev];
+          rows.forEach(r => { if (!merged.find(x => x.id === r.id)) merged.push(r); });
+          // Remove any that are no longer pending (host approved/denied in another window)
+          const filtered = merged.filter(r => rows.find(x => x.id === r.id));
+          // Notify parent of count change
+          if (filtered.length !== prev.length) onPendingChange?.(filtered.length);
+          return filtered.length !== prev.length ? filtered : prev;
         });
-      }, 3000);
+      }, 2000);
       cleanups.current.reqTimer = () => clearInterval(reqTimer);
 
       startStateSync(newSid);
@@ -784,7 +786,11 @@ export function CollabPanel({ user, params, onParamChange, C }) {
       } else {
         addLog(`❌ Denied ${req.display_name}`);
       }
-      setPending(p => p.filter(r => r.id !== req.id));
+      setPending(p => {
+        const newP = p.filter(r => r.id !== req.id);
+        onPendingChange?.(newP.length);
+        return newP;
+      });
     } catch(e) { setErr(e.message); }
   };
 

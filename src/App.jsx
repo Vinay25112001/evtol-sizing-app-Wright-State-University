@@ -1428,6 +1428,7 @@ export default function App(){
     vtAR:2.5,
   });
   const[tab,setTab]=useState(0);
+  const[collabNotif,setCollabNotif]=useState(0); // pending join request count
   const[user,setUser]=useState(()=>getSession());
   const[showAuthModal,setShowAuthModal]=useState(false);
   const[darkMode,setDarkMode]=useState(true);
@@ -2114,8 +2115,17 @@ export default function App(){
                 style={{padding:"8px 14px",background:"transparent",border:"none",cursor:"pointer",
                   borderBottom:i===tab?`2px solid ${SC.amber}`:"2px solid transparent",
                   color:i===tab?SC.text:SC.muted,fontSize:10,fontFamily:"'DM Mono',monospace",
-                  letterSpacing:"0.05em",whiteSpace:"nowrap",transition:"color 0.15s"}}>
+                  letterSpacing:"0.05em",whiteSpace:"nowrap",transition:"color 0.15s",
+                  position:"relative"}}>
                 {TABI[i]} {tabLabel}
+                {i===17&&collabNotif>0&&(
+                  <span style={{position:"absolute",top:4,right:2,background:"#ef4444",color:"#fff",
+                    borderRadius:"50%",width:16,height:16,fontSize:9,fontWeight:800,
+                    display:"flex",alignItems:"center",justifyContent:"center",
+                    fontFamily:"'DM Mono',monospace",lineHeight:1}}>
+                    {collabNotif}
+                  </span>
+                )}
               </button>
             ))}
           </div>
@@ -5621,7 +5631,7 @@ export default function App(){
                 OUTSIDE SR&&<> so it NEVER unmounts on tab switch.
                 CSS display:none keeps it alive while hidden. ── */}
             <div style={{display:tab===17?'block':'none',minHeight:tab===17?0:0}}>
-              <CollabPanel user={user} params={params} onParamChange={set} C={SC}/>
+              <CollabPanel user={user} params={params} onParamChange={set} C={SC} onPendingChange={setCollabNotif}/>
             </div>
           </div>
         </div>
