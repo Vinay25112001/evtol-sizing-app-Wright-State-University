@@ -1805,7 +1805,7 @@ Respond in plain text, clearly structured. Be specific about rule IDs and numeri
           "Authorization": `Bearer ${import.meta.env.VITE_GROQ_KEY}`,
         },
         body: JSON.stringify({
-          model: "llama3-groq-70b-8192-tool-use-preview",
+          model: "llama-3.1-8b-instant",
           max_tokens: 600,
           messages: [{ role: "user", content: prompt }]
         })
@@ -1942,37 +1942,41 @@ function AIAssistantPanel({ params, SR, SC, onParamChange }) {
         .map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content }));
       history.push({ role: 'user', content: userMsg });
 
-      const systemPrompt = `eVTOL sizing expert. Use run_sizing iteratively to find a FEASIBLE design.
+      const systemPrompt = `You are an eVTOL aircraft sizing engineer. Use the run_sizing tool to find a feasible design for the user.
 
-State: range=${params.range}km payload=${params.payload}kg vCruise=${params.vCruise}m/s LD=${params.LD} AR=${params.AR} sed=${params.sedCell}Wh/kg nProp=${params.nPropHover} diam=${params.propDiam}m TW=${params.twRatio} ewf=${params.ewf} etaH=${params.etaHov} etaS=${params.etaSys}
-${SR ? `Current: MTOW=${SR.MTOW}kg Etot=${SR.Etot}kWh LDact=${SR.LDact} SM=${(SR.SM_vt*100).toFixed(1)}% Feasible=${SR.feasible}` : ''}
+Current params: range=${params.range}km, payload=${params.payload}kg, vCruise=${params.vCruise}m/s, LD=${params.LD}, AR=${params.AR}, sedCell=${params.sedCell}Wh/kg, nPropHover=${params.nPropHover}, propDiam=${params.propDiam}m, twRatio=${params.twRatio}, ewf=${params.ewf}, etaHov=${params.etaHov}, etaSys=${params.etaSys}
+${SR ? "Current result: MTOW=" + SR.MTOW + "kg, Etot=" + SR.Etot + "kWh, LDact=" + SR.LDact + ", feasible=" + SR.feasible : ""}
 
-RULES: Only present design when feasible=true AND checks_failed is empty.
-Fix failures: BatFrac>55%→raise sedCell or cut range. MTOW>5700→cut range/payload. SM bad→adjust AR. TipMach>0.7→cut propDiam. LD<10→raise AR.
-Bounds: range:20-500 payload:50-800 vCruise:30-120 LD:8-22 AR:5-16 sed:150-400 nProp:4-12(even) diam:1-4 TW:1.0-1.5 ewf:0.30-0.65 etaH:0.60-0.85 etaS:0.70-0.92
-Good start: range=80 payload=320 vCruise=67 LD=14 AR=9 sed=250 nProp=6 diam=2.5 TW=1.2 ewf=0.45 etaH=0.72 etaS=0.82
-Be concise. State iteration#, changes made, and action_needed from result.`;
+Instructions:
+1. Call run_sizing with your initial parameters.
+2. Check the result. If feasible is false or checks_failed is not empty, adjust parameters and call again.
+3. Common fixes: if battery fraction over 55% then increase sedCell or reduce range. If MTOW over 5700 then reduce range or payload. If static margin bad then adjust AR. If tip Mach over 0.7 then reduce propDiam.
+4. Keep iterating until feasible is true and checks_failed is empty.
+5. Only then present the final design to the user.
+
+Parameter limits: range 20-500, payload 50-800, vCruise 30-120, LD 8-22, AR 5-16, sedCell 150-400, nPropHover 4 to 12 even numbers, propDiam 1-4, twRatio 1.0-1.5, ewf 0.30-0.65, etaHov 0.60-0.85, etaSys 0.70-0.92.
+Good starting values: range=80, payload=320, vCruise=67, LD=14, AR=9, sedCell=250, nPropHover=6, propDiam=2.5, twRatio=1.2, ewf=0.45, etaHov=0.72, etaSys=0.82.`;
 
       const toolDef = {
         name: "run_sizing",
-        description: "Runs the eVTOL physics sizing engine and returns all design metrics. Call this to evaluate a specific parameter combination.",
+        description: "Runs the eVTOL sizing physics engine. Returns MTOW, energy, feasibility, and all design checks. Use this to evaluate and iterate on designs.",
         input_schema: {
           type: "object",
           properties: {
-            range:       { type: "number", description: "Mission range (km)" },
-            payload:     { type: "number", description: "Payload mass (kg)" },
-            vCruise:     { type: "number", description: "Cruise speed (m/s)" },
-            LD:          { type: "number", description: "Aerodynamic L/D ratio" },
-            AR:          { type: "number", description: "Wing aspect ratio" },
-            sedCell:     { type: "number", description: "Battery cell specific energy density (Wh/kg)" },
-            nPropHover:  { type: "number", description: "Number of hover rotors" },
-            propDiam:    { type: "number", description: "Rotor diameter (m)" },
-            twRatio:     { type: "number", description: "Hover thrust-to-weight ratio" },
-            ewf:         { type: "number", description: "Empty weight fraction" },
-            etaHov:      { type: "number", description: "Hover propulsive efficiency" },
-            etaSys:      { type: "number", description: "System efficiency" },
+            range:      { type: "number", description: "Range in km (20-500)" },
+            payload:    { type: "number", description: "Payload in kg (50-800)" },
+            vCruise:    { type: "number", description: "Cruise speed in m/s (30-120)" },
+            LD:         { type: "number", description: "Lift to drag ratio (8-22)" },
+            AR:         { type: "number", description: "Wing aspect ratio (5-16)" },
+            sedCell:    { type: "number", description: "Battery energy density Wh/kg (150-400)" },
+            nPropHover: { type: "number", description: "Number of rotors, must be even (4-12)" },
+            propDiam:   { type: "number", description: "Rotor diameter in meters (1-4)" },
+            twRatio:    { type: "number", description: "Thrust to weight ratio (1.0-1.5)" },
+            ewf:        { type: "number", description: "Empty weight fraction (0.30-0.65)" },
+            etaHov:     { type: "number", description: "Hover efficiency (0.60-0.85)" },
+            etaSys:     { type: "number", description: "System efficiency (0.70-0.92)" }
           },
-          required: []
+          required: ["range", "payload", "nPropHover"]
         }
       };
 
@@ -2032,7 +2036,7 @@ Be concise. State iteration#, changes made, and action_needed from result.`;
 
         if (toolCalls.length === 0 || data.choices?.[0]?.finish_reason === 'stop') break;
         // Small delay between iterations to avoid Groq TPM rate limit
-        if (iters < 7) await new Promise(r => setTimeout(r, 1500));
+        if (iters < 7) await new Promise(r => setTimeout(r, 2000));
 
         // Process each tool call
         const toolResults = [];
