@@ -5831,7 +5831,7 @@ export default function App(){
               // Gust load factors per CS-23 Amd 5 / FAR Part 23
               const Kg=0.88*params.AR/(5.3+params.AR); // alleviation factor
               const CLa=2*Math.PI*(1+0.77*params.tc);   // lift curve slope
-              const mu=2*(WL)/(rhoMSL*VC*CLa*params.MAC||SR.MAC);
+              const mu=2*(WL)/(rhoMSL*VC*CLa*SR.MAC);
               const Ug_cruise=15.2,Ug_dive=7.6; // gust velocities m/s (CS-23)
               const ngust_c=1+(Kg*rhoMSL*Ug_cruise*VC*CLa)/(2*WL);
               const ngust_d=1+(Kg*rhoMSL*Ug_dive*VD*CLa)/(2*WL);
