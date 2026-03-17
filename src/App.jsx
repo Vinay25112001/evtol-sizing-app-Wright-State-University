@@ -1802,7 +1802,7 @@ Respond in plain text, clearly structured. Be specific about rule IDs and numeri
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": "Bearer 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",
+          "Authorization": `Bearer ${import.meta.env.VITE_GROQ_KEY}`,
         },
         body: JSON.stringify({
           model: "llama-3.3-70b-versatile",
@@ -1988,7 +1988,7 @@ When the user describes requirements, use run_sizing to find an optimised soluti
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "Authorization": "Bearer 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",
+            "Authorization": `Bearer ${import.meta.env.VITE_GROQ_KEY}`,
           },
           body: JSON.stringify({
             model: "llama-3.3-70b-versatile",
