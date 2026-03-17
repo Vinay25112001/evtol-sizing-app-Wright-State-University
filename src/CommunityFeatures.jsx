@@ -659,7 +659,7 @@ export function CollabPanel({ user, params, onParamChange, C }) {
   // Wrapper so roleRef always mirrors role state
   const updateRole = useCallback((newRole) => {
     roleRef.current = newRole;
-    updateRole(newRole);
+    setRole(newRole);
   }, []);
 
   // ── PARAM PUSH — any editor (host or guest) pushes on every local change ──
