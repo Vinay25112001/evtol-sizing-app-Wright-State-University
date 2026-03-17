@@ -337,36 +337,38 @@ function useVoice(sessionId, myId) {
 
       const myName = members.find(m => m.user_id === myIdRef.current)?.display_name || myIdRef.current;
 
-      // Poll via the REF so it always calls the latest handleSignal — no stale closure
+      // Use setInterval+dbGet instead of pollNew — dbGet has no created_at filter
+      // so it catches ALL signals including ones sent before we started.
+      // Track which signal IDs we've already processed to avoid duplicates.
       stopSig.current?.();
-      stopSig.current = pollNew(
-        "evtol_webrtc_signals",
-        `session_id=eq.${sessionRef.current}`,
-        (row) => handleSignalRef.current(row),
-        600
+      const processedIds = new Set();
+      // Seed with signals older than 60s so we don't replay ancient history
+      const seedCutoff = new Date(Date.now() - 60000).toISOString();
+      const seedRows = await dbGet(
+        `evtol_webrtc_signals?session_id=eq.${sessionRef.current}&created_at=lt.${encodeURIComponent(seedCutoff)}&select=id`
       );
+      seedRows.forEach(r => processedIds.add(r.id));
 
-      // Wait for poll to be running before sending hello
-      await new Promise(r => setTimeout(r, 400));
+      const sigTimer = setInterval(async () => {
+        const rows = await dbGet(
+          `evtol_webrtc_signals?session_id=eq.${sessionRef.current}&order=created_at.asc&limit=100`
+        );
+        for (const row of rows) {
+          if (processedIds.has(row.id)) continue;
+          processedIds.add(row.id);
+          handleSignalRef.current(row).catch(() => {});
+        }
+      }, 600);
+      stopSig.current = () => clearInterval(sigTimer);
 
-      // Fetch signals from last 60s — catches hellos sent BEFORE our poll started.
-      // This is the key fix for "second person enables mic but first person's hello is missed".
-      const cutoff = new Date(Date.now() - 60000).toISOString();
-      const recentSigs = await dbGet(
-        `evtol_webrtc_signals?session_id=eq.${sessionRef.current}&created_at=gt.${encodeURIComponent(cutoff)}&order=created_at.asc`
-      );
-      for (const row of recentSigs) {
-        await handleSignalRef.current(row).catch(()=>{});
-      }
-
-      // Announce presence — the hello handler will trigger sendOffer if needed
+      // Small pause then announce — interval is already running so response will be caught
+      await new Promise(r => setTimeout(r, 300));
       await sendSignal(sessionRef.current, myIdRef.current, "all", "hello", { name: myName }).catch(()=>{});
 
-      // Also proactively send offers to existing members (who may have mic already on)
-      // sendOffer is idempotent — safe to call even if hello triggers it too
+      // Proactively send offers to members who already have mic on
       for (const m of members.filter(m => m.user_id !== myIdRef.current)) {
         await sendOffer(m.user_id, m.display_name);
-        await new Promise(r => setTimeout(r, 50)); // small stagger prevents burst
+        await new Promise(r => setTimeout(r, 50));
       }
 
     } catch(e) {
@@ -649,29 +651,19 @@ export function CollabPanel({ user, params, onParamChange, C }) {
   const cleanups = useRef({});
   const lastPushAt = useRef(0);
   const lastSeenUpdatedAt = useRef(""); // track last state_json update we applied
-  const roleRef = useRef("viewer");          // mirror of role state — always live in effects
-  const isApplyingRemote = useRef(false);    // true while applying remote params — prevents echo push
 
   const addLog = useCallback(msg =>
     setLog(p => [{ msg, t: new Date().toLocaleTimeString(), id: Math.random() }, ...p].slice(0, 30))
   , []);
 
-  // Wrapper so roleRef always mirrors role state
-  const updateRole = useCallback((newRole) => {
-    roleRef.current = newRole;
-    setRole(newRole);
-  }, []);
-
-  // ── PARAM PUSH — any editor (host or guest) pushes on every local change ──
+  // ── PARAM PUSH — any editor (host or guest) pushes on every change ──
   useEffect(() => {
-    if (!inSession) return;
-    if (roleRef.current !== "editor") return;  // use ref — always live value
-    if (isApplyingRemote.current) return;       // skip — this change came from remote
+    if (!inSession || role !== "editor") return;
     const now = Date.now();
-    if (now - lastPushAt.current < 1200) return;
+    if (now - lastPushAt.current < 1200) return; // throttle 1.2s
     lastPushAt.current = now;
     pushCollabState(sidRef.current, params, myId.current);
-  }, [params, inSession]);  // role removed — we read roleRef.current directly
+  }, [params, inSession, role]);
 
   // ── STATE SYNC — poll session row every 1.5s, apply when updated_at changed ──
   // Uses syncRow() which checks updated_at, not created_at
@@ -687,10 +679,7 @@ export function CollabPanel({ user, params, onParamChange, C }) {
         lastSeenUpdatedAt.current = row.updated_at;
         try {
           const st = JSON.parse(row.state_json || "{}");
-          isApplyingRemote.current = true;
           Object.entries(st).forEach(([k, v]) => onParamChange(k)(v));
-          // Clear after React processes state updates (next microtask)
-          setTimeout(() => { isApplyingRemote.current = false; }, 150);
           addLog("🔄 " + (row.updated_by ? "Collaborator" : "Session") + " updated params");
         } catch {}
       }
@@ -699,25 +688,14 @@ export function CollabPanel({ user, params, onParamChange, C }) {
 
   const startMemberSync = useCallback((sessionId) => {
     cleanups.current.members?.();
-    // Poll members table directly every 2s.
-    // syncRow watches a single row — members table has one row per member,
-    // so we use setInterval + direct fetch instead.
-    const fetchMembers = async () => {
-      const mems = await getMembers(sessionId);
-      if (!mems.length) return;
-      setMembers(mems);
-      // Update this user's own role if host changed it
-      const me = mems.find(m => m.user_id === myId.current);
-      if (me && me.role !== roleRef.current) {
-        updateRole(me.role);
-        if (me.role === "editor") addLog("✏️ You were promoted to Editor — your edits now sync to all.");
-        if (me.role === "viewer") addLog("👁 You were set to Viewer — edits disabled.");
-      }
-    };
-    fetchMembers(); // immediate
-    const timer = setInterval(fetchMembers, 2000);
-    cleanups.current.members = () => clearInterval(timer);
-  }, [updateRole, addLog]);
+    cleanups.current.members = syncRow(
+      `evtol_collab_sessions?session_id=eq.${sessionId}`,
+      4000,
+      () => getMembers(sessionId).then(setMembers)
+    );
+    // Immediate fetch
+    getMembers(sessionId).then(setMembers);
+  }, []);
 
   const stopAll = useCallback(() => {
     Object.values(cleanups.current).forEach(fn => { try { fn?.(); } catch {} });
@@ -728,7 +706,7 @@ export function CollabPanel({ user, params, onParamChange, C }) {
     stopAll(); voice.stopMic();
     setIn(false); setHost(false); setSid(""); sidRef.current = "";
     setJoinId(""); setMembers([]); setPending([]); setLog([]);
-    setWaiting(false); updateRole("viewer");
+    setWaiting(false); setRole("viewer");
     lastSeenUpdatedAt.current = "";
   }, [stopAll, voice]);
 
@@ -739,7 +717,7 @@ export function CollabPanel({ user, params, onParamChange, C }) {
     try {
       const newSid = await createCollabSession(myId.current, myName, params);
       setSid(newSid); sidRef.current = newSid;
-      setIn(true); setHost(true); updateRole("editor");
+      setIn(true); setHost(true); setRole("editor");
       addLog("🏠 Session started. Share the session ID with collaborators.");
 
       // Poll for pending join requests (new rows — created_at filter is correct here)
@@ -793,7 +771,7 @@ export function CollabPanel({ user, params, onParamChange, C }) {
           // Load role and members
           const mems = await getMembers(joinId.trim());
           const me = mems.find(m => m.user_id === myId.current);
-          updateRole(me?.role || "viewer");
+          setRole(me?.role || "viewer");
           setMembers(mems);
 
           // Load current params
