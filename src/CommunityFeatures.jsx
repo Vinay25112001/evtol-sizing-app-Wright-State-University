@@ -308,10 +308,14 @@ export async function getCollabSession(sid) {
   catch { return null; }
 }
 
-export async function pushCollabState(sid, params) {
-  try { await db(`evtol_collab_sessions?session_id=eq.${sid}`, "PATCH",
-    { state_json: JSON.stringify(params), updated_at: new Date().toISOString() }); }
-  catch {}
+export async function pushCollabState(sid, params, editorId = null) {
+  try {
+    await db(`evtol_collab_sessions?session_id=eq.${sid}`, "PATCH", {
+      state_json: JSON.stringify(params),
+      updated_by: editorId || "unknown",
+      updated_at: new Date().toISOString(),
+    });
+  } catch {}
 }
 
 async function reqJoin(sid, uid, name) {
@@ -475,14 +479,14 @@ export function CollabPanel({ user, params, onParamChange, C }) {
     setLog(p => [{ msg, t: new Date().toLocaleTimeString(), id: Math.random() }, ...p].slice(0,30))
   , []);
 
-  /* Sync params as host-editor */
+  /* Sync params — ANY editor (host OR guest) pushes to session */
   useEffect(() => {
-    if (!inSession || !isHost || role !== "editor") return;
+    if (!inSession || role !== "editor") return;   // removed !isHost gate
     const now = Date.now();
     if (now - lastPush.current < 1500) return;
     lastPush.current = now;
-    pushCollabState(sid, params);
-  }, [params, inSession, isHost, sid, role]);
+    pushCollabState(sid, params, myId.current);
+  }, [params, inSession, role, sid]);
 
   const stopAll = () => { Object.values(polls.current).forEach(f=>f?.()); polls.current = {}; };
 
@@ -505,6 +509,20 @@ export function CollabPanel({ user, params, onParamChange, C }) {
         req => setPending(p => p.find(r=>r.id===req.id) ? p : [...p, req]), 2000);
       polls.current.mem = poll("evtol_collab_members", `session_id=eq.${newSid}`,
         () => getMembers(newSid).then(setMembers), 4000);
+      // Host also polls state — so guest editor changes flow back to host
+      polls.current.state = poll("evtol_collab_sessions", `session_id=eq.${newSid}`,
+        row => {
+          try {
+            const st = JSON.parse(row.state_json || "{}");
+            // Apply if update came from someone else (not our own push)
+            // updated_by is set by pushCollabState — undefined means legacy row, skip
+            const fromGuest = row.updated_by && row.updated_by !== myId.current;
+            if (fromGuest) {
+              Object.entries(st).forEach(([k,v]) => onParamChange(k)(v));
+              addLog("🔄 Guest editor updated params");
+            }
+          } catch {}
+        }, 1500);
     } catch(e) { setErr("Failed: "+e.message); }
     setBusy(false);
   };
@@ -535,7 +553,15 @@ export function CollabPanel({ user, params, onParamChange, C }) {
             }
             addLog("✅ Approved! You are in the session.");
             polls.current.state = poll("evtol_collab_sessions", `session_id=eq.${joinId.trim()}`,
-              row => { try { Object.entries(JSON.parse(row.state_json||"{}")).forEach(([k,v])=>onParamChange(k)(v)); addLog("🔄 Params updated"); } catch {} }, 2000);
+              row => {
+                try {
+                  // Skip updates we pushed ourselves to avoid echo loop
+                  if (row.updated_by === myId.current) return;
+                  const st = JSON.parse(row.state_json || "{}");
+                  Object.entries(st).forEach(([k,v]) => onParamChange(k)(v));
+                  addLog("🔄 " + (row.updated_by ? "Host" : "Session") + " updated params");
+                } catch {}
+              }, 1500);
             polls.current.mem = poll("evtol_collab_members", `session_id=eq.${joinId.trim()}`,
               () => getMembers(joinId.trim()).then(setMembers), 4000);
           } else if (req.status === "denied") {
