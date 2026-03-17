@@ -89,20 +89,19 @@ function pollNew(table, filter, cb, ms = 1500) {
 }
 
 /* ══════════════════════════════════════════════════════
-   WEBRTC VOICE — v6
-   Key fixes:
-   1. TURN server for symmetric NAT
-   2. Deterministic initiator (lower userId creates offer)
-   3. ontrack uses evt.track fallback
-   4. Explicit createOffer with offerToReceiveAudio:true
-   5. Signal polling uses pollNew (new rows only, correct)
+   WEBRTC VOICE — v7
+   Fixes for intermittent audio:
+   1. All callbacks use refs — no stale closure ever
+   2. offerSent ref prevents duplicate offer sending
+   3. Single offer-sending path (hello handler only)
+   4. Auto-reconnect on ICE failure
+   5. handleSignal stored in ref, poll always uses latest
    ══════════════════════════════════════════════════════ */
 
 const ICE_CONFIG = {
   iceServers: [
     { urls: "stun:stun.l.google.com:19302" },
     { urls: "stun:stun1.l.google.com:19302" },
-    // Free TURN server — allows relay when direct P2P fails (symmetric NAT)
     {
       urls: "turn:openrelay.metered.ca:80",
       username: "openrelayproject",
@@ -131,90 +130,123 @@ async function sendSignal(sessionId, fromId, toId, type, payload) {
 }
 
 function useVoice(sessionId, myId) {
-  const [micOn,     setMicOn]     = useState(false);
-  const [muted,     setMuted]     = useState(false);
-  const [audioErr,  setAudioErr]  = useState("");
-  const [peers,     setPeers]     = useState({}); // id → {name, state}
+  const [micOn,    setMicOn]   = useState(false);
+  const [muted,    setMuted]   = useState(false);
+  const [audioErr, setAudioErr]= useState("");
+  const [peers,    setPeers]   = useState({});
 
-  const localStream = useRef(null);
-  const pcs         = useRef({});   // id → RTCPeerConnection
-  const iceBuf      = useRef({});   // id → RTCIceCandidate[]
-  const audioEls    = useRef({});   // id → HTMLAudioElement
-  const stopSig     = useRef(null);
-  const myIdRef     = useRef(myId);
-  myIdRef.current   = myId;
+  // All mutable state in refs so callbacks never go stale
+  const localStream  = useRef(null);
+  const pcs          = useRef({});    // remoteId → RTCPeerConnection
+  const iceBuf       = useRef({});    // remoteId → candidate[]
+  const audioEls     = useRef({});    // remoteId → HTMLAudioElement
+  const offerSent    = useRef({});    // remoteId → bool  (prevent duplicate offers)
+  const stopSig      = useRef(null);
+  const sessionRef   = useRef(sessionId);
+  const myIdRef      = useRef(myId);
+  sessionRef.current = sessionId;
+  myIdRef.current    = myId;
 
-  // Lower userId string = caller (initiator) — deterministic, no collision
-  const amInitiator = (remoteId) => myIdRef.current < remoteId;
+  // Stored in a ref so the poll callback always calls the latest version
+  const handleSignalRef = useRef(null);
 
-  const getOrMakePeer = useCallback((remoteId, remoteName) => {
-    if (pcs.current[remoteId]) return pcs.current[remoteId];
+  /* Deterministic: lower userId is caller */
+  const isInitiator = (remoteId) => myIdRef.current < remoteId;
+
+  /* ── Create peer connection ── */
+  const makePeer = useCallback((remoteId, remoteName) => {
+    // Close and recreate if in a broken state
+    const existing = pcs.current[remoteId];
+    if (existing && !["failed","closed","disconnected"].includes(existing.connectionState)) {
+      return existing;
+    }
+    if (existing) { try { existing.close(); } catch {} }
 
     const pc = new RTCPeerConnection(ICE_CONFIG);
-    pcs.current[remoteId] = pc;
+    pcs.current[remoteId]  = pc;
     iceBuf.current[remoteId] = [];
+    offerSent.current[remoteId] = false;
 
-    // Add local audio tracks
+    // Attach local tracks
     if (localStream.current) {
       localStream.current.getTracks().forEach(t => pc.addTrack(t, localStream.current));
     }
 
-    // Receive remote audio — use evt.track as primary, streams[0] as fallback
+    // Play remote audio
     pc.ontrack = (evt) => {
-      const remoteStream = (evt.streams && evt.streams[0])
+      const stream = (evt.streams && evt.streams[0])
         ? evt.streams[0]
-        : (() => { const ms = new MediaStream(); ms.addTrack(evt.track); return ms; })();
+        : new MediaStream([evt.track]);
 
       let el = audioEls.current[remoteId];
       if (!el) {
         el = document.createElement("audio");
         el.autoplay = true;
         el.playsInline = true;
-        el.setAttribute("playsinline", "");
         document.body.appendChild(el);
         audioEls.current[remoteId] = el;
       }
-      el.srcObject = remoteStream;
+      el.srcObject = stream;
       el.volume = 1.0;
-
-      const tryPlay = () => el.play().catch(() => {
-        // Autoplay blocked — retry on next user interaction
+      el.play().catch(() => {
         const unlock = () => { el.play().catch(()=>{}); };
-        document.addEventListener("click",   unlock, { once: true });
-        document.addEventListener("keydown", unlock, { once: true });
-        document.addEventListener("touchend",unlock, { once: true });
+        document.addEventListener("click",    unlock, { once: true });
+        document.addEventListener("keydown",  unlock, { once: true });
+        document.addEventListener("touchend", unlock, { once: true });
       });
-      tryPlay();
-
       setPeers(p => ({ ...p, [remoteId]: { name: remoteName || remoteId, state: "connected" } }));
     };
 
-    // Send ICE candidates via Supabase
+    // Relay ICE via Supabase
     pc.onicecandidate = ({ candidate }) => {
-      if (candidate && sessionId && myIdRef.current) {
-        sendSignal(sessionId, myIdRef.current, remoteId, "ice", candidate.toJSON()).catch(() => {});
+      if (candidate) {
+        sendSignal(sessionRef.current, myIdRef.current, remoteId, "ice", candidate.toJSON()).catch(()=>{});
       }
     };
 
+    // Auto-reconnect on failure
     pc.onconnectionstatechange = () => {
-      setPeers(p => ({
-        ...p,
-        [remoteId]: { ...(p[remoteId]||{}), state: pc.connectionState },
-      }));
-      if (["failed","closed","disconnected"].includes(pc.connectionState)) {
-        // Clean up audio element
+      setPeers(p => ({ ...p, [remoteId]: { ...(p[remoteId]||{}), state: pc.connectionState } }));
+      if (pc.connectionState === "failed") {
+        // ICE restart — create a new offer with iceRestart:true
+        if (isInitiator(remoteId) && localStream.current) {
+          pc.createOffer({ iceRestart: true, offerToReceiveAudio: true })
+            .then(o => pc.setLocalDescription(o))
+            .then(() => sendSignal(sessionRef.current, myIdRef.current, remoteId, "offer", pc.localDescription.toJSON()))
+            .catch(()=>{});
+        }
+      }
+      if (["closed","disconnected"].includes(pc.connectionState)) {
         const el = audioEls.current[remoteId];
         if (el) { el.srcObject = null; el.remove(); delete audioEls.current[remoteId]; }
-        pc.close();
         delete pcs.current[remoteId];
+        delete offerSent.current[remoteId];
         setPeers(p => { const n={...p}; delete n[remoteId]; return n; });
       }
     };
 
     return pc;
-  }, [sessionId]);
+  }, []);
 
-  // Handle incoming signal from another peer
+  /* ── Send offer — safe, idempotent ── */
+  const sendOffer = useCallback(async (remoteId, remoteName) => {
+    // Guard: only initiator sends, and only once per connection
+    if (!isInitiator(remoteId)) return;
+    if (offerSent.current[remoteId]) return;
+    offerSent.current[remoteId] = true;
+
+    const pc = makePeer(remoteId, remoteName);
+    try {
+      const offer = await pc.createOffer({ offerToReceiveAudio: true });
+      await pc.setLocalDescription(offer);
+      await sendSignal(sessionRef.current, myIdRef.current, remoteId, "offer", pc.localDescription.toJSON());
+    } catch(e) {
+      offerSent.current[remoteId] = false; // allow retry
+      console.warn("sendOffer failed:", e);
+    }
+  }, [makePeer]);
+
+  /* ── Signal handler — stored in ref so poll always has latest ── */
   const handleSignal = useCallback(async (row) => {
     if (row.from_user === myIdRef.current) return;
     if (row.to_user !== myIdRef.current && row.to_user !== "all") return;
@@ -223,78 +255,71 @@ function useVoice(sessionId, myId) {
     let payload;
     try { payload = JSON.parse(row.payload || "{}"); } catch { return; }
 
+    // ── hello: peer announced they have mic on ──
     if (row.type === "hello") {
-      // Peer announced presence — if we have mic, create connection
-      // Only initiator (lower userId) sends offer
       setPeers(p => ({ ...p, [from]: { name: payload.name || from, state: "connecting" } }));
       if (localStream.current) {
-        const pc = getOrMakePeer(from, payload.name);
-        if (amInitiator(from)) {
-          // We are initiator — create and send offer
-          try {
-            const offer = await pc.createOffer({ offerToReceiveAudio: true });
-            await pc.setLocalDescription(offer);
-            await sendSignal(sessionId, myIdRef.current, from, "offer", pc.localDescription.toJSON());
-          } catch(e) { console.warn("offer failed", e); }
-        }
-        // Non-initiator waits for the other side's offer
+        // Initiator sends offer; non-initiator just waits
+        await sendOffer(from, payload.name);
       }
       return;
     }
 
+    // ── offer: create answer ──
     if (row.type === "offer") {
-      const pc = getOrMakePeer(from, payload.name);
+      const pc = makePeer(from, payload.name);
+      // Skip if already stable (duplicate offer)
+      if (pc.signalingState === "stable" && pc.remoteDescription) return;
       try {
         await pc.setRemoteDescription(new RTCSessionDescription(payload));
-        // Flush buffered ICE candidates
-        for (const c of iceBuf.current[from] || []) {
+        // Flush buffered ICE
+        for (const c of (iceBuf.current[from] || [])) {
           await pc.addIceCandidate(new RTCIceCandidate(c)).catch(()=>{});
         }
         iceBuf.current[from] = [];
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
-        await sendSignal(sessionId, myIdRef.current, from, "answer", pc.localDescription.toJSON());
-      } catch(e) { console.warn("answer failed", e); }
+        await sendSignal(sessionRef.current, myIdRef.current, from, "answer", pc.localDescription.toJSON());
+      } catch(e) { console.warn("answer failed:", e); }
       return;
     }
 
+    // ── answer: complete the offer/answer exchange ──
     if (row.type === "answer") {
       const pc = pcs.current[from];
       if (!pc || pc.signalingState !== "have-local-offer") return;
       try {
         await pc.setRemoteDescription(new RTCSessionDescription(payload));
-        // Flush buffered ICE
-        for (const c of iceBuf.current[from] || []) {
+        for (const c of (iceBuf.current[from] || [])) {
           await pc.addIceCandidate(new RTCIceCandidate(c)).catch(()=>{});
         }
         iceBuf.current[from] = [];
-      } catch(e) { console.warn("set answer failed", e); }
+      } catch(e) { console.warn("set answer failed:", e); }
       return;
     }
 
+    // ── ice: add candidate (or buffer if remote desc not ready) ──
     if (row.type === "ice") {
       const pc = pcs.current[from];
       if (!pc) return;
-      if (!pc.remoteDescription || !pc.remoteDescription.type) {
-        // Buffer until remote description is set
+      if (!pc.remoteDescription?.type) {
         iceBuf.current[from] = [...(iceBuf.current[from] || []), payload];
       } else {
         await pc.addIceCandidate(new RTCIceCandidate(payload)).catch(()=>{});
       }
       return;
     }
-  }, [sessionId, getOrMakePeer, amInitiator]);
+  }, [makePeer, sendOffer]);
 
+  // Always keep the ref pointing to the latest handleSignal
+  handleSignalRef.current = handleSignal;
+
+  /* ── Enable mic ── */
   const enableMic = useCallback(async (members = []) => {
     setAudioErr("");
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-          sampleRate: 48000,
-        },
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
         video: false,
       });
       localStream.current = stream;
@@ -303,37 +328,36 @@ function useVoice(sessionId, myId) {
 
       const myName = members.find(m => m.user_id === myIdRef.current)?.display_name || myIdRef.current;
 
-      // Start polling for signals BEFORE announcing, so we don't miss responses
+      // Poll via the REF so it always calls the latest handleSignal — no stale closure
       stopSig.current?.();
-      stopSig.current = pollNew("evtol_webrtc_signals", `session_id=eq.${sessionId}`, handleSignal, 600);
+      stopSig.current = pollNew(
+        "evtol_webrtc_signals",
+        `session_id=eq.${sessionRef.current}`,
+        (row) => handleSignalRef.current(row),  // ← always latest, never stale
+        600
+      );
 
-      // Short delay so poll is running before we announce
-      await new Promise(r => setTimeout(r, 300));
+      // Wait for poll to be running before sending hello
+      await new Promise(r => setTimeout(r, 400));
 
-      // Announce to all session members
-      await sendSignal(sessionId, myIdRef.current, "all", "hello", { name: myName }).catch(()=>{});
+      // Announce presence — the hello handler will trigger sendOffer if needed
+      await sendSignal(sessionRef.current, myIdRef.current, "all", "hello", { name: myName }).catch(()=>{});
 
-      // If we're the initiator to any already-present member, create connections
-      members
-        .filter(m => m.user_id !== myIdRef.current)
-        .forEach(m => {
-          if (amInitiator(m.user_id)) {
-            const pc = getOrMakePeer(m.user_id, m.display_name);
-            pc.createOffer({ offerToReceiveAudio: true })
-              .then(offer => pc.setLocalDescription(offer))
-              .then(() => sendSignal(sessionId, myIdRef.current, m.user_id, "offer", pc.localDescription.toJSON()))
-              .catch(e => console.warn("initial offer failed", e));
-          }
-        });
+      // Also proactively send offers to existing members (who may have mic already on)
+      // sendOffer is idempotent — safe to call even if hello triggers it too
+      for (const m of members.filter(m => m.user_id !== myIdRef.current)) {
+        await sendOffer(m.user_id, m.display_name);
+        await new Promise(r => setTimeout(r, 50)); // small stagger prevents burst
+      }
 
     } catch(e) {
       setAudioErr(
-        e.name === "NotAllowedError" ? "❌ Mic blocked — click the 🔒 in your address bar and allow microphone access, then try again." :
-        e.name === "NotFoundError"   ? "❌ No microphone found — connect a mic and try again." :
+        e.name === "NotAllowedError" ? "❌ Mic blocked — click 🔒 in address bar → allow microphone → try again." :
+        e.name === "NotFoundError"   ? "❌ No microphone found — connect one and try again." :
         "❌ Mic error: " + e.message
       );
     }
-  }, [sessionId, handleSignal, getOrMakePeer, amInitiator]);
+  }, [sendOffer]);
 
   const toggleMute = useCallback(() => {
     if (!localStream.current) return;
@@ -348,6 +372,7 @@ function useVoice(sessionId, myId) {
     Object.values(pcs.current).forEach(pc => { try { pc.close(); } catch {} });
     pcs.current = {};
     iceBuf.current = {};
+    offerSent.current = {};
     Object.values(audioEls.current).forEach(el => { try { el.srcObject = null; el.remove(); } catch {} });
     audioEls.current = {};
     stopSig.current?.();
@@ -605,17 +630,14 @@ export function CollabPanel({ user, params, onParamChange, C }) {
   const cleanups = useRef({});
   const lastPushAt = useRef(0);
   const lastSeenUpdatedAt = useRef(""); // track last state_json update we applied
-  const isApplyingRemote = useRef(false); // true while applying remote params — skip push
 
   const addLog = useCallback(msg =>
     setLog(p => [{ msg, t: new Date().toLocaleTimeString(), id: Math.random() }, ...p].slice(0, 30))
   , []);
 
-  // ── PARAM PUSH — any editor pushes on every local change ──
-  // Skip when params changed due to a remote update (isApplyingRemote flag)
+  // ── PARAM PUSH — any editor (host or guest) pushes on every change ──
   useEffect(() => {
     if (!inSession || role !== "editor") return;
-    if (isApplyingRemote.current) return; // don't echo back remote changes
     const now = Date.now();
     if (now - lastPushAt.current < 1200) return; // throttle 1.2s
     lastPushAt.current = now;
@@ -636,11 +658,7 @@ export function CollabPanel({ user, params, onParamChange, C }) {
         lastSeenUpdatedAt.current = row.updated_at;
         try {
           const st = JSON.parse(row.state_json || "{}");
-          // Set flag so push useEffect knows not to echo these back
-          isApplyingRemote.current = true;
           Object.entries(st).forEach(([k, v]) => onParamChange(k)(v));
-          // Clear flag after React has processed the state updates (next tick)
-          setTimeout(() => { isApplyingRemote.current = false; }, 100);
           addLog("🔄 " + (row.updated_by ? "Collaborator" : "Session") + " updated params");
         } catch {}
       }
@@ -649,20 +667,13 @@ export function CollabPanel({ user, params, onParamChange, C }) {
 
   const startMemberSync = useCallback((sessionId) => {
     cleanups.current.members?.();
-    // Poll evtol_collab_members every 2s using a plain interval.
-    // syncRow watches a single row by updated_at — but members table has
-    // multiple rows (one per member). A plain interval is simpler and reliable.
-    const tick = async () => {
-      const mems = await getMembers(sessionId);
-      if (!mems.length) return;
-      setMembers(mems);
-      // KEY: update this guest's own role when host promotes/demotes them
-      const me = mems.find(m => m.user_id === myId.current);
-      if (me) setRole(me.role);
-    };
-    tick(); // immediate fetch
-    const timer = setInterval(tick, 2000);
-    cleanups.current.members = () => clearInterval(timer);
+    cleanups.current.members = syncRow(
+      `evtol_collab_sessions?session_id=eq.${sessionId}`,
+      4000,
+      () => getMembers(sessionId).then(setMembers)
+    );
+    // Immediate fetch
+    getMembers(sessionId).then(setMembers);
   }, []);
 
   const stopAll = useCallback(() => {
@@ -746,10 +757,8 @@ export function CollabPanel({ user, params, onParamChange, C }) {
           const sess = await getCollabSession(joinId.trim());
           if (sess?.state_json) {
             try {
-              isApplyingRemote.current = true;
               Object.entries(JSON.parse(sess.state_json)).forEach(([k,v]) => onParamChange(k)(v));
               lastSeenUpdatedAt.current = sess.updated_at || "";
-              setTimeout(() => { isApplyingRemote.current = false; }, 100);
             } catch {}
           }
           addLog("✅ Approved! You joined the session.");
