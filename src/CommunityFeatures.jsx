@@ -646,7 +646,7 @@ export function CollabPanel({ user, params, onParamChange, C, onPendingChange })
   // Keep roleRef synced so param-push effect always reads latest role
   const setRoleSync = useCallback((newRole) => {
     roleRef.current = newRole;
-    setRoleSync(newRole);
+    setRole(newRole);
   }, []);
 
   const startMemberSync = useCallback((sessionId) => {
