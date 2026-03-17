@@ -1805,7 +1805,7 @@ Respond in plain text, clearly structured. Be specific about rule IDs and numeri
           "Authorization": `Bearer ${import.meta.env.VITE_GROQ_KEY}`,
         },
         body: JSON.stringify({
-          model: "llama-3.3-70b-versatile",
+          model: "llama3-groq-70b-8192-tool-use-preview",
           max_tokens: 1024,
           messages: [{ role: "user", content: prompt }]
         })
@@ -2012,9 +2012,27 @@ When the user describes requirements, use run_sizing to find an optimised soluti
         const msg = data.choices?.[0]?.message;
         if (!msg) break;
 
-        if (msg.content) finalText = msg.content;
+        // Strip any <function/...> XML from display content — model sometimes
+        // puts tool calls as text instead of structured tool_calls array
+        let displayContent = (msg.content || "").replace(/<function\/[^>]*>[\s\S]*?(?=
+[A-Z]|
 
-        const toolCalls = msg.tool_calls || [];
+|$)/g, "").trim();
+        if (displayContent) finalText = displayContent;
+
+        let toolCalls = msg.tool_calls || [];
+
+        // Fallback: parse tool calls from text if tool_calls array is empty
+        if (toolCalls.length === 0 && msg.content) {
+          const fnMatch = msg.content.match(/<function\/run_sizing\((\{[\s\S]*?\})\)>/);
+          if (fnMatch) {
+            try {
+              const args = JSON.parse(fnMatch[1]);
+              toolCalls = [{ id: "text_tc_" + Date.now(), function: { name: "run_sizing", arguments: JSON.stringify(args) } }];
+            } catch {}
+          }
+        }
+
         if (toolCalls.length === 0 || data.choices?.[0]?.finish_reason === 'stop') break;
 
         // Process each tool call
