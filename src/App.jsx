@@ -6379,7 +6379,8 @@ export default function App(){
                                   ['❌ Not modelled:','Higher harmonics — only BPF A-weighted'],
                                   ['❌ Not modelled:','Ground reflection (+3 dB at ground level)'],
                                   ['⚠️ Calibration:','K_cal=15 dB: empirical offset, valid for Joby-like designs (6 rot, R≈1.5m, DL≈500 N/m²) — NOT universal'],
-                                  ['⚠️ Harmonic decay:','4 dB/harm — from Fleming 2022 eVTOL data. Not universal: faster at low DL, slower at high Mtip'],'⚠️ Broadband:','−8 dB below tonal: midpoint of 5–10 dB range. Uncertainty ±5 dB easily'],
+                                  ['⚠️ Harmonic decay:','4 dB/harm — from Fleming 2022 eVTOL data. Not universal: faster at low DL, slower at high Mtip'],
+                                  ['⚠️ Broadband:','−8 dB below tonal: midpoint of 5–10 dB range. Uncertainty ±5 dB easily'],
                                   ['⚠️ Use for:','Trends and comparisons — NOT certification-level assessment'],
                                 ].map(([tag,desc],i)=>(
                                   <div key={i} style={{display:'flex',gap:6}}>
