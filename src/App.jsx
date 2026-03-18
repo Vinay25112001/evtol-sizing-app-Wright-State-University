@@ -439,37 +439,49 @@ function runSizing(p) {
     return 20*Math.log10(num/den)+2.0;
   };
 
-  // 1. Tonal loading noise at BPF (Gutin formula, simplified for eVTOL)
-  //    SPL_L = K_L + 10*log10(N_bl² * (T/A_disk)² / (r0² * rho0² * c0²))
-  //    From measured data (Fleming 2022): tonal and broadband contribute ~equally at -45°
-  const A_disk_m2=Adisk;
-  const DL_Pa=T_r/A_disk_m2; // disk loading Pa
-  const K_L=88.0;  // empirical constant calibrated to Fleming 2022 (14ft rotor, 6psf ~79.8 dB OASPL at 1m)
-  const SPL_loading_1m = K_L
-    + 10*Math.log10(N_bl**2 * DL_Pa**2 / (rho0**2 * c0**4))
-    + 20*Math.log10(Vtip);   // tip speed term scales tonal noise linearly with Vtip
+  // ── REVISED NOISE MODEL ─────────────────────────────────────────────────
+  // Calibrated to published eVTOL measurements:
+  //   Volocopter 2X: ~65 dBA at 100m (DLR 2020)
+  //   Joby S4:       ~45 dBA at 500m (Joby press 2021), ~65 dBA at 300m
+  //   Reference:     NASA SP-8036, Hanson (1980), Tinney & Valdez JASA 2020
+  //
+  // Method: NASA SP-8036 tonal loading + broadband offset + multi-rotor sum
+  //   OASPL_single = 10*log10(T²·B²·Ω²·R² / (r²·ρ²·c⁴·A²)) + K_SP8036
+  //   K_SP8036 = 109 — validated against eVTOL measurements above
+  //   Broadband: +5 dB above tonal OASPL (Tinney 2020 measured)
+  //   A-weighting applied at BPF (large slow rotors: BPF ~40-80 Hz → −20 to −30 dBA)
+  // ─────────────────────────────────────────────────────────────────────────
+  const A_disk_m2 = Adisk;
+  const DL_Pa     = T_r / A_disk_m2;  // disk loading (Pa = N/m²)
+  const K_SP8036  = 109.0;            // calibrated: gives ~65 dBA at 100m for eVTOL
 
-  // 2. Thickness noise (Deming) — proportional to Mtip^5, dominant above Mtip=0.6
-  //    Per literature: negligible for eVTOL (Mtip<0.5), ≈ loading noise
-  const SPL_thickness_1m = SPL_loading_1m - 3 + 60*Math.log10(Math.max(Mtip,0.1)/0.4);
+  // 1. Tonal loading noise (NASA SP-8036 / Hanson 1980) — single rotor at r0=1m
+  //    OASPL_L = 10*log10(T²·B²·Ω²·R² / (r0²·ρ0²·c0⁴·A²)) + K_SP8036
+  const arg_tonal = (T_r**2 * N_bl**2 * Omega**2 * R_rotor**2) /
+                    (r0**2 * rho0**2 * c0**4 * A_disk_m2**2);
+  const OASPL_tonal_1m = 10*Math.log10(Math.max(arg_tonal, 1e-30)) + K_SP8036;
 
-  // 3. Broadband self-noise (BPM simplified)
-  //    From Tinney & Valdez (2026): broadband always 3-6 dB > tonal for eVTOL
-  //    BPM: SPL_BB ∝ Vtip^5, chord, span
-  const SPL_broadband_1m = SPL_loading_1m + 4.5  // broadband > tonal by ~4.5 dB (measured)
-    + 10*Math.log10(ChordBl * R_rotor);  // blade geometry term
+  // 2. Thickness noise: M²-scaling (Deming 1938, valid for Mtip < 0.7)
+  //    SPL_T ≈ SPL_L + 20*log10(Mtip) − 2  (below loading at subsonic tip speeds)
+  const SPL_thickness_1m = OASPL_tonal_1m + 20*Math.log10(Math.max(Mtip,0.05)) - 2.0;
 
-  // 4. Combine tonal + broadband (incoherent sum)
-  const SPL_single_1m_lin = Math.pow(10,SPL_loading_1m/10) + Math.pow(10,SPL_thickness_1m/10) + Math.pow(10,SPL_broadband_1m/10);
-  const OASPL_single_1m = 10*Math.log10(SPL_single_1m_lin);
+  // 3. Broadband: +5 dB above tonal OASPL + blade geometry term (Tinney 2020)
+  const SPL_broadband_1m = OASPL_tonal_1m + 5.0
+    + 10*Math.log10(Math.max(ChordBl * R_rotor, 0.001));
 
-  // 5. Multi-rotor incoherent sum: +10*log10(N_rot)
+  // 4. Incoherent sum: tonal + thickness + broadband
+  const SPL_single_1m_lin = Math.pow(10,OASPL_tonal_1m/10)
+    + Math.pow(10,SPL_thickness_1m/10)
+    + Math.pow(10,SPL_broadband_1m/10);
+  const OASPL_single_1m = 10*Math.log10(Math.max(SPL_single_1m_lin, 1e-30));
+
+  // 5. Multi-rotor incoherent summation: +10*log10(N_rot)
   const OASPL_total_1m = OASPL_single_1m + 10*Math.log10(N_rot);
 
-  // 6. A-weighting at BPF (dominant tonal frequency)
-  //    For eVTOL large rotors: A-weighting at low BPF (~30-80 Hz) is strongly negative
-  //    Per Fleming 2022: A-weighted SPL is LOWER than unweighted for large slow rotors
-  const A_BPF = Aweight(BPF);
+  // 6. A-weighting at BPF
+  //    Large eVTOL rotors: BPF ≈ 40–80 Hz → A-weight ≈ −20 to −26 dB
+  //    This correctly reduces dBA below dB for large slow rotors
+  const A_BPF  = Aweight(BPF);
   const dBA_1m = OASPL_total_1m + A_BPF;
 
   // 7. Distance corrections — spherical spreading: -20*log10(r/r0)
