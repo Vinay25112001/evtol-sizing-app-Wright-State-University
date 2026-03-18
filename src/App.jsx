@@ -1919,7 +1919,7 @@ Respond in plain text, clearly structured. Be specific about rule IDs and numeri
    ════════════════════════════════════════════════════════════════════════ */
 function AIAssistantPanel({ params, SR, SC, onParamChange }) {
   const [messages,  setMessages]  = useState([
-    { role: 'assistant', content: "👋 I'm your AI design assistant. Describe your eVTOL requirements in plain language — range, payload, mission profile, certification target — and I'll iteratively size the aircraft for you, explaining every design decision.\n\nExample: *\"4 passengers, 80km range, EASA SC-VTOL certification, operating in Singapore's hot humid climate\"*" }
+    { role: 'assistant', content: "👋 I'm your AI design assistant powered by Llama 3 via Groq.\n\nDescribe your eVTOL requirements and I'll suggest optimised parameters, run the sizing engine, and iterate until the design is feasible.\n\nExample: \"4 passengers, 80km range, EASA SC-VTOL, hot climate\"" }
   ]);
   const [input,     setInput]     = useState('');
   const [thinking,  setThinking]  = useState(false);
@@ -1928,6 +1928,26 @@ function AIAssistantPanel({ params, SR, SC, onParamChange }) {
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
+  /* ── Run sizing from a params object, apply to sliders if feasible ── */
+  const trySizing = (p) => {
+    try {
+      const R = runSizing({ ...params, ...p });
+      if (R && R.feasible) {
+        Object.entries(p).forEach(([k, v]) => {
+          if (onParamChange && !isNaN(+v)) onParamChange(k)(+v);
+        });
+      }
+      return R;
+    } catch { return null; }
+  };
+
+  /* ── Extract JSON params block from AI text ── */
+  const extractParams = (text) => {
+    const match = text.match(/```json\s*([\s\S]*?)\s*```/);
+    if (!match) return null;
+    try { return JSON.parse(match[1]); } catch { return null; }
+  };
+
   const send = async () => {
     if (!input.trim() || thinking) return;
     const userMsg = input.trim();
@@ -1935,158 +1955,133 @@ function AIAssistantPanel({ params, SR, SC, onParamChange }) {
     setMessages(p => [...p, { role: 'user', content: userMsg }]);
     setThinking(true);
 
+    /* ── Helper: call Groq for one suggestion ── */
+    const askGroq = async (systemMsg, userContent) => {
+      const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${import.meta.env.VITE_GROQ_KEY}`,
+        },
+        body: JSON.stringify({
+          model: "llama-3.1-8b-instant",
+          max_tokens: 400,
+          messages: [
+            { role: "system", content: systemMsg },
+            { role: "user",   content: userContent }
+          ]
+        })
+      });
+      if (!res.ok) { const t = await res.text(); throw new Error(`AI ${res.status}: ${t.slice(0,150)}`); }
+      const d = await res.json();
+      return d.choices?.[0]?.message?.content || "";
+    };
+
+    /* ── Helper: inject params into app sliders live ── */
+    const injectParams = (p) => {
+      Object.entries(p).forEach(([k, v]) => {
+        if (onParamChange && !isNaN(+v) && +v > 0) onParamChange(k)(+v);
+      });
+    };
+
     try {
-      // Build conversation history — OpenAI format (system msg first)
-      const history = messages
-        .filter(m => m.role !== 'tool')
-        .map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content }));
-      history.push({ role: 'user', content: userMsg });
+      /* ── STEP 1: Ask AI for initial parameter set ── */
+      const systemPrompt = `You are an eVTOL sizing engineer. The user describes requirements. Output ONLY a valid JSON object with these exact keys (no explanation, no markdown, just the raw JSON):
+{"range":80,"payload":320,"vCruise":67,"LD":14,"AR":9,"sedCell":250,"nPropHover":6,"propDiam":2.5,"twRatio":1.2,"ewf":0.45,"etaHov":0.72,"etaSys":0.82}
 
-      const systemPrompt = `You are an eVTOL aircraft sizing engineer. Use the run_sizing tool to find a feasible design for the user.
+Limits: range 20-500, payload 50-800, vCruise 30-120, LD 8-22, AR 5-16, sedCell 150-400, nPropHover 4/6/8/10/12, propDiam 1-4, twRatio 1.0-1.5, ewf 0.30-0.65, etaHov 0.60-0.85, etaSys 0.70-0.92.
+Output ONLY the JSON. No other text.`;
 
-Current params: range=${params.range}km, payload=${params.payload}kg, vCruise=${params.vCruise}m/s, LD=${params.LD}, AR=${params.AR}, sedCell=${params.sedCell}Wh/kg, nPropHover=${params.nPropHover}, propDiam=${params.propDiam}m, twRatio=${params.twRatio}, ewf=${params.ewf}, etaHov=${params.etaHov}, etaSys=${params.etaSys}
-${SR ? "Current result: MTOW=" + SR.MTOW + "kg, Etot=" + SR.Etot + "kWh, LDact=" + SR.LDact + ", feasible=" + SR.feasible : ""}
+      const raw1 = await askGroq(systemPrompt, userMsg);
+      let currentP = null;
+      try {
+        // Strip any markdown/text around JSON
+        const jsonMatch = raw1.match(/\{[\s\S]*\}/);
+        if (jsonMatch) currentP = JSON.parse(jsonMatch[0]);
+      } catch {}
 
-Instructions:
-1. Call run_sizing with your initial parameters.
-2. Check the result. If feasible is false or checks_failed is not empty, adjust parameters and call again.
-3. Common fixes: if battery fraction over 55% then increase sedCell or reduce range. If MTOW over 5700 then reduce range or payload. If static margin bad then adjust AR. If tip Mach over 0.7 then reduce propDiam.
-4. Keep iterating until feasible is true and checks_failed is empty.
-5. Only then present the final design to the user.
-
-Parameter limits: range 20-500, payload 50-800, vCruise 30-120, LD 8-22, AR 5-16, sedCell 150-400, nPropHover 4 to 12 even numbers, propDiam 1-4, twRatio 1.0-1.5, ewf 0.30-0.65, etaHov 0.60-0.85, etaSys 0.70-0.92.
-Good starting values: range=80, payload=320, vCruise=67, LD=14, AR=9, sedCell=250, nPropHover=6, propDiam=2.5, twRatio=1.2, ewf=0.45, etaHov=0.72, etaSys=0.82.`;
-
-      const toolDef = {
-        name: "run_sizing",
-        description: "Runs the eVTOL sizing physics engine. Returns MTOW, energy, feasibility, and all design checks. Use this to evaluate and iterate on designs.",
-        input_schema: {
-          type: "object",
-          properties: {
-            range:      { type: "number", description: "Range in km (20-500)" },
-            payload:    { type: "number", description: "Payload in kg (50-800)" },
-            vCruise:    { type: "number", description: "Cruise speed in m/s (30-120)" },
-            LD:         { type: "number", description: "Lift to drag ratio (8-22)" },
-            AR:         { type: "number", description: "Wing aspect ratio (5-16)" },
-            sedCell:    { type: "number", description: "Battery energy density Wh/kg (150-400)" },
-            nPropHover: { type: "number", description: "Number of rotors, must be even (4-12)" },
-            propDiam:   { type: "number", description: "Rotor diameter in meters (1-4)" },
-            twRatio:    { type: "number", description: "Thrust to weight ratio (1.0-1.5)" },
-            ewf:        { type: "number", description: "Empty weight fraction (0.30-0.65)" },
-            etaHov:     { type: "number", description: "Hover efficiency (0.60-0.85)" },
-            etaSys:     { type: "number", description: "System efficiency (0.70-0.92)" }
-          },
-          required: ["range", "payload", "nPropHover"]
-        }
-      };
-
-      // Agentic loop — Claude may call run_sizing multiple times
-      // Groq/OpenAI: system message goes at the start of messages array
-      let loopHistory = [{ role: 'system', content: systemPrompt }, ...history];
-      let iters = 0;
-      let finalText = '';
-
-      while (iters < 5) {
-        iters++;
-        const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${import.meta.env.VITE_GROQ_KEY}`,
-          },
-          body: JSON.stringify({
-            model: "llama-3.3-70b-versatile",
-            max_tokens: 1024,
-            messages: loopHistory,
-            tools: [{
-              type: "function",
-              function: {
-                name: toolDef.name,
-                description: toolDef.description,
-                parameters: toolDef.input_schema,
-              }
-            }],
-            tool_choice: "auto",
-          })
-        });
-        if (!res.ok) { const t = await res.text(); throw new Error(`AI ${res.status}: ${t.slice(0,200)}`); }
-        const data = await res.json();
-
-        // OpenAI-compatible response format (Groq)
-        const msg = data.choices?.[0]?.message;
-        if (!msg) break;
-
-        // Strip any <function/...> XML from display content — model sometimes
-        // puts tool calls as text instead of structured tool_calls array
-        let displayContent = (msg.content || "").replace(/<function\/run_sizing[^>]*>/g, "").trim();
-        if (displayContent) finalText = displayContent;
-
-        let toolCalls = msg.tool_calls || [];
-
-        // Fallback: parse tool calls from text if tool_calls array is empty
-        if (toolCalls.length === 0 && msg.content) {
-          const fnMatch = msg.content.match(/<function\/run_sizing\((\{[\s\S]*?\})\)>/);
-          if (fnMatch) {
-            try {
-              const args = JSON.parse(fnMatch[1]);
-              toolCalls = [{ id: "text_tc_" + Date.now(), function: { name: "run_sizing", arguments: JSON.stringify(args) } }];
-            } catch {}
-          }
-        }
-
-        if (toolCalls.length === 0 || data.choices?.[0]?.finish_reason === 'stop') break;
-        // Small delay between iterations to avoid Groq TPM rate limit
-        if (iters < 7) await new Promise(r => setTimeout(r, 2000));
-
-        // Process each tool call
-        const toolResults = [];
-        for (const tc of toolCalls) {
-          if (tc.function?.name === 'run_sizing') {
-            let args = {};
-            try { args = JSON.parse(tc.function.arguments || '{}'); } catch {}
-            const p_call = { ...params };
-            Object.entries(args).forEach(([k,v]) => { p_call[k] = +v || p_call[k]; });
-            let toolResult;
-            try {
-              const R = runSizing(p_call);
-              // Only update sliders when design is feasible — don't pollute UI with bad designs
-              if (R.feasible) {
-                Object.entries(args).forEach(([k,v]) => {
-                  if (onParamChange && typeof +v === 'number' && !isNaN(+v)) onParamChange(k)(+v);
-                });
-              }
-              setIterCount(c => c + 1);
-              toolResult = {
-                // Core outputs
-                MTOW: R.MTOW, Wbat: R.Wbat, Wempty: R.Wempty,
-                Etot: R.Etot, Phov: R.Phov, Pcr: R.Pcr,
-                LDact: R.LDact, SM_pct: +(R.SM_vt*100).toFixed(1),
-                TipMach: R.TipMach, batFrac: +(R.Wbat/R.MTOW*100).toFixed(1),
-                PackkWh: R.PackkWh, bWing: R.bWing, Swing: R.Swing,
-                // Feasibility — CRITICAL for iteration
-                feasible: R.feasible,
-                checks_failed: (R.checks||[]).filter(c=>!c.ok).map(c=>c.label+": "+c.val),
-                checks_passed: (R.checks||[]).filter(c=>c.ok).length,
-                checks_total: (R.checks||[]).length,
-                // Iteration guidance
-                action_needed: R.feasible ? "DESIGN IS FEASIBLE - present to user" :
-                  "DESIGN FAILED - must iterate. Fix: " + (R.checks||[]).filter(c=>!c.ok).map(c=>c.label).join(", "),
-              };
-            } catch(e) { toolResult = { error: e.message }; }
-            toolResults.push({ role: 'tool', tool_call_id: tc.id, content: JSON.stringify(toolResult) });
-          }
-        }
-
-        // Add assistant message + tool results to history (OpenAI format)
-        loopHistory = [...loopHistory,
-          { role: 'assistant', content: msg.content || null, tool_calls: toolCalls },
-          ...toolResults,
-        ];
+      if (!currentP) {
+        setMessages(p => [...p, { role: 'assistant', content: "⚠️ Couldn't parse initial parameters. Please try rephrasing your requirements." }]);
+        setThinking(false);
+        return;
       }
 
-      if (finalText) {
-        setMessages(p => [...p, { role: 'assistant', content: finalText }]);
+      /* ── STEP 2: Inject initial params immediately so user sees the design ── */
+      injectParams(currentP);
+      setIterCount(c => c + 1);
+      let R = runSizing({ ...params, ...currentP });
+
+      // Show live update message
+      setMessages(p => [...p, {
+        role: 'assistant',
+        content: `🔄 Iteration 1 — Applying initial design to your app...\nMTOW: ${R.MTOW}kg | Energy: ${R.Etot}kWh | L/D: ${R.LDact} | BatFrac: ${(R.Wbat/R.MTOW*100).toFixed(1)}% | SM: ${(R.SM_vt*100).toFixed(1)}%\n${R.feasible ? '✅ Feasible' : '❌ Needs fixing: ' + (R.checks||[]).filter(c=>!c.ok).map(c=>c.label).join(', ')}`
+      }]);
+
+      /* ── STEP 3: Iterative optimization loop ── */
+      let iter = 1;
+      const maxIter = 4;
+
+      while (!R.feasible && iter < maxIter) {
+        iter++;
+        await new Promise(r => setTimeout(r, 1800)); // rate limit protection
+
+        const failedChecks = (R.checks||[]).filter(c=>!c.ok).map(c=>`${c.label}: ${c.val}`).join(', ');
+        const fixPrompt = `Current eVTOL params: ${JSON.stringify(currentP)}
+Results: MTOW=${R.MTOW}kg, batFrac=${(R.Wbat/R.MTOW*100).toFixed(1)}%, SM=${(R.SM_vt*100).toFixed(1)}%, TipMach=${R.TipMach}, LDact=${R.LDact}
+FAILED checks: ${failedChecks}
+
+Fix rules:
+- batFrac>55%: increase sedCell by 20-30 or decrease range by 10-20%
+- MTOW>5700: decrease range or payload
+- SM out of 5-25%: adjust AR (increase if SM too small, decrease if too large)  
+- TipMach>0.70: decrease propDiam by 0.2-0.3
+- LDact<10: increase AR or LD
+Output ONLY a corrected JSON object with all 12 keys. No explanation.`;
+
+        const rawFix = await askGroq(
+          "You fix eVTOL designs. Output ONLY valid JSON with exact same 12 keys. No text, no markdown.",
+          fixPrompt
+        );
+
+        let fixedP = null;
+        try {
+          const jsonMatch2 = rawFix.match(/\{[\s\S]*\}/);
+          if (jsonMatch2) fixedP = JSON.parse(jsonMatch2[0]);
+        } catch {}
+
+        if (!fixedP) break;
+
+        // Apply fixed params live to sliders
+        injectParams(fixedP);
+        currentP = fixedP;
+        setIterCount(c => c + 1);
+        R = runSizing({ ...params, ...currentP });
+
+        setMessages(p => [...p, {
+          role: 'assistant',
+          content: `🔄 Iteration ${iter} — Updated design applied to your app...\nMTOW: ${R.MTOW}kg | Energy: ${R.Etot}kWh | L/D: ${R.LDact} | BatFrac: ${(R.Wbat/R.MTOW*100).toFixed(1)}% | SM: ${(R.SM_vt*100).toFixed(1)}%\n${R.feasible ? '✅ Feasible' : '❌ Still needs fixing: ' + (R.checks||[]).filter(c=>!c.ok).map(c=>c.label).join(', ')}`
+        }]);
       }
+
+      /* ── STEP 4: Ask AI for final engineering summary ── */
+      await new Promise(r => setTimeout(r, 1800));
+
+      const summaryPrompt = `An eVTOL was designed with these final parameters: ${JSON.stringify(currentP)}
+Results: MTOW=${R.MTOW}kg, Wbat=${R.Wbat}kg, Etot=${R.Etot}kWh, Phov=${R.Phov}kW, Pcr=${R.Pcr}kW, LDact=${R.LDact}, SM=${(R.SM_vt*100).toFixed(1)}%, TipMach=${R.TipMach}, batFrac=${(R.Wbat/R.MTOW*100).toFixed(1)}%, bWing=${R.bWing}m, feasible=${R.feasible}.
+${!R.feasible ? 'Could not fully converge. Remaining issues: ' + (R.checks||[]).filter(c=>!c.ok).map(c=>c.label).join(', ') : ''}
+
+Write a concise engineering summary (under 120 words): key design choices, performance highlights, and one recommendation for further improvement.`;
+
+      const summary = await askGroq(
+        "You are a concise aerospace engineering report writer.",
+        summaryPrompt
+      );
+
+      setMessages(p => [...p, {
+        role: 'assistant',
+        content: `${R.feasible ? '✅ FINAL FEASIBLE DESIGN — all parameters injected into your app:' : '⚠️ Best design found (partially feasible):'}\n\n${summary}\n\n📊 Final: MTOW=${R.MTOW}kg | Battery=${R.Wbat}kg | Energy=${R.Etot}kWh | L/D=${R.LDact} | Span=${R.bWing}m | Hover Power=${R.Phov}kW`
+      }]);
+
     } catch(e) {
       setMessages(p => [...p, { role: 'assistant', content: `⚠️ Error: ${e.message}` }]);
     }
@@ -2097,28 +2092,27 @@ Good starting values: range=80, payload=320, vCruise=67, LD=14, AR=9, sedCell=25
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       {/* Header */}
       <div style={{ background: `linear-gradient(135deg,${SC.bg},#120a1f)`, border: `1px solid ${SC.purple}44`, borderRadius: 10, padding: '16px 20px' }}>
-        <div style={{ fontSize: 9, color: SC.muted, fontFamily: "'DM Mono',monospace", letterSpacing: '0.18em', marginBottom: 4 }}>CLAUDE-POWERED · ITERATIVE SIZING · FIRST AI-NATIVE eVTOL DESIGN TOOL</div>
+        <div style={{ fontSize: 9, color: SC.muted, fontFamily: "'DM Mono',monospace", letterSpacing: '0.18em', marginBottom: 4 }}>LLAMA 3 VIA GROQ · NO API KEY NEEDED · FEASIBILITY-AWARE</div>
         <div style={{ fontSize: 18, fontWeight: 800, color: SC.text, marginBottom: 6 }}>
           <span style={{ color: SC.purple }}>AI</span> Design Assistant
+          {iterCount > 0 && <span style={{ fontSize: 11, color: SC.green, marginLeft: 12 }}>✅ {iterCount} sizing run{iterCount > 1 ? 's' : ''}</span>}
         </div>
-        <div style={{ fontSize: 11, color: SC.muted, lineHeight: 1.7, maxWidth: 760 }}>
-          Describe your requirements in plain language. Claude runs the physics engine iteratively, adjusting parameters and explaining every tradeoff in real time. Your sliders update live as Claude optimises the design.
-          {iterCount > 0 && <span style={{ color: SC.green, marginLeft: 12 }}>✅ {iterCount} sizing iteration{iterCount > 1 ? 's' : ''} completed</span>}
+        <div style={{ fontSize: 11, color: SC.muted, lineHeight: 1.7 }}>
+          Describe requirements in plain language. AI suggests parameters, runs the physics engine, and shows feasibility instantly. Sliders update automatically when a feasible design is found.
         </div>
       </div>
 
-      {/* Chat */}
+      {/* Chat window */}
       <div style={{ background: SC.panel, border: `1px solid ${SC.border}`, borderRadius: 8, display: 'flex', flexDirection: 'column', height: 460 }}>
-        {/* Messages */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ flex: 1, overflowY: 'auto', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
           {messages.map((m, i) => (
             <div key={i} style={{ display: 'flex', justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start' }}>
               <div style={{
-                maxWidth: '80%', padding: '10px 14px', borderRadius: 10,
+                maxWidth: '82%', padding: '10px 14px', borderRadius: 10,
                 background: m.role === 'user' ? `${SC.purple}33` : SC.bg,
-                border: `1px solid ${m.role === 'user' ? SC.purple+'66' : SC.border}`,
+                border: `1px solid ${m.role === 'user' ? SC.purple+'55' : SC.border}`,
                 fontSize: 11, color: SC.text, fontFamily: "'DM Mono',monospace", lineHeight: 1.8,
-                whiteSpace: 'pre-wrap',
+                whiteSpace: 'pre-wrap', wordBreak: 'break-word',
               }}>
                 {m.role === 'assistant' && <span style={{ fontSize: 8, color: SC.purple, fontWeight: 800, display: 'block', marginBottom: 4 }}>🤖 AI ASSISTANT</span>}
                 {m.content}
@@ -2129,20 +2123,20 @@ Good starting values: range=80, payload=320, vCruise=67, LD=14, AR=9, sedCell=25
             <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
               <div style={{ padding: '10px 14px', borderRadius: 10, background: SC.bg, border: `1px solid ${SC.border}`, fontSize: 11, color: SC.muted, fontFamily: "'DM Mono',monospace" }}>
                 <span style={{ fontSize: 8, color: SC.purple, fontWeight: 800, display: 'block', marginBottom: 4 }}>🤖 AI ASSISTANT</span>
-                ⟳ Running sizing iterations…
+                ⟳ Thinking…
               </div>
             </div>
           )}
           <div ref={bottomRef} />
         </div>
 
-        {/* Input */}
+        {/* Input bar */}
         <div style={{ borderTop: `1px solid ${SC.border}`, padding: '10px 14px', display: 'flex', gap: 10 }}>
           <input
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && !e.shiftKey && send()}
-            placeholder="Describe requirements… e.g. '4 passengers, 100km, EASA SC-VTOL, hot climate'"
+            placeholder="e.g. '4 passengers, 100km, EASA SC-VTOL, optimise for minimum MTOW'"
             style={{ flex: 1, background: SC.bg, border: `1px solid ${SC.border}`, borderRadius: 6, color: SC.text, fontSize: 11, padding: '8px 12px', fontFamily: "'DM Mono',monospace", outline: 'none' }}
             disabled={thinking}
           />
@@ -2155,17 +2149,17 @@ Good starting values: range=80, payload=320, vCruise=67, LD=14, AR=9, sedCell=25
 
       {/* Quick prompts */}
       <div style={{ background: SC.panel, border: `1px solid ${SC.border}`, borderRadius: 8, padding: '12px 14px' }}>
-        <div style={{ fontSize: 9, color: SC.muted, fontFamily: "'DM Mono',monospace", marginBottom: 8 }}>QUICK PROMPTS — click to use</div>
+        <div style={{ fontSize: 9, color: SC.muted, fontFamily: "'DM Mono',monospace", marginBottom: 8 }}>QUICK PROMPTS</div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {[
-            "Optimise for minimum MTOW with current range and payload",
-            "4 passengers, 100km range, EASA SC-VTOL certification",
+            "4 passengers, 80km range, EASA SC-VTOL certification",
+            "Minimise MTOW with current range and payload",
             "Maximise range with battery fraction under 45%",
-            "Why is my static margin failing? Suggest a fix",
-            "Compare 6-rotor vs 8-rotor configuration for my mission",
-            "What battery SED do I need to reach 150km range?",
+            "6 passengers, 150km, high-altitude operation at 2000m",
+            "Fix my static margin issue",
+            "What battery SED do I need for 200km range?",
           ].map(q => (
-            <button key={q} onClick={() => { setInput(q); }} type="button"
+            <button key={q} onClick={() => setInput(q)} type="button"
               style={{ padding: '5px 12px', background: `${SC.purple}18`, border: `1px solid ${SC.purple}44`, borderRadius: 5, color: SC.purple, fontSize: 9, cursor: 'pointer', fontFamily: "'DM Mono',monospace" }}>
               {q}
             </button>
@@ -2175,6 +2169,7 @@ Good starting values: range=80, payload=320, vCruise=67, LD=14, AR=9, sedCell=25
     </div>
   );
 }
+
 
 function DesignSpacePanel({ params, SC, TTP, runSizingFn }) {
   const [results,  setResults]  = useState(null);
