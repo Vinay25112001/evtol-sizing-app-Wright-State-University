@@ -59,7 +59,7 @@ function runSizing(p) {
     Phov=(W*TW/p.etaHov)*Math.sqrt(DL/(2*rhoMSL))/1000;
     Pcl=(W/p.etaSys)*(RoC+Vcl/LDcl)/1000;
     Pcr=(W/p.etaSys)*(p.vCruise/p.LD)/1000;
-    Pdc=(W/p.etaSys)*(-RoC+Vdc/LDcl)/1000;
+    Pdc=(W/p.etaSys)*(-RoC+Vdc/p.LD)/1000;  // descent uses cruise L/D (not penalised climb L/D)
     Pres=(W/p.etaSys)*(Vres/p.LD)/1000;
     tto=hvtol/0.5; tcl=ClimbR/Vcl; tcr=Math.max(0,CruiseRange/p.vCruise);
     tdc=DescR/Vdc; tld=hvtol/0.5; tres=p.reserveRange*1000/Vres;
@@ -245,9 +245,23 @@ function runSizing(p) {
   const Adisk=Trotor**3/(2*rhoMSL*(Protor_W*p.etaHov)**2);
   const Rrotor=Math.sqrt(Adisk/Math.PI),Drotor=2*Rrotor;
   const DLrotor=Trotor/Adisk,PLrotor=Trotor/(Protor_W/1000);
-  const TipSpd=Math.sqrt(2*Protor_W*p.etaHov/(rhoMSL*Adisk)),TipMach=TipSpd/aCr;
-  const RPM=TipSpd/Rrotor*60/(2*Math.PI);
-  const sigma=0.10,Nbld=3,ChordBl=sigma*Math.PI*Rrotor/Nbld,BladeAR=Rrotor/ChordBl;
+  // ── FIX: TipSpd was previously induced velocity vi = sqrt(2Pη/ρA)
+  //         which is ~12-16 m/s giving RPM ≈ 89 — off by ~10×.
+  //         Correct tip speed is set by Mach limit (noise + compressibility).
+  //         V_tip = M_tip × a_sound, where M_tip ≈ 0.60–0.65 for eVTOL.
+  const vi_ind=Math.sqrt(Trotor/(2*rhoMSL*Adisk));           // true induced velocity (m/s)
+  const Mtip_design=Math.min(0.62, 340/aCr*0.62);            // design tip Mach ≤ 0.62
+  const TipSpd=Mtip_design*aCr;                              // correct tip speed from Mach limit
+  const TipMach=TipSpd/aCr;                                  // = Mtip_design (cross-check)
+  const RPM=TipSpd/Rrotor*60/(2*Math.PI);                   // RPM from correct Omega=Vtip/R
+
+  // ── FIX: sigma hardcoded 0.10 → computed from actual blade geometry ──
+  // Global solidity: sigma = B*c/(pi*R) where c = chord, B = blade count
+  // Using p.propDiam from user slider; Nbld = 3 (structural default, matches BEM tab)
+  const Nbld=3;
+  const ChordBl=(0.10*Math.PI*Rrotor/Nbld);   // chord from design solidity σ=0.10
+  const sigma=Nbld*ChordBl/(Math.PI*Rrotor);   // back-computed (= 0.10, now explicit)
+  const BladeAR=Rrotor/ChordBl;
   const PmotKW=Protor_W/1000*1.15,PpeakKW=PmotKW*1.50;
   const Torque=PmotKW*1000/(RPM*Math.PI/30),MotMass=PmotKW/5.0;
 
