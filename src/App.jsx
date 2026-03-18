@@ -3002,12 +3002,12 @@ export default function App(){
     // ── Aerodynamics (calibrated vs Joby S4 / Archer Midnight / NASA NDARC) ──
     LD:14,AR:9,eOsw:0.85,clDesign:0.55,taper:0.45,tc:0.15,
     // ── Propulsion ───────────────────────────────────────────────────────
-    nPropHover:6,propDiam:3.0,twRatio:1.2,convTolExp:-6,
+    nPropHover:6,propDiam:3.0,twRatio:1.3,convTolExp:-6,
     etaHov:0.70,          // FOM 0.70 — achievable with optimised eVTOL hover rotor (was 0.63)
     etaSys:0.80,          // drivetrain η — modern PMSM motors + inverter ~93%×93% (was 0.765)
     rateOfClimb:5.08,climbAngle:5,
     // ── Battery (2025 state-of-art; Joby claims ~300 Wh/kg cell-level) ──
-    sedCell:300,etaBat:0.90,socMin:0.2,
+    sedCell:300,etaBat:0.90,socMin:0.19,
     // ── Weights (composite airframe; Joby EWF=0.43, Archer~0.45, conservative 0.50) ──
     ewf:0.50,
     // ── Geometry (Lf/b target 0.55–0.70; fL=7.2 gives 0.564 with 12.77 m span) ──
@@ -3581,8 +3581,8 @@ export default function App(){
 
           {/* Reset */}
           <button onClick={()=>setParams({payload:455,range:250,vCruise:67,cruiseAlt:1000,reserveRange:60,hoverHeight:15.24,
-            LD:14,AR:9,eOsw:0.85,clDesign:0.55,taper:0.45,tc:0.15,nPropHover:6,propDiam:3.0,twRatio:1.2,convTolExp:-6,
-            etaHov:0.70,etaSys:0.80,rateOfClimb:5.08,climbAngle:5,sedCell:300,etaBat:0.90,socMin:0.2,ewf:0.50,
+            LD:14,AR:9,eOsw:0.85,clDesign:0.55,taper:0.45,tc:0.15,nPropHover:6,propDiam:3.0,twRatio:1.3,convTolExp:-6,
+            etaHov:0.70,etaSys:0.80,rateOfClimb:5.08,climbAngle:5,sedCell:300,etaBat:0.90,socMin:0.19,ewf:0.50,
             fusLen:7.2,fusDiam:1.65,vtGamma:45,vtCh:0.45,vtCv:0.032,vtAR:2.5})}
             style={{padding:"5px 12px",background:"transparent",border:`1px solid ${SC.border}`,
               borderRadius:4,color:SC.muted,fontSize:9,cursor:"pointer",fontFamily:"'DM Mono',monospace"}}>
@@ -6291,20 +6291,16 @@ export default function App(){
 
                 {/* ── Acoustic Model Methodology ── */}
                 <Panel title="Acoustic Model — Methodology & Limitations">
-                  {(()=>{
-                    const [open,setOpen]=useState(false);
-                    return(
-                      <div>
-                        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',cursor:'pointer',padding:'4px 0'}} onClick={()=>setOpen(o=>!o)}>
-                          <span style={{fontSize:11,color:SC.muted,fontFamily:"'DM Mono',monospace"}}>
-                            {open?'▲ Hide':'▼ Show'} full methodology, assumptions and validity envelope
-                          </span>
-                          <span style={{fontSize:9,color:SC.amber,fontFamily:"'DM Mono',monospace",padding:'3px 10px',border:`1px solid ${SC.amber}44`,borderRadius:4}}>
-                            Calibrated empirical model — not certification-grade
-                          </span>
-                        </div>
-                        {open&&(
-                          <div style={{marginTop:12,display:'flex',flexDirection:'column',gap:10}}>
+                  <div>
+                    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'4px 0 10px 0'}}>
+                      <span style={{fontSize:10,color:SC.muted,fontFamily:"'DM Mono',monospace"}}>
+                        Gutin-inspired far-field approximation · 8 harmonics · per-frequency A-weighting
+                      </span>
+                      <span style={{fontSize:9,color:SC.amber,fontFamily:"'DM Mono',monospace",padding:'3px 10px',border:`1px solid ${SC.amber}44`,borderRadius:4}}>
+                        Calibrated empirical model — not certification-grade
+                      </span>
+                    </div>
+                    <div style={{display:'flex',flexDirection:'column',gap:10}}>
 
                             {/* Formula box */}
                             <div style={{background:SC.bg,border:`1px solid ${SC.border}`,borderRadius:8,padding:'14px 16px'}}>
@@ -6392,10 +6388,8 @@ export default function App(){
                             </div>
 
                           </div>
-                        )}
-                      </div>
-                    );
-                  })()}
+                    </div>
+                  </div>
                 </Panel>
               </div>
             )}
