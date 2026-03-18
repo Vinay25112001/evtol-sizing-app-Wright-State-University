@@ -1929,6 +1929,29 @@ function AIAssistantPanel({ params, SR, SC, onParamChange }) {
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
   /* ── Run sizing from a params object, apply to sliders if feasible ── */
+  /* ── Hard clamp AI params to physical bounds — prevents nonsense values ── */
+  const sanitize = (p) => {
+    const s = { ...p };
+    const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, +v || lo));
+    if (s.range      !== undefined) s.range      = clamp(s.range,      20,   500);
+    if (s.payload    !== undefined) s.payload    = clamp(s.payload,    50,   800);
+    if (s.vCruise    !== undefined) s.vCruise    = clamp(s.vCruise,    30,   120);
+    if (s.LD         !== undefined) s.LD         = clamp(s.LD,          8,    22);
+    if (s.AR         !== undefined) s.AR         = clamp(s.AR,          5,    16);
+    if (s.sedCell    !== undefined) s.sedCell    = clamp(s.sedCell,    150,   400);
+    if (s.nPropHover !== undefined) {
+      // Must be even integer between 4 and 12
+      let n = Math.round(clamp(s.nPropHover, 4, 12));
+      s.nPropHover = n % 2 === 0 ? n : n + 1;
+    }
+    if (s.propDiam   !== undefined) s.propDiam   = clamp(s.propDiam,   1.0,   4.0);
+    if (s.twRatio    !== undefined) s.twRatio    = clamp(s.twRatio,    1.0,   1.5);
+    if (s.ewf        !== undefined) s.ewf        = clamp(s.ewf,       0.30,  0.65);
+    if (s.etaHov     !== undefined) s.etaHov     = clamp(s.etaHov,    0.60,  0.85);
+    if (s.etaSys     !== undefined) s.etaSys     = clamp(s.etaSys,    0.70,  0.92);
+    return s;
+  };
+
   const trySizing = (p) => {
     try {
       const R = runSizing({ ...params, ...p });
@@ -1995,15 +2018,15 @@ Output ONLY the JSON. No other text.`;
       const raw1 = await askGroq(systemPrompt, userMsg);
       let currentP = null;
       try {
-        // Strip any markdown/text around JSON
         const jsonMatch = raw1.match(/\{[\s\S]*\}/);
-        if (jsonMatch) currentP = JSON.parse(jsonMatch[0]);
+        if (jsonMatch) currentP = sanitize(JSON.parse(jsonMatch[0]));
       } catch {}
 
+      // Fallback: use sensible defaults if AI returned garbage
       if (!currentP) {
-        setMessages(p => [...p, { role: 'assistant', content: "⚠️ Couldn't parse initial parameters. Please try rephrasing your requirements." }]);
-        setThinking(false);
-        return;
+        currentP = sanitize({ range: params.range, payload: params.payload, vCruise: 67,
+          LD: 14, AR: 9, sedCell: 250, nPropHover: 6, propDiam: 2.5,
+          twRatio: 1.2, ewf: 0.45, etaHov: 0.72, etaSys: 0.82 });
       }
 
       /* ── STEP 2: Inject initial params immediately so user sees the design ── */
@@ -2046,10 +2069,30 @@ Output ONLY a corrected JSON object with all 12 keys. No explanation.`;
         let fixedP = null;
         try {
           const jsonMatch2 = rawFix.match(/\{[\s\S]*\}/);
-          if (jsonMatch2) fixedP = JSON.parse(jsonMatch2[0]);
+          if (jsonMatch2) fixedP = sanitize(JSON.parse(jsonMatch2[0]));
         } catch {}
 
-        if (!fixedP) break;
+        // If AI failed to parse, apply rule-based fixes ourselves
+        if (!fixedP) fixedP = { ...currentP };
+
+        // Rule-based corrections — override AI if it missed obvious fixes
+        const prevR = R;
+        if (prevR.Wbat/prevR.MTOW > 0.55) {
+          fixedP.sedCell = Math.min(400, (fixedP.sedCell||250) * 1.20);  // +20% SED
+          fixedP.range   = Math.max(20,  (fixedP.range||80)   * 0.92);   // -8% range
+        }
+        if (prevR.MTOW > 5700) {
+          fixedP.range   = Math.max(20,  (fixedP.range||80)   * 0.88);
+          fixedP.payload = Math.max(50,  (fixedP.payload||320) * 0.95);
+        }
+        if (prevR.TipMach > 0.70) {
+          fixedP.propDiam = Math.max(1.0, (fixedP.propDiam||2.5) - 0.3);
+        }
+        if (prevR.SM_vt < 0.05) fixedP.AR = Math.min(16, (fixedP.AR||9) + 1.5);
+        if (prevR.SM_vt > 0.25) fixedP.AR = Math.max(5,  (fixedP.AR||9) - 1.0);
+        if (prevR.LDact < 10)   fixedP.AR = Math.min(16, (fixedP.AR||9) + 1.0);
+
+        fixedP = sanitize(fixedP);  // clamp again after rule fixes
 
         // Apply fixed params live to sliders
         injectParams(fixedP);
