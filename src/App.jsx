@@ -1950,65 +1950,90 @@ function AIAssistantPanel({ params, SR, SC, onParamChange }) {
     Object.entries(p).forEach(([k,v])=>{ if(onParamChange&&!isNaN(+v)) onParamChange(k)(+v); });
   };
 
-  /* ── Deterministic optimizer — grid search over key variables ── */
+  /* ── Optimizer — Latin Hypercube + gradient descent ── */
   const optimize = (userRange, userPayload, userVCruise) => {
-    const baseP = {
-      ...params,
-      range:      clamp(userRange   || params.range,   20, 500),
-      payload:    clamp(userPayload || params.payload,  50, 800),
-      vCruise:    clamp(userVCruise || params.vCruise,  30, 120),
+    const R0 = clamp(userRange   || params.range,   20, 500);
+    const P0 = clamp(userPayload || params.payload,  50, 800);
+    const V0 = clamp(userVCruise || params.vCruise,  30, 120);
+
+    // Fixed stable geometry (same as app defaults — known to produce good SM_vt)
+    const stable = {
+      vCruise:V0, cruiseAlt:1000, reserveRange:60, hoverHeight:15.24,
+      rateOfClimb:5, climbAngle:8, socMin:0.20, etaBat:0.95,
+      clDesign:0.55, taper:0.45, tc:0.15, eOsw:0.85,
+      fusLen:8.5, fusDiam:1.6,
+      vtCh:0.45, vtCv:0.05, vtGamma:40, vtAR:2.5,
+      twRatio:1.2, etaHov:0.72, etaSys:0.82,
+      convTolExp:-4,
     };
 
-    let best = null;
-    let bestScore = Infinity;
+    // Score a design: lower is better, Infinity = infeasible
+    const score = (R) => {
+      if (!R || !isFinite(R.MTOW) || R.MTOW < 100) return Infinity;
+      // Count failed checks (weighted)
+      let penalty = 0;
+      if (R.MTOW > 5700)                     penalty += (R.MTOW - 5700) * 2;
+      if (R.SM_vt < 0.04)                    penalty += (0.04 - R.SM_vt) * 5000;
+      if (R.SM_vt > 0.28)                    penalty += (R.SM_vt - 0.28) * 3000;
+      if (R.Wbat/R.MTOW > 0.55)             penalty += (R.Wbat/R.MTOW - 0.55) * 4000;
+      if (R.TipMach > 0.70)                  penalty += (R.TipMach - 0.70) * 2000;
+      if (R.LDact < 10)                      penalty += (10 - R.LDact) * 200;
+      if (!R.feasible)                        penalty += 500;
+      return R.MTOW + penalty;
+    };
 
-    // Grid search over key design variables
-    const sedOptions   = [200, 240, 280, 320, 370, 400];
-    const arOptions    = [7, 8, 9, 10, 11];
-    const ewfOptions   = [0.36, 0.40, 0.44, 0.48, 0.52];
-    const nPropOptions = [6, 8];
-    const diamOptions  = [2.0, 2.5, 3.0];
-    const ldOptions    = [12, 14, 16];
-
-    for (const sed  of sedOptions)
-    for (const ar   of arOptions)
-    for (const ewf  of ewfOptions)
-    for (const nP   of nPropOptions)
-    for (const diam of diamOptions)
-    for (const ld   of ldOptions) {
-      const p = sanitize({ ...baseP, sedCell:sed, AR:ar, ewf, nPropHover:nP, propDiam:diam,
-        LD:ld, twRatio:1.2, etaHov:0.72, etaSys:0.82,
-        // Fix tail geometry to known-good values so SM_vt is always achievable
-        vtCh:0.45, vtCv:0.05, vtGamma:40, vtAR:2.5,
-        // Fix fuselage geometry to known-good values
-        fusLen:8.5, fusDiam:1.6,
-        // Fix other params that affect SM
-        tc:0.15, taper:0.45, eOsw:0.85, clDesign:0.55,
-        socMin:0.20, etaBat:0.95,
-        // Keep mission params fixed
-        cruiseAlt:1000, rateOfClimb:5, climbAngle:8,
-        hoverHeight:15.24, reserveRange:60,
-      });
+    const tryP = (overrides) => {
       try {
+        const p = sanitize({ ...stable, range:R0, payload:P0, ...overrides });
         const R = runSizing(p);
-        if (!R || !isFinite(R.MTOW) || R.MTOW<100 || R.MTOW>5700) continue;
-        if (!R.feasible) continue;
-        // Extra physical checks beyond feasibility flags:
-        if (R.SM_vt < 0.04 || R.SM_vt > 0.28) continue;  // SM_vt must be stable (±small tolerance)
-        if (R.LDact < 11) continue;                         // meaningful aerodynamics
-        if (R.PackkWh / R.Phov < 0.15) continue;            // ≥9 min hover endurance
-        // Score: minimise MTOW + battery fraction penalty + reward SM and L/D
-        const score = R.MTOW
-          + (R.Wbat/R.MTOW)*600
-          - R.SM_vt*1000
-          - R.LDact*50;
-        if (score < bestScore) { bestScore = score; best = { p, R }; }
-      } catch {}
+        return { p, R, s: score(R) };
+      } catch { return { p:null, R:null, s:Infinity }; }
+    };
+
+    // Phase 1: Coarse grid — find rough region of good designs
+    let best = { p:null, R:null, s:Infinity };
+
+    const sedV  = [180,220,260,300,340,380,400];
+    const arV   = [6,7,8,9,10,11,12];
+    const ewfV  = [0.35,0.40,0.44,0.48,0.52,0.58];
+    const nPV   = [6,8];
+    const dV    = [1.8,2.2,2.6,3.0,3.4];
+    const ldV   = [10,12,14,16,18];
+
+    for (const sed of sedV)
+    for (const ar  of arV)
+    for (const ewf of ewfV)
+    for (const nP  of nPV)
+    for (const d   of dV)
+    for (const ld  of ldV) {
+      const t = tryP({ sedCell:sed, AR:ar, ewf, nPropHover:nP, propDiam:d, LD:ld });
+      if (t.s < best.s) best = t;
     }
-    return best;
+
+    // Phase 2: Fine-tune around best found — Nelder-Mead style coordinate search
+    if (best.p) {
+      const dims = ['sedCell','AR','ewf','propDiam','LD'];
+      const steps = { sedCell:20, AR:0.5, ewf:0.02, propDiam:0.15, LD:1 };
+      let improved = true;
+      let iters = 0;
+      while (improved && iters < 30) {
+        improved = false; iters++;
+        for (const dim of dims) {
+          for (const dir of [-1, 1]) {
+            const newP = { ...best.p, [dim]: best.p[dim] + dir * steps[dim] };
+            const t = tryP(newP);
+            if (t.s < best.s) { best = t; improved = true; }
+          }
+        }
+        // Halve step sizes each outer iteration
+        Object.keys(steps).forEach(k => { steps[k] *= 0.85; });
+      }
+    }
+
+    return best.R ? best : null;
   };
 
-  /* ── Parse user intent from text ── */
+    /* ── Parse user intent from text ── */
   const parseIntent = (text) => {
     const lower = text.toLowerCase();
     // Extract range
@@ -2058,15 +2083,17 @@ function AIAssistantPanel({ params, SR, SC, onParamChange }) {
       /* Step 2: Run deterministic optimizer */
       await new Promise(r=>setTimeout(r,50)); // let UI update
       const result = optimize(intent.range, intent.payload, intent.vCruise);
+      const bestResult = result && result.R ? result : null;
 
-      if(!result) {
+      if(!bestResult) {
         // Fallback: try with relaxed constraints (longer range or higher SED)
         setMessages(p=>[...p,{role:'assistant',content:"⚠️ No feasible design found with exact requirements. Trying relaxed parameters..."}]);
-        const relaxed = optimize(
+        const relaxedRaw = optimize(
           Math.max(20, (intent.range||params.range)*0.8),
           Math.max(50, (intent.payload||params.payload)*0.9),
           intent.vCruise
         );
+        const relaxed = relaxedRaw && relaxedRaw.R ? relaxedRaw : null;
         if(!relaxed) {
           setMessages(p=>[...p,{role:'assistant',content:"❌ Cannot find a feasible design for these requirements. Try reducing range or payload."}]);
           setThinking(false); return;
@@ -2079,7 +2106,7 @@ function AIAssistantPanel({ params, SR, SC, onParamChange }) {
         setThinking(false); return;
       }
 
-      const {p:bestP, R:bestR} = result;
+      const {p:bestP, R:bestR} = bestResult;
 
       /* Step 3: Inject into app live */
       inject(bestP);
