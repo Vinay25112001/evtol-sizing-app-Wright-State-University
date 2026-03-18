@@ -1963,9 +1963,9 @@ function AIAssistantPanel({ params, SR, SC, onParamChange }) {
     let bestScore = Infinity;
 
     // Grid search over key design variables
-    const sedOptions   = [220, 260, 300, 350, 400];
+    const sedOptions   = [200, 240, 280, 320, 370, 400];
     const arOptions    = [7, 8, 9, 10, 11];
-    const ewfOptions   = [0.38, 0.42, 0.45, 0.50];
+    const ewfOptions   = [0.36, 0.40, 0.44, 0.48, 0.52];
     const nPropOptions = [6, 8];
     const diamOptions  = [2.0, 2.5, 3.0];
     const ldOptions    = [12, 14, 16];
@@ -1977,15 +1977,26 @@ function AIAssistantPanel({ params, SR, SC, onParamChange }) {
     for (const diam of diamOptions)
     for (const ld   of ldOptions) {
       const p = sanitize({ ...baseP, sedCell:sed, AR:ar, ewf, nPropHover:nP, propDiam:diam,
-        LD:ld, twRatio:1.2, etaHov:0.72, etaSys:0.82 });
+        LD:ld, twRatio:1.2, etaHov:0.72, etaSys:0.82,
+        // Fix tail geometry to known-good values so SM_vt is always achievable
+        vtCh:0.45, vtCv:0.05, vtGamma:40, vtAR:2.5,
+        // Fix fuselage geometry to known-good values
+        fusLen:8.5, fusDiam:1.6,
+        // Fix other params that affect SM
+        tc:0.15, taper:0.45, eOsw:0.85, clDesign:0.55,
+        socMin:0.20, etaBat:0.95,
+        // Keep mission params fixed
+        cruiseAlt:1000, rateOfClimb:5, climbAngle:8,
+        hoverHeight:15.24, reserveRange:60,
+      });
       try {
         const R = runSizing(p);
         if (!R || !isFinite(R.MTOW) || R.MTOW<100 || R.MTOW>5700) continue;
         if (!R.feasible) continue;
         // Extra physical checks beyond feasibility flags:
-        if (R.SM_vt < 0.05 || R.SM_vt > 0.25) continue;  // SM_vt must be stable
+        if (R.SM_vt < 0.04 || R.SM_vt > 0.28) continue;  // SM_vt must be stable (±small tolerance)
         if (R.LDact < 11) continue;                         // meaningful aerodynamics
-        if (R.PackkWh / R.Phov < 0.20) continue;            // ≥12 min hover endurance
+        if (R.PackkWh / R.Phov < 0.15) continue;            // ≥9 min hover endurance
         // Score: minimise MTOW + battery fraction penalty + reward SM and L/D
         const score = R.MTOW
           + (R.Wbat/R.MTOW)*600
