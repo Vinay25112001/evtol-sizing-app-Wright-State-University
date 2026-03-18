@@ -2369,19 +2369,6 @@ function AIAssistantPanel({ params, SR, SC, onParamChange, user }) {
     setInput('');
     setMessages(p=>[...p,{role:'user',content:userMsg,mode:'design'}]);
     setThinking(true);
-    /* ─────────── original design optimizer logic (unchanged) ─────────── */
-    if(!input.trim()||thinking) return;
-    const userMsg = input.trim();
-    setInput('');
-    setMessages(p=>[...p,{role:'user',content:userMsg}]);
-    setThinking(true);
-
-  const _originalSend = async () => {
-    if(!input.trim()||thinking) return;
-    const userMsg = input.trim();
-    setInput('');
-    setMessages(p=>[...p,{role:'user',content:userMsg,mode:'design'}]);
-    setThinking(true);
     try {
       /* Step 1: Parse user intent */
       const intent = parseIntent(userMsg);
@@ -2479,8 +2466,8 @@ function AIAssistantPanel({ params, SR, SC, onParamChange, user }) {
                 // Add a context message when switching
                 setMessages(p=>[...p,{role:'assistant',mode:key,content:
                   key==='design'
-                  ?'🛠️ Switched to Design Mode. Describe your eVTOL requirements and I'll find the optimal design and inject it into all app tabs.'
-                  :'💬 Switched to Chat Mode. Ask me anything — BEM theory, certification questions, aerodynamics, comparisons, or general eVTOL concepts.'
+                  ?"🛠️ Switched to Design Mode. Describe your eVTOL requirements and I'll find the optimal design and inject it into all app tabs."
+                  :"💬 Switched to Chat Mode. Ask me anything — BEM theory, certification questions, aerodynamics, comparisons, or general eVTOL concepts."
                 }]);
               }} type="button" title={tip}
                 style={{
