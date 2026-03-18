@@ -55,8 +55,11 @@ function runSizing(p) {
   for(let o=0;o<200;o++){
     itersR2=o+1;
     const W=MTOW*g0;
-    const DL=(W*TW)/(Math.PI*Math.pow(p.propDiam/2,2)*p.nPropHover);
-    Phov=(W*TW/p.etaHov)*Math.sqrt(DL/(2*rhoMSL))/1000;
+    // ── HOVER POWER at T/W=1.0 (steady hover equilibrium) ─────────────────
+    // T/W ratio is a structural margin for climb/OEI — NOT applied to steady hover.
+    // In hover: each rotor supports W/N (not W*TW/N). Motors sized for TW but fly at W.
+    const DL=(W)/(Math.PI*Math.pow(p.propDiam/2,2)*p.nPropHover);  // T/W=1.0
+    Phov=(W/p.etaHov)*Math.sqrt(DL/(2*rhoMSL))/1000;               // T/W=1.0
     Pcl=(W/p.etaSys)*(RoC+Vcl/LDcl)/1000;
     Pcr=(W/p.etaSys)*(p.vCruise/p.LD)/1000;
     Pdc=(W/p.etaSys)*(-RoC+Vdc/p.LD)/1000;  // descent uses cruise L/D (not penalised climb L/D)
@@ -359,8 +362,8 @@ function runSizing(p) {
     let m=MTOW1;
     for(let i=0;i<60;i++){
       const W=m*g0;
-      const DLtw=(W*tw)/(Math.PI*Math.pow(p.propDiam/2,2)*p.nPropHover);
-      const Phov_tw=(W*tw/p.etaHov)*Math.sqrt(DLtw/(2*rhoMSL))/1000;
+      const DLtw=(W)/(Math.PI*Math.pow(p.propDiam/2,2)*p.nPropHover);  // T/W=1.0
+      const Phov_tw=(W/p.etaHov)*Math.sqrt(DLtw/(2*rhoMSL))/1000;               // T/W=1.0
       const Pcl_tw=(W/p.etaSys)*(RoC+Vcl/LDcl)/1000;
       const Pcr_tw=(W/p.etaSys)*(p.vCruise/p.LD)/1000;
       const Pdc_tw=(W/p.etaSys)*(-RoC+Vdc/LDcl)/1000;
@@ -423,7 +426,9 @@ function runSizing(p) {
   const Omega=RPM*Math.PI/30;    // rad/s
   const Vtip=TipSpd;             // m/s
   const Mtip=TipMach;
-  const T_r=Trotor;              // thrust per rotor (N)
+  // Noise uses HOVER EQUILIBRIUM thrust (T/W=1.0), not design thrust
+  // Rotor makes noise at what it actually produces in steady hover, not peak
+  const T_r=MTOW*g0/p.nPropHover;  // hover equilibrium thrust per rotor (N), T/W=1.0
   const rho0=rhoMSL;
   const c0=Math.sqrt(GAM*Rgas*T0); // speed of sound at sea level (340.3 m/s)
   const r0=1.0;                  // reference distance 1m (ICAO standard)
