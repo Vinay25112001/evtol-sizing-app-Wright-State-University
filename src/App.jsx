@@ -59,10 +59,13 @@ function runSizing(p) {
     // T/W ratio is a structural margin for climb/OEI — NOT applied to steady hover.
     // In hover: each rotor supports W/N (not W*TW/N). Motors sized for TW but fly at W.
     const DL=(W)/(Math.PI*Math.pow(p.propDiam/2,2)*p.nPropHover);  // T/W=1.0
-    Phov=(W/p.etaHov)*Math.sqrt(DL/(2*rhoMSL))/1000;               // T/W=1.0
+    Phov=(W/p.etaHov)*Math.sqrt(DL/(2*rhoMSL))/1000;  // W in N, result in W→÷1000→kW
+    // η_hov absorbs: non-uniform inflow, swirl losses, figure-of-merit deviation from ideal
     Pcl=(W/p.etaSys)*(RoC+Vcl/LDcl)/1000;
     Pcr=(W/p.etaSys)*(p.vCruise/p.LD)/1000;
-    Pdc=(W/p.etaSys)*(-RoC+Vdc/p.LD)/1000;  // descent uses cruise L/D (not penalised climb L/D)
+    Pdc=(W/p.etaSys)*(-RoC+Vdc/p.LD)/1000;  // descent: uses cruise L/D
+    // Regenerative braking NOT modelled: Pdc clamped to ≥0 for energy accounting
+    // (rotor wake + poor regen efficiency makes meaningful regen unrealistic for most eVTOL)
     Pres=(W/p.etaSys)*(Vres/p.LD)/1000;
     tto=hvtol/0.5; tcl=ClimbR/Vcl; tcr=Math.max(0,CruiseRange/p.vCruise);
     tdc=DescR/Vdc; tld=hvtol/0.5; tres=p.reserveRange*1000/Vres;
@@ -116,16 +119,37 @@ function runSizing(p) {
   const fL=p.fusLen,fD=p.fusDiam;
   const lambda_f=fL/fD;  // fineness ratio
   const Swf=Math.PI*fD*fL*Math.pow(1-2/lambda_f,2/3)*(1+1/lambda_f**2);  // Raymer Eq 12.31
-  const Swhs=2*Swing*0.18,Swvs=2*Swing*0.12,Swn=p.nPropHover*Math.PI*0.2*0.35;
+  // Tail wetted areas: fixed fractions of wing area (conceptual estimate only)
+  // NOT dynamically sized — real tail sizing uses volume coefficients and moment arm
+  const Swhs=2*Swing*0.18, Swvs=2*Swing*0.12;
+  // Nacelle wetted area: proportional to rotor radius² (not fixed arbitrary constants)
+  // S_wet_nac ≈ N_rot × K_nac × π × R² where K_nac≈0.10 (nacelle/fairing ≈ 10% of disk area)
+  const Swn=p.nPropHover * 0.10 * Math.PI * Math.pow(p.propDiam/2, 2);
   const Refus=rhoCr*p.vCruise*fL/muCr;
+  // Schlichting turbulent flat-plate Cf with Karman-Schlichting compressibility correction
+  // ASSUMPTION: fully turbulent flow everywhere — laminar regions neglected (conservative;
+  // real eVTOL wings may have 20-40% laminar run → actual Cf could be 10-20% lower)
+  // Component-specific roughness effects neglected (same Cf formula for all surfaces)
   const Cfw=0.455/Math.log10(Re_)**2.58/(1+0.144*Mach**2)**0.65;
   const Cff=0.455/Math.log10(Refus)**2.58/(1+0.144*Mach**2)**0.65;
-  const FFw=(1+0.6/0.3*p.tc+100*p.tc**4)*1.05;
+  // Wing form factor — Raymer §12.5: FF = (1 + 0.6/(x/c)*t/c + 100*(t/c)⁴) × 1.05
+  // x/c = chordwise position of max thickness ≈ 0.30 (NACA 4-digit series default)
+  // NOTE: fully turbulent assumption — laminar flow effects neglected (conservative)
+  const xc_maxthick = 0.30;   // position of max thickness; 0.30 for NACA 4-digit, ~0.40 for 6-series
+  const FFw=(1+(0.6/xc_maxthick)*p.tc+100*p.tc**4)*1.05;  // Raymer Eq 12.35
   const FFf=1+60/(fL/fD)**3+(fL/fD)/400;
   const CD0w=Cfw*FFw*Sww/Swing,CD0f=Cff*FFf*Swf/Swing;
   const CD0h=Cfw*1.05*Swhs/Swing,CD0v=Cfw*1.05*Swvs/Swing;
-  const CD0n=Cfw*1.30*Swn/Swing,CD0g=0.015,CD0m=0.002;
+  const CD0n=Cfw*1.30*Swn/Swing;
+  // Landing gear drag: CD0g=0.015 assumes fixed gear (Raymer Table 12.6)
+  // For retractable/folding gear (common on eVTOL): CD0g ≈ 0.001–0.005
+  // This is CONSERVATIVE — retractable gear designs will have lower actual CD0
+  const CD0g=0.015;  // conservative: fixed gear assumption
+  const CD0m=0.002;
   const CD0tot=CD0w+CD0f+CD0h+CD0v+CD0n+CD0g+CD0m;
+  // Induced drag — Oswald efficiency method (Raymer §12.6)
+  // NOTE: rotor-wing aerodynamic interference not modelled (can add 5-15% to CDi for eVTOL)
+  // Non-planar lift effects (winglets, distributed lift) also neglected
   const CDi=p.clDesign**2/(Math.PI*p.AR*p.eOsw);
   const CDtot=CD0tot+CDi,LDact=p.clDesign/CDtot;
 
