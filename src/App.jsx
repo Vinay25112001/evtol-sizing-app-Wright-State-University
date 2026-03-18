@@ -1990,33 +1990,28 @@ function AIAssistantPanel({ params, SR, SC, onParamChange }) {
     Object.entries(p).forEach(([k,v])=>{ if(onParamChange&&!isNaN(+v)) onParamChange(k)(+v); });
   };
 
-  /* ── Optimizer — Latin Hypercube + gradient descent ── */
-  const optimize = (userRange, userPayload, userVCruise) => {
+  /* ── Async Optimizer — chunked so browser never freezes ── */
+  const optimizeAsync = async (userRange, userPayload, userVCruise) => {
     const R0 = clamp(userRange   || params.range,   20, 500);
     const P0 = clamp(userPayload || params.payload,  50, 800);
     const V0 = clamp(userVCruise || params.vCruise,  30, 120);
 
-    // Base: use ALL current app params (user's full slider state)
-    // Only override the variables we are optimising over + ensure stable geometry
     const stable = {
-      ...params,                          // inherit ALL user params (fusLen, vtCh, etc.)
-      vCruise: V0,                        // from user request
-      // Override geometry to known-stable values to ensure SM_vt > 0
-      vtCh: Math.max(params.vtCh || 0.45, 0.40),
-      vtCv: params.vtCv || 0.05,
-      vtGamma: params.vtGamma || 40,
-      vtAR: params.vtAR || 2.5,
-      fusLen: params.fusLen || 8.5,
-      fusDiam: params.fusDiam || 1.6,
-      convTolExp: -4,                     // faster convergence during search
+      ...params,
+      vCruise: V0,
+      vtCh:    Math.max(+(params.vtCh)    || 0.45, 0.40),
+      vtCv:    +(params.vtCv)    || 0.05,
+      vtGamma: +(params.vtGamma) || 40,
+      vtAR:    +(params.vtAR)    || 2.5,
+      fusLen:  +(params.fusLen)  || 8.5,
+      fusDiam: +(params.fusDiam) || 1.6,
+      convTolExp: -3,   // fast convergence during search
     };
 
-    // Score a design: lower is better, Infinity = infeasible
     const score = (R) => {
       if (!R || !isFinite(R.MTOW) || R.MTOW < 100) return Infinity;
       let penalty = 0;
-      // Hard constraints — heavy penalties
-      if (R.MTOW > 5700)              penalty += (R.MTOW  - 5700) * 3;
+      if (R.MTOW > 5700)              penalty += (R.MTOW - 5700) * 3;
       if (R.SM_vt < 0.04)             penalty += (0.04 - R.SM_vt) * 8000;
       if (R.SM_vt > 0.28)             penalty += (R.SM_vt - 0.28) * 5000;
       if (R.Wbat/R.MTOW > 0.55)      penalty += (R.Wbat/R.MTOW - 0.55) * 6000;
@@ -2024,7 +2019,6 @@ function AIAssistantPanel({ params, SR, SC, onParamChange }) {
       if (R.LDact < 10)               penalty += (10 - R.LDact) * 300;
       if (R.PackkWh < R.Etot)         penalty += (R.Etot - R.PackkWh) * 2000;
       if (!R.feasible)                penalty += 300;
-      // Objectives: minimise MTOW, reward L/D and good SM
       return R.MTOW + penalty - R.LDact * 40 - R.SM_vt * 800;
     };
 
@@ -2036,18 +2030,18 @@ function AIAssistantPanel({ params, SR, SC, onParamChange }) {
       } catch { return { p:null, R:null, s:Infinity }; }
     };
 
-    // Phase 1: Coarse grid — find rough region of good designs
-    let best = { p:null, R:null, s:Infinity };
-
-    const sedV  = [180, 220, 260, 300, 350, 400];
-    const arV   = [6, 7, 8, 9, 10, 11, 12];
-    const ewfV  = [0.35, 0.40, 0.44, 0.48, 0.52];
+    // Reduced grid — still covers the space well but ~2400 combos (not 60k)
+    const sedV  = [200, 250, 300, 350, 400];
+    const arV   = [7, 9, 11];
+    const ewfV  = [0.38, 0.44, 0.50];
     const nPV   = [6, 8];
-    const dV    = [1.8, 2.2, 2.6, 3.0, 3.5];
-    const ldV   = [10, 12, 14, 16, 18];
-    const twV   = [1.1, 1.2, 1.3];
-    const etaSV = [0.78, 0.82, 0.86, 0.90];
+    const dV    = [2.0, 2.5, 3.0];
+    const ldV   = [12, 14, 16];
+    const twV   = [1.1, 1.3];
+    const etaSV = [0.80, 0.85, 0.90];
 
+    // Build all combos
+    const combos = [];
     for (const sed  of sedV)
     for (const ar   of arV)
     for (const ewf  of ewfV)
@@ -2055,31 +2049,38 @@ function AIAssistantPanel({ params, SR, SC, onParamChange }) {
     for (const d    of dV)
     for (const ld   of ldV)
     for (const tw   of twV)
-    for (const etaS of etaSV) {
-      const t = tryP({
-        sedCell:sed, AR:ar, ewf, nPropHover:nP, propDiam:d,
-        LD:ld, twRatio:tw, etaSys:etaS,
-      });
-      if (t.s < best.s) best = t;
+    for (const etaS of etaSV)
+      combos.push({ sedCell:sed, AR:ar, ewf, nPropHover:nP, propDiam:d, LD:ld, twRatio:tw, etaSys:etaS });
+
+    let best = { p:null, R:null, s:Infinity };
+    const CHUNK = 50; // evaluate 50 combos per frame
+
+    // Process in async chunks — yields to browser between chunks
+    for (let i = 0; i < combos.length; i += CHUNK) {
+      const slice = combos.slice(i, i + CHUNK);
+      for (const ovr of slice) {
+        const t = tryP(ovr);
+        if (t.s < best.s) best = t;
+      }
+      // Yield to browser every chunk so UI stays responsive
+      await new Promise(r => setTimeout(r, 0));
     }
 
-    // Phase 2: Fine-tune around best found — Nelder-Mead style coordinate search
+    // Phase 2: Coordinate descent fine-tune around best found
     if (best.p) {
-      const dims = ['sedCell','AR','ewf','propDiam','LD','twRatio','etaSys','etaHov'];
-      const steps = { sedCell:15, AR:0.3, ewf:0.015, propDiam:0.1, LD:0.5, twRatio:0.05, etaSys:0.01, etaHov:0.01 };
-      let improved = true;
-      let iters = 0;
-      while (improved && iters < 30) {
+      const dims  = ['sedCell','AR','ewf','propDiam','LD','twRatio','etaSys','etaHov'];
+      const steps = { sedCell:15, AR:0.5, ewf:0.02, propDiam:0.2, LD:1, twRatio:0.05, etaSys:0.02, etaHov:0.02 };
+      let improved = true, iters = 0;
+      while (improved && iters < 20) {
         improved = false; iters++;
         for (const dim of dims) {
           for (const dir of [-1, 1]) {
-            const newP = { ...best.p, [dim]: best.p[dim] + dir * steps[dim] };
-            const t = tryP(newP);
+            const t = tryP({ ...best.p, [dim]: best.p[dim] + dir * steps[dim] });
             if (t.s < best.s) { best = t; improved = true; }
           }
         }
-        // Halve step sizes each outer iteration
-        Object.keys(steps).forEach(k => { steps[k] *= 0.85; });
+        Object.keys(steps).forEach(k => { steps[k] *= 0.8; });
+        await new Promise(r => setTimeout(r, 0)); // yield each outer iter
       }
     }
 
@@ -2135,13 +2136,13 @@ function AIAssistantPanel({ params, SR, SC, onParamChange }) {
 
       /* Step 2: Run deterministic optimizer */
       await new Promise(r=>setTimeout(r,50)); // let UI update
-      const result = optimize(intent.range, intent.payload, intent.vCruise);
+      const result = await optimizeAsync(intent.range, intent.payload, intent.vCruise);
       const bestResult = result && result.R ? result : null;
 
       if(!bestResult) {
         // Fallback: try with relaxed constraints (longer range or higher SED)
         setMessages(p=>[...p,{role:'assistant',content:"⚠️ No feasible design found with exact requirements. Trying relaxed parameters..."}]);
-        const relaxedRaw = optimize(
+        const relaxedRaw = await optimizeAsync(
           Math.max(20, (intent.range||params.range)*0.8),
           Math.max(50, (intent.payload||params.payload)*0.9),
           intent.vCruise
