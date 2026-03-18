@@ -2096,20 +2096,45 @@ function AIAssistantPanel({ params, SR, SC, onParamChange, user }) {
   const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9icmlianlwd3dyYmhzeWpsbHVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM2MjU1MjIsImV4cCI6MjA4OTIwMTUyMn0.Rq2_KfHlHnoluGJY3AcBIqcbuMFuLBitU-Y6aBWyoJ4";
   const SB_HDR = { "apikey": SB_KEY, "Authorization": `Bearer ${SB_KEY}`, "Content-Type": "application/json" };
 
+  const LS_KEY = 'evtol_ai_chat_local'; // localStorage key for instant refresh restore
+
   const DEFAULT_MSG = [{ role:'assistant', mode:'design',
     content:"👋 I'm your AI Design Assistant.\n\nDescribe your eVTOL requirements and I'll run a deterministic optimizer to find the best feasible design, then inject it directly into all your app sliders.\n\nExample: \"4 passengers, 80km range, EASA SC-VTOL certification\"" }];
 
-  const [messages,    setMessages]    = useState(DEFAULT_MSG);
-  const [chatHistory, setChatHistory] = useState([]);
+  // ── Read from localStorage immediately (synchronous — zero delay on refresh) ──
+  const readLocalCache = () => {
+    try {
+      const s = localStorage.getItem(LS_KEY);
+      if (!s) return null;
+      return JSON.parse(s);
+    } catch { return null; }
+  };
+
+  // Initialise from localStorage so chat is visible instantly on refresh
+  const localCache = readLocalCache();
+  const [messages,    setMessages]    = useState(localCache?.messages?.length ? localCache.messages : DEFAULT_MSG);
+  const [chatHistory, setChatHistory] = useState(localCache?.chatHistory || []);
   const [input,    setInput]    = useState('');
   const [thinking, setThinking] = useState(false);
-  const [iterCount,setIterCount]= useState(0);
+  const [iterCount,setIterCount]= useState(localCache?.iterCount || 0);
   const [chatLoaded, setChatLoaded]   = useState(false);
   const saveDebounce = useRef(null);
   const bottomRef = useRef(null);
   useEffect(()=>{ bottomRef.current?.scrollIntoView({behavior:'smooth'}); },[messages]);
 
+  // ── Write to localStorage on every change (synchronous, instant) ──
+  useEffect(()=>{
+    try {
+      localStorage.setItem(LS_KEY, JSON.stringify({
+        messages: messages.slice(-200),
+        chatHistory: chatHistory.slice(-40),
+        iterCount,
+      }));
+    } catch {}
+  }, [messages, chatHistory, iterCount]);
+
   // ── LOAD chat from Supabase on mount (when user is logged in) ──
+  // Supabase gives cross-device sync; localStorage gives instant refresh restore
   useEffect(()=>{
     if (!user?.id) { setChatLoaded(true); return; }
     const uid = user.id;
@@ -2119,9 +2144,13 @@ function AIAssistantPanel({ params, SR, SC, onParamChange, user }) {
         if (rows && rows[0] && rows[0].messages_json) {
           try {
             const saved = JSON.parse(rows[0].messages_json);
-            if (saved.messages?.length) setMessages(saved.messages);
-            if (saved.chatHistory?.length) setChatHistory(saved.chatHistory);
-            if (saved.iterCount) setIterCount(saved.iterCount);
+            // Only override localStorage if Supabase has more messages
+            // (handles the case where user logged in from another device)
+            if (saved.messages?.length > messages.length) {
+              setMessages(saved.messages);
+              setChatHistory(saved.chatHistory || []);
+              setIterCount(saved.iterCount || 0);
+            }
           } catch {}
         }
         setChatLoaded(true);
@@ -2139,7 +2168,6 @@ function AIAssistantPanel({ params, SR, SC, onParamChange, user }) {
         messages_json: JSON.stringify({ messages: msgs.slice(-200), chatHistory: hist.slice(-40), iterCount: iters }),
         updated_at: new Date().toISOString(),
       };
-      // Upsert — insert or update based on user_id
       try {
         await fetch(`${SB_URL}/rest/v1/evtol_ai_chat`, {
           method: "POST",
@@ -2158,6 +2186,9 @@ function AIAssistantPanel({ params, SR, SC, onParamChange, user }) {
     setMessages(DEFAULT_MSG);
     setChatHistory([]);
     setIterCount(0);
+    // Clear localStorage immediately
+    try { localStorage.removeItem(LS_KEY); } catch {}
+    // Clear Supabase if logged in
     if (!user?.id) return;
     try {
       await fetch(`${SB_URL}/rest/v1/evtol_ai_chat?user_id=eq.${user.id}`, {
