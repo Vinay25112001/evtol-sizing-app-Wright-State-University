@@ -988,8 +988,9 @@ function generateReport(p, SR, branding={}) {
   const ngust_d_pdf=1+(Kg_vn*rhoMSLd_vn*Ug_d*SR.VD*CLa_vn)/(2*SR.WL);
   // OEI
   const N_oei=p.nPropHover;
-  const T_each=(SR.MTOW*g0d_vn)/N_oei;
-  const T_oei=(N_oei-1)*T_each;
+  // CORRECT: motor design thrust uses T/W ratio, not T/W=1
+  const T_each=(SR.MTOW*g0d_vn*(p.twRatio||1.2))/N_oei;  // actual design thrust per motor
+  const T_oei=(N_oei-1)*T_each;                            // OEI: (N-1) motors at full thrust
   const OEI_margin=((T_oei-SR.MTOW*g0d_vn)/(SR.MTOW*g0d_vn)*100);
   const P_mot_nom=SR.Phov*1000/N_oei;
   const P_mot_oei=SR.Phov*1000/(N_oei-1);
@@ -2021,8 +2022,10 @@ function RegTrackerPanel({ params, SR, SC }) {
       switch(rule.param) {
         case "OEI_margin_pct": {
           if(!sr) return null;
-          const g=9.81, N=p.nPropHover, T=(sr.MTOW*g)/N;
-          return +((((N-1)*T - sr.MTOW*g)/(sr.MTOW*g))*100).toFixed(1);
+          const g=9.81, N=p.nPropHover, TW=p.twRatio||1.2;
+          const T_nom = sr.MTOW*g*TW/N;         // motor design thrust (uses T/W)
+          const T_oei = (N-1)*T_nom;            // (N-1) motors at full thrust
+          return +(((T_oei - sr.MTOW*g)/(sr.MTOW*g))*100).toFixed(1);
         }
         case "n_pos_limit":    return 3.5;
         case "n_neg_limit":    return -1.5;
@@ -7213,13 +7216,18 @@ export default function App(){
               // OEI hover analysis — CS-VTOL SC.VTOL AMC 27.65
               const N=params.nPropHover,Phov_tot=SR.Phov*1000; // W total hover power
               const P_per_motor=Phov_tot/N;         // nominal power per motor (W)
-              const T_per_motor=SR.Trotor||((MTOW*g)/N); // thrust per motor (N)
-              const T_remaining=(N-1)*T_per_motor;   // OEI thrust available
-              const T_required=MTOW*g;               // weight to overcome
-              const OEI_margin_pct=((T_remaining-T_required)/T_required*100);
-              // Power reallocation: remaining motors absorb failed motor's load
-              const P_per_motor_OEI=Phov_tot/(N-1);  // each remaining motor
-              const P_overhead_pct=((P_per_motor_OEI-P_per_motor)/P_per_motor*100);
+              // CORRECT: each motor is designed for T/W thrust, NOT T/W=1 thrust
+              // T_nom_per_motor = MTOW×g×TW / N  (design thrust at T/W ratio)
+              const TW_oei = params.twRatio || 1.2;
+              const T_per_motor = MTOW*g*TW_oei/N; // actual motor design thrust (N)
+              const T_remaining = (N-1)*T_per_motor; // OEI: (N-1) motors at full thrust
+              const T_required  = MTOW*g;            // must support aircraft weight
+              const OEI_margin_pct = ((T_remaining-T_required)/T_required*100);
+              // OEI power: remaining motors must each produce W/(N-1) thrust
+              // Power scales with thrust (actuator disk: P ∝ T^1.5), but for display
+              // use equal power-sharing: P_oei = Phov_tot/(N-1)
+              const P_per_motor_OEI = Phov_tot/(N-1);  // each remaining motor (W)
+              const P_overhead_pct  = ((P_per_motor_OEI-P_per_motor)/P_per_motor*100);
               const motorSurvivable=P_per_motor_OEI<=(SR.PpeakKW*1000); // within peak rating?
               // Yaw moment from OEI (assume symmetric layout, worst-case arm = propDiam)
               const Larm=params.propDiam;             // moment arm (m) — conservative
