@@ -376,7 +376,7 @@ function runSizing(p) {
   const checks=[
     {label:"MTOW < 5700 kg",ok:MTOW<5700,val:`${MTOW.toFixed(1)} kg`},
     {label:"Pack ≥ Mission E",ok:PackkWh>=Etot,val:`${PackkWh.toFixed(2)} ≥ ${Etot.toFixed(2)} kWh`},
-    {label:"SM 5–25% MAC",ok:SM>=0.05&&SM<=0.25,val:`${(SM*100).toFixed(1)}%`},
+    {label:"SM 5–25% MAC",ok:SM_vt>=0.05&&SM_vt<=0.25,val:`${(SM_vt*100).toFixed(1)}%`},
     {label:"Tip Mach < 0.70",ok:TipMach<0.70,val:`M${TipMach.toFixed(3)}`},
     {label:"Battery Frac < 55%",ok:Wbat/MTOW<0.55,val:`${(Wbat/MTOW*100).toFixed(1)}%`},
     {label:"Final SoC ≥ SoCmin",ok:(1-Etot/PackkWh)>=(p.socMin/(1+p.socMin))-0.01,val:`${((1-Etot/PackkWh)*100).toFixed(1)}% (floor ${(p.socMin/(1+p.socMin)*100).toFixed(1)}%)`},
@@ -1963,25 +1963,34 @@ function AIAssistantPanel({ params, SR, SC, onParamChange }) {
     let bestScore = Infinity;
 
     // Grid search over key design variables
-    const sedOptions   = [200, 230, 260, 300, 350, 400];
-    const arOptions    = [7, 8, 9, 10, 11, 12];
-    const ewfOptions   = [0.38, 0.42, 0.45, 0.48, 0.52];
+    const sedOptions   = [220, 260, 300, 350, 400];
+    const arOptions    = [7, 8, 9, 10, 11];
+    const ewfOptions   = [0.38, 0.42, 0.45, 0.50];
     const nPropOptions = [6, 8];
     const diamOptions  = [2.0, 2.5, 3.0];
+    const ldOptions    = [12, 14, 16];
 
     for (const sed  of sedOptions)
     for (const ar   of arOptions)
     for (const ewf  of ewfOptions)
     for (const nP   of nPropOptions)
-    for (const diam of diamOptions) {
+    for (const diam of diamOptions)
+    for (const ld   of ldOptions) {
       const p = sanitize({ ...baseP, sedCell:sed, AR:ar, ewf, nPropHover:nP, propDiam:diam,
-        LD:14, twRatio:1.2, etaHov:0.72, etaSys:0.82 });
+        LD:ld, twRatio:1.2, etaHov:0.72, etaSys:0.82 });
       try {
         const R = runSizing(p);
         if (!R || !isFinite(R.MTOW) || R.MTOW<100 || R.MTOW>5700) continue;
         if (!R.feasible) continue;
-        // Score: minimise MTOW, penalise high battery fraction
-        const score = R.MTOW + (R.Wbat/R.MTOW)*500;
+        // Extra physical checks beyond feasibility flags:
+        if (R.SM_vt < 0.05 || R.SM_vt > 0.25) continue;  // SM_vt must be stable
+        if (R.LDact < 11) continue;                         // meaningful aerodynamics
+        if (R.PackkWh / R.Phov < 0.20) continue;            // ≥12 min hover endurance
+        // Score: minimise MTOW + battery fraction penalty + reward SM and L/D
+        const score = R.MTOW
+          + (R.Wbat/R.MTOW)*600
+          - R.SM_vt*1000
+          - R.LDact*50;
         if (score < bestScore) { bestScore = score; best = { p, R }; }
       } catch {}
     }
