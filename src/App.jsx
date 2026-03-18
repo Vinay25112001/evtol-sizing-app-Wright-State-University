@@ -1509,81 +1509,121 @@ function BEMPanel({ params, SR, SC }) {
   const [results,  setResults]  = useState(null);
 
   const runBEM = () => {
-    const NR    = 40;
+    const NR    = 50;                        // radial stations
     const R     = SR ? SR.Drotor / 2 : params.propDiam / 2;
-    const RPM   = +(SR?.RPM) || 400;  // always a number
+    const RPM   = +(SR?.RPM) || 400;
     const B     = Nbld;
     const rho   = 1.225;
     const g0    = 9.81;
     const Omega = RPM * Math.PI / 30;
     const Vtip  = Omega * R;
     const c     = chord_r * R;
-    const sigma = B * c / (Math.PI * R);
-    const nRot  = +(SR?.nPropHover || params.nPropHover) || 6;  // always a number
-    const T_req = SR ? (SR.MTOW * g0 / nRot) : (2177 * g0 / nRot);
-    const etaHov= +(params.etaHov) || 0.70;
+    const sigma = B * c / (Math.PI * R);     // rotor solidity
+    const nRot  = +(SR?.nPropHover || params.nPropHover) || 6;
+    const T_req = SR ? SR.MTOW * g0 / nRot : 2177 * g0 / nRot;
+    const etaHov = +(params.etaHov) || 0.70;
+    const A_disk = Math.PI * R * R;
 
     let T_total = 0, P_total = 0;
     const stations = [];
 
     for (let i = 1; i <= NR; i++) {
-      const r_R = (i - 0.5) / NR;
-      const r   = r_R * R;
-      // Blade pitch: collective + linear twist (referenced to 0.75R)
+      const r_R = (i - 0.5) / NR;           // non-dimensional radial position
+      const r   = r_R * R;                   // DIMENSIONAL radius (m) — used in dQ
+
+      // ── Step 1: Blade pitch at this station ──────────────────────────────
       const theta = (theta0 + twist * (r_R - 0.75)) * Math.PI / 180;
 
-      // Prandtl tip-loss factor
-      const f_tip = (B / 2) * (1 - r_R) / Math.max(r_R, 0.01);
+      // ── Step 2: Prandtl Tip-Loss Factor (Prandtl 1919) ───────────────────
+      const f_tip = (B / 2) * (1 - r_R) / Math.max(r_R, 0.02);
       const F     = (2 / Math.PI) * Math.acos(Math.min(1.0, Math.exp(-f_tip)));
 
-      // Leishman Eq. 3.107: quadratic solution for non-dimensional inflow ratio λ
-      const k   = sigma * Cl_alpha / (16 * Math.max(F, 1e-4));
+      // ── Step 3: Leishman Eq. 3.107 — Closed-form inflow solution ─────────
+      // Derived from: BEM momentum balance + blade element theory simultaneously
+      // F·λ·(4·F·λ) = (σ·Clα/2)·(θ·r_R - λ) → quadratic in λ
+      const k   = sigma * Cl_alpha / (16.0 * Math.max(F, 1e-4));
       const disc = (k / 2) * (k / 2) + k * theta * r_R;
       const lam = disc > 0 ? (-k / 2 + Math.sqrt(disc)) : 1e-4;
-      const lam_pos = Math.max(1e-4, lam);
+      const lam_r = Math.max(1e-4, lam);
 
-      const phi   = Math.atan2(lam_pos, r_R);
-      const alpha = theta - phi;
-      const Cl    = Math.min(1.3, Math.max(-0.2, Cl_alpha * alpha));
-      const Cd    = Cd0 + Cl * Cl / (Math.PI * 8 * 0.9);
-      const Cx    = Cl * Math.cos(phi) - Cd * Math.sin(phi);   // thrust direction
-      const Cy    = Cl * Math.sin(phi) + Cd * Math.cos(phi);   // torque direction
+      // ── Step 4: Flow angles and aerodynamics ─────────────────────────────
+      const phi   = Math.atan2(lam_r, r_R);      // inflow angle (rad)
+      const alpha = theta - phi;                  // blade section AoA (rad)
+      const alpha_deg = alpha * 180 / Math.PI;
 
-      const V_rel = Vtip * Math.sqrt(r_R * r_R + lam_pos * lam_pos);
+      // ── FIX: Proper blade section Cl model with stall ────────────────────
+      // Linear region up to ~12°, then soft stall (not hard clamp)
+      let Cl;
+      if (Math.abs(alpha_deg) <= 12) {
+        Cl = Cl_alpha * alpha;                            // linear
+      } else if (Math.abs(alpha_deg) <= 20) {
+        // Gradual stall: Cl reduces toward 0.8 at 20°
+        const t = (Math.abs(alpha_deg) - 12) / 8;
+        const Cl_lin = Cl_alpha * 12 * Math.PI / 180;
+        Cl = Math.sign(alpha) * (Cl_lin * (1 - t) + 0.8 * t);
+      } else {
+        Cl = Math.sign(alpha) * 0.8;                     // deep stall
+      }
+
+      // ── FIX: Correct drag model — empirical airfoil polar (no induced term) ──
+      // Cd = Cd0 + k_polar * Cl² where k_polar ≈ 0.012 (empirical, NOT 1/(πeAR))
+      // The induced drag is already captured in the inflow angle φ — don't double-count
+      const k_polar = 0.012;
+      const Cd = Cd0 + k_polar * Cl * Cl;
+
+      // Force coefficients in thrust/torque directions
+      const Cx = Cl * Math.cos(phi) - Cd * Math.sin(phi);  // thrust direction
+      const Cy = Cl * Math.sin(phi) + Cd * Math.cos(phi);  // torque direction
+
+      // ── FIX: Glauert high-thrust correction (a > 0.3 breakdown) ──────────
+      // Standard momentum theory breaks down when axial induction a > 0.3-0.4
+      // Glauert empirical: Ct = 4a(1-a)F for a ≤ 0.4; Ct = 4a(0.6+0.61a+0.79a²)F for a > 0.4
+      // Here we detect high thrust from lam and apply Glauert correction to power
+      const a_induction = lam_r / (1 + lam_r);  // approximate axial induction
+      const glauert_factor = a_induction > 0.40
+        ? (0.6 + 0.61 * a_induction + 0.79 * a_induction * a_induction) / (1 - a_induction)
+        : 1.0;
+
+      // ── Step 5: Local thrust and power per unit span ──────────────────────
+      const V_rel = Vtip * Math.sqrt(r_R * r_R + lam_r * lam_r);
       const q     = 0.5 * rho * V_rel * V_rel;
       const dr    = R / NR;
 
       const dT = B * q * c * Cx * dr;
-      const dQ = B * q * c * Cy * r * dr;
-      const dP = dQ * Omega;
+      const dQ = B * q * c * Cy * r * dr;          // r = actual radius in METERS
+      const dP = dQ * Omega * glauert_factor;       // Glauert correction on power
 
       T_total += dT;
       P_total += dP;
 
       stations.push({
-        rR:     +r_R.toFixed(3),
-        lam:    +lam_pos.toFixed(4),
-        dT:     +(dT / dr).toFixed(1),
-        dQ:     +(dQ / dr).toFixed(4),
-        F:      +F.toFixed(3),
-        alpha:  +(alpha * 180 / Math.PI).toFixed(2),
-        Cl:     +Cl.toFixed(3),
+        rR:    +r_R.toFixed(3),
+        lam:   +lam_r.toFixed(5),
+        dT:    +(dT / dr).toFixed(1),
+        dQ:    +(dQ / dr).toFixed(4),
+        F:     +F.toFixed(3),
+        alpha: +alpha_deg.toFixed(2),
+        Cl:    +Cl.toFixed(3),
+        a:     +a_induction.toFixed(4),
       });
     }
 
-    // Actuator disk baseline (single rotor)
-    const A_disk  = Math.PI * R * R;
-    const P_ideal = Math.pow(T_req, 1.5) / Math.sqrt(2 * rho * A_disk);
-    const P_act_1 = (T_req / etaHov) * Math.sqrt(T_req / (2 * rho * A_disk)) / 1000;
+    // ── Step 6: Actuator disk baseline for comparison ─────────────────────
+    const P_ideal_1rot = Math.pow(T_req, 1.5) / Math.sqrt(2 * rho * A_disk) / 1000;
+    const P_act_1rot   = (T_req / etaHov) * Math.sqrt(T_req / (2 * rho * A_disk)) / 1000;
 
-    // Figure of Merit from BEM thrust
-    const P_id_1  = Math.pow(Math.max(T_total, 1), 1.5) / Math.sqrt(2 * rho * A_disk) / 1000;
-    const FM      = P_id_1 / Math.max(P_total / 1000, 0.001);
+    // ── Step 7: Figure of Merit (FM = ideal hover power / actual BEM power) ─
+    // FIX: use T_total (BEM thrust) for ideal, not T_req — consistent comparison
+    const P_ideal_BEM = Math.pow(Math.max(T_total, 1), 1.5) / Math.sqrt(2 * rho * A_disk) / 1000;
+    const FM = P_ideal_BEM / Math.max(P_total / 1000, 0.001);
 
     const P_BEM_kW = P_total * nRot / 1000;
-    const P_AKT_kW = P_act_1 * nRot;
+    const P_AKT_kW = P_act_1rot * nRot;
     const T_ratio  = T_req > 0 ? +(T_total / T_req * 100).toFixed(1) : 0;
     const delta_pct = +((P_BEM_kW - P_AKT_kW) / Math.max(P_AKT_kW, 0.1) * 100).toFixed(1);
+
+    // Check for high-induction stations (Glauert territory)
+    const highInductionCount = stations.filter(s => s.a > 0.35).length;
 
     setResults({
       T_total:   +T_total.toFixed(1),
@@ -1593,12 +1633,12 @@ function BEMPanel({ params, SR, SC }) {
       P_BEM_kW:  +P_BEM_kW.toFixed(1),
       P_AKT_kW:  +P_AKT_kW.toFixed(1),
       delta_pct,
-      FM:        +Math.min(FM, 1.0).toFixed(3),
+      FM:        +Math.min(FM, 0.99).toFixed(3),
       sigma:     +sigma.toFixed(4),
+      highInductionCount,
       stations,
     });
   };
-
   const S = { fontSize: 10, fontFamily: "'DM Mono',monospace", color: SC.muted };
 
   return (
@@ -1956,30 +1996,36 @@ function AIAssistantPanel({ params, SR, SC, onParamChange }) {
     const P0 = clamp(userPayload || params.payload,  50, 800);
     const V0 = clamp(userVCruise || params.vCruise,  30, 120);
 
-    // Fixed stable geometry (same as app defaults — known to produce good SM_vt)
+    // Base: use ALL current app params (user's full slider state)
+    // Only override the variables we are optimising over + ensure stable geometry
     const stable = {
-      vCruise:V0, cruiseAlt:1000, reserveRange:60, hoverHeight:15.24,
-      rateOfClimb:5, climbAngle:8, socMin:0.20, etaBat:0.95,
-      clDesign:0.55, taper:0.45, tc:0.15, eOsw:0.85,
-      fusLen:8.5, fusDiam:1.6,
-      vtCh:0.45, vtCv:0.05, vtGamma:40, vtAR:2.5,
-      twRatio:1.2, etaHov:0.72, etaSys:0.82,
-      convTolExp:-4,
+      ...params,                          // inherit ALL user params (fusLen, vtCh, etc.)
+      vCruise: V0,                        // from user request
+      // Override geometry to known-stable values to ensure SM_vt > 0
+      vtCh: Math.max(params.vtCh || 0.45, 0.40),
+      vtCv: params.vtCv || 0.05,
+      vtGamma: params.vtGamma || 40,
+      vtAR: params.vtAR || 2.5,
+      fusLen: params.fusLen || 8.5,
+      fusDiam: params.fusDiam || 1.6,
+      convTolExp: -4,                     // faster convergence during search
     };
 
     // Score a design: lower is better, Infinity = infeasible
     const score = (R) => {
       if (!R || !isFinite(R.MTOW) || R.MTOW < 100) return Infinity;
-      // Count failed checks (weighted)
       let penalty = 0;
-      if (R.MTOW > 5700)                     penalty += (R.MTOW - 5700) * 2;
-      if (R.SM_vt < 0.04)                    penalty += (0.04 - R.SM_vt) * 5000;
-      if (R.SM_vt > 0.28)                    penalty += (R.SM_vt - 0.28) * 3000;
-      if (R.Wbat/R.MTOW > 0.55)             penalty += (R.Wbat/R.MTOW - 0.55) * 4000;
-      if (R.TipMach > 0.70)                  penalty += (R.TipMach - 0.70) * 2000;
-      if (R.LDact < 10)                      penalty += (10 - R.LDact) * 200;
-      if (!R.feasible)                        penalty += 500;
-      return R.MTOW + penalty;
+      // Hard constraints — heavy penalties
+      if (R.MTOW > 5700)              penalty += (R.MTOW  - 5700) * 3;
+      if (R.SM_vt < 0.04)             penalty += (0.04 - R.SM_vt) * 8000;
+      if (R.SM_vt > 0.28)             penalty += (R.SM_vt - 0.28) * 5000;
+      if (R.Wbat/R.MTOW > 0.55)      penalty += (R.Wbat/R.MTOW - 0.55) * 6000;
+      if (R.TipMach > 0.70)           penalty += (R.TipMach - 0.70) * 5000;
+      if (R.LDact < 10)               penalty += (10 - R.LDact) * 300;
+      if (R.PackkWh < R.Etot)         penalty += (R.Etot - R.PackkWh) * 2000;
+      if (!R.feasible)                penalty += 300;
+      // Objectives: minimise MTOW, reward L/D and good SM
+      return R.MTOW + penalty - R.LDact * 40 - R.SM_vt * 800;
     };
 
     const tryP = (overrides) => {
@@ -1993,27 +2039,34 @@ function AIAssistantPanel({ params, SR, SC, onParamChange }) {
     // Phase 1: Coarse grid — find rough region of good designs
     let best = { p:null, R:null, s:Infinity };
 
-    const sedV  = [180,220,260,300,340,380,400];
-    const arV   = [6,7,8,9,10,11,12];
-    const ewfV  = [0.35,0.40,0.44,0.48,0.52,0.58];
-    const nPV   = [6,8];
-    const dV    = [1.8,2.2,2.6,3.0,3.4];
-    const ldV   = [10,12,14,16,18];
+    const sedV  = [180, 220, 260, 300, 350, 400];
+    const arV   = [6, 7, 8, 9, 10, 11, 12];
+    const ewfV  = [0.35, 0.40, 0.44, 0.48, 0.52];
+    const nPV   = [6, 8];
+    const dV    = [1.8, 2.2, 2.6, 3.0, 3.5];
+    const ldV   = [10, 12, 14, 16, 18];
+    const twV   = [1.1, 1.2, 1.3];
+    const etaSV = [0.78, 0.82, 0.86, 0.90];
 
-    for (const sed of sedV)
-    for (const ar  of arV)
-    for (const ewf of ewfV)
-    for (const nP  of nPV)
-    for (const d   of dV)
-    for (const ld  of ldV) {
-      const t = tryP({ sedCell:sed, AR:ar, ewf, nPropHover:nP, propDiam:d, LD:ld });
+    for (const sed  of sedV)
+    for (const ar   of arV)
+    for (const ewf  of ewfV)
+    for (const nP   of nPV)
+    for (const d    of dV)
+    for (const ld   of ldV)
+    for (const tw   of twV)
+    for (const etaS of etaSV) {
+      const t = tryP({
+        sedCell:sed, AR:ar, ewf, nPropHover:nP, propDiam:d,
+        LD:ld, twRatio:tw, etaSys:etaS,
+      });
       if (t.s < best.s) best = t;
     }
 
     // Phase 2: Fine-tune around best found — Nelder-Mead style coordinate search
     if (best.p) {
-      const dims = ['sedCell','AR','ewf','propDiam','LD'];
-      const steps = { sedCell:20, AR:0.5, ewf:0.02, propDiam:0.15, LD:1 };
+      const dims = ['sedCell','AR','ewf','propDiam','LD','twRatio','etaSys','etaHov'];
+      const steps = { sedCell:15, AR:0.3, ewf:0.015, propDiam:0.1, LD:0.5, twRatio:0.05, etaSys:0.01, etaHov:0.01 };
       let improved = true;
       let iters = 0;
       while (improved && iters < 30) {
