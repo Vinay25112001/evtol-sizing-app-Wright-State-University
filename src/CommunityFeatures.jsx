@@ -650,6 +650,7 @@ export function CollabPanel({ user, params, onParamChange, C }) {
   // Cleanup fns stored in a plain object (not state)
   const cleanups = useRef({});
   const lastPushAt = useRef(0);
+  const pushDebounceRef = useRef(null);
   const lastSeenUpdatedAt = useRef(""); // track last state_json update we applied
   const roleRef = useRef("viewer"); // always-live mirror of role — avoids stale closure
 
@@ -660,14 +661,38 @@ export function CollabPanel({ user, params, onParamChange, C }) {
   // Syncs both roleRef (for effects) and role state (for UI)
   const setRoleBoth = useCallback((r) => { roleRef.current = r; setRole(r); }, []);
 
-  // ── PARAM PUSH — any editor (host or guest) pushes on every change ──
-  // roleRef.current is read directly — never a stale closure value
+  // ── LOCAL EDIT TRACKING — record which keys we changed and when ──
+  // This prevents remote updates from overwriting our own recent local edits
+  const localEdits = useRef({});   // { paramKey: timestamp }
+  const LOCAL_EDIT_TTL = 4000;     // ms — protect local edits for 4 seconds
+
+  // Track which params changed vs previous render
+  const prevParams = useRef(params);
   useEffect(() => {
-    if (!inSession || roleRef.current !== "editor") return;
+    if (!inSession || roleRef.current !== "editor") {
+      prevParams.current = params;
+      return;
+    }
+    // Detect which keys actually changed this render
     const now = Date.now();
-    if (now - lastPushAt.current < 1200) return; // throttle 1.2s
-    lastPushAt.current = now;
-    pushCollabState(sidRef.current, params, myId.current);
+    let changed = false;
+    Object.keys(params).forEach(k => {
+      if (params[k] !== prevParams.current[k]) {
+        localEdits.current[k] = now;   // mark this key as locally modified
+        changed = true;
+      }
+    });
+    prevParams.current = params;
+
+    if (!changed) return;
+    // Debounce push — wait 800ms after last change before pushing
+    if (pushDebounceRef.current) clearTimeout(pushDebounceRef.current);
+    pushDebounceRef.current = setTimeout(() => {
+      if (sidRef.current) {
+        pushCollabState(sidRef.current, params, myId.current);
+        lastPushAt.current = Date.now();
+      }
+    }, 800);
   }, [params, inSession]);
 
   // ── STATE SYNC — poll session row every 1.5s, apply when updated_at changed ──
@@ -684,8 +709,20 @@ export function CollabPanel({ user, params, onParamChange, C }) {
         lastSeenUpdatedAt.current = row.updated_at;
         try {
           const st = JSON.parse(row.state_json || "{}");
-          Object.entries(st).forEach(([k, v]) => onParamChange(k)(v));
-          addLog("🔄 " + (row.updated_by ? "Collaborator" : "Session") + " updated params");
+          const now = Date.now();
+          let appliedCount = 0;
+          Object.entries(st).forEach(([k, v]) => {
+            // Skip keys we edited recently — protect local changes
+            const editedAt = localEdits.current[k] || 0;
+            if (now - editedAt < LOCAL_EDIT_TTL) return;  // skip — we own this key
+            onParamChange(k)(v);
+            appliedCount++;
+          });
+          // Expire old local edit timestamps
+          Object.keys(localEdits.current).forEach(k => {
+            if (now - localEdits.current[k] > LOCAL_EDIT_TTL) delete localEdits.current[k];
+          });
+          if (appliedCount > 0) addLog(`🔄 ${row.updated_by ? "Collaborator" : "Session"} updated ${appliedCount} param(s)`);
         } catch {}
       }
     );
@@ -789,8 +826,11 @@ export function CollabPanel({ user, params, onParamChange, C }) {
           const sess = await getCollabSession(joinId.trim());
           if (sess?.state_json) {
             try {
-              Object.entries(JSON.parse(sess.state_json)).forEach(([k,v]) => onParamChange(k)(v));
+              const initSt = JSON.parse(sess.state_json);
+              Object.entries(initSt).forEach(([k,v]) => onParamChange(k)(v));
               lastSeenUpdatedAt.current = sess.updated_at || "";
+              // Clear local edits on fresh join — start clean
+              localEdits.current = {};
             } catch {}
           }
           addLog("✅ Approved! You joined the session.");
