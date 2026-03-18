@@ -1890,6 +1890,32 @@ function BEMPanel({ params, SR, SC }) {
 }
 
 
+const REG_DB = {
+  "EASA SC-VTOL": {
+    lastChecked: "2025-01-15",
+    source: "https://www.easa.europa.eu/en/document-library/product-certification-consultations/special-condition-sc-vtol",
+    rules: [
+      { id:"SC-VTOL.2280", name:"OEI Thrust Margin",     param:"OEI_margin_pct", threshold:0,    unit:"%",    direction:"min", desc:"Remaining thrust must equal or exceed hover weight with one motor inoperative." },
+      { id:"SC-VTOL.2315", name:"Positive Load Factor",  param:"n_pos_limit",    threshold:3.5,  unit:"g",    direction:"min", desc:"Limit manoeuvre load factor for CAT-A operations." },
+      { id:"SC-VTOL.2320", name:"Negative Load Factor",  param:"n_neg_limit",    threshold:-1.5, unit:"g",    direction:"max", desc:"Minimum negative load factor limit." },
+      { id:"SC-VTOL.2500", name:"Min Battery Reserve",   param:"socMin",         threshold:0.20, unit:"frac", direction:"min", desc:"Battery must retain ≥20% SoC at end of mission including reserves." },
+      { id:"SC-VTOL.2510", name:"Max Tip Mach",          param:"TipMach",        threshold:0.70, unit:"Mach", direction:"max", desc:"Blade tip Mach number limit for noise and compressibility." },
+      { id:"SC-VTOL.2540", name:"Static Margin Min",     param:"SM_vt",          threshold:0.05, unit:"MAC",  direction:"min", desc:"Minimum static margin for longitudinal stability." },
+      { id:"SC-VTOL.2541", name:"Static Margin Max",     param:"SM_vt",          threshold:0.25, unit:"MAC",  direction:"max", desc:"Maximum static margin to retain adequate controllability." },
+    ]
+  },
+  "FAA AC 21-17-4": {
+    lastChecked: "2025-01-15",
+    source: "https://rgl.faa.gov/Regulatory_and_Guidance_Library/rgAdvisoryCircular.nsf/",
+    rules: [
+      { id:"AC21-17.4.3", name:"MTOW Limit (Part 27)", param:"MTOW",       threshold:5700, unit:"kg",  direction:"max", desc:"Maximum certificated takeoff weight for Part 27 category." },
+      { id:"AC21-17.4.5", name:"Battery Fraction",     param:"batFrac",    threshold:55,   unit:"%",   direction:"max", desc:"Practical battery mass fraction limit for structural feasibility." },
+      { id:"AC21-17.4.8", name:"Dive Speed Margin",    param:"VD_margin",  threshold:1.25, unit:"×VC", direction:"min", desc:"VD must be ≥1.25×VC for structural clearance." },
+      { id:"AC21-17.4.9", name:"Hover T/W Ratio",      param:"twRatio",    threshold:1.0,  unit:"",    direction:"min", desc:"Thrust-to-weight ratio ≥1.0 in hover for positive climb gradient." },
+    ]
+  }
+};
+
 function RegTrackerPanel({ params, SR, SC }) {
   const [checking,  setChecking]  = useState(false);
   const [aiReport,  setAiReport]  = useState(null);
