@@ -2088,15 +2088,84 @@ Respond in plain text, clearly structured. Be specific about rule IDs and numeri
    Claude calls run_sizing tool iteratively, updates sliders live.
    First AI-native aircraft sizing tool ever built.
    ════════════════════════════════════════════════════════════════════════ */
-function AIAssistantPanel({ params, SR, SC, onParamChange }) {
-  const [messages,  setMessages]  = useState([
-    { role:'assistant', content:"👋 I'm your AI Design Assistant.\n\nDescribe your eVTOL requirements and I'll run a deterministic optimizer to find the best feasible design, then inject it directly into all your app sliders.\n\nExample: \"4 passengers, 80km range, EASA SC-VTOL certification\"" }
-  ]);
+function AIAssistantPanel({ params, SR, SC, onParamChange, user }) {
+  const [mode,     setMode]     = useState('design'); // 'design' | 'chat'
+
+  // ── SUPABASE CONFIG ──
+  const SB_URL = "https://obribjypwwrbhsyjllua.supabase.co";
+  const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9icmlianlwd3dyYmhzeWpsbHVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM2MjU1MjIsImV4cCI6MjA4OTIwMTUyMn0.Rq2_KfHlHnoluGJY3AcBIqcbuMFuLBitU-Y6aBWyoJ4";
+  const SB_HDR = { "apikey": SB_KEY, "Authorization": `Bearer ${SB_KEY}`, "Content-Type": "application/json" };
+
+  const DEFAULT_MSG = [{ role:'assistant', mode:'design',
+    content:"👋 I'm your AI Design Assistant.\n\nDescribe your eVTOL requirements and I'll run a deterministic optimizer to find the best feasible design, then inject it directly into all your app sliders.\n\nExample: \"4 passengers, 80km range, EASA SC-VTOL certification\"" }];
+
+  const [messages,    setMessages]    = useState(DEFAULT_MSG);
+  const [chatHistory, setChatHistory] = useState([]);
   const [input,    setInput]    = useState('');
   const [thinking, setThinking] = useState(false);
   const [iterCount,setIterCount]= useState(0);
+  const [chatLoaded, setChatLoaded]   = useState(false);
+  const saveDebounce = useRef(null);
   const bottomRef = useRef(null);
   useEffect(()=>{ bottomRef.current?.scrollIntoView({behavior:'smooth'}); },[messages]);
+
+  // ── LOAD chat from Supabase on mount (when user is logged in) ──
+  useEffect(()=>{
+    if (!user?.id) { setChatLoaded(true); return; }
+    const uid = user.id;
+    fetch(`${SB_URL}/rest/v1/evtol_ai_chat?user_id=eq.${uid}&order=created_at.desc&limit=1`, { headers: SB_HDR })
+      .then(r=>r.json())
+      .then(rows=>{
+        if (rows && rows[0] && rows[0].messages_json) {
+          try {
+            const saved = JSON.parse(rows[0].messages_json);
+            if (saved.messages?.length) setMessages(saved.messages);
+            if (saved.chatHistory?.length) setChatHistory(saved.chatHistory);
+            if (saved.iterCount) setIterCount(saved.iterCount);
+          } catch {}
+        }
+        setChatLoaded(true);
+      })
+      .catch(()=>setChatLoaded(true));
+  }, [user?.id]);
+
+  // ── SAVE chat to Supabase (debounced 2s after last change) ──
+  const saveToSupabase = (msgs, hist, iters) => {
+    if (!user?.id || !chatLoaded) return;
+    if (saveDebounce.current) clearTimeout(saveDebounce.current);
+    saveDebounce.current = setTimeout(async () => {
+      const payload = {
+        user_id: user.id,
+        messages_json: JSON.stringify({ messages: msgs.slice(-200), chatHistory: hist.slice(-40), iterCount: iters }),
+        updated_at: new Date().toISOString(),
+      };
+      // Upsert — insert or update based on user_id
+      try {
+        await fetch(`${SB_URL}/rest/v1/evtol_ai_chat`, {
+          method: "POST",
+          headers: { ...SB_HDR, "Prefer": "resolution=merge-duplicates,return=minimal" },
+          body: JSON.stringify(payload),
+        });
+      } catch {}
+    }, 2000);
+  };
+
+  useEffect(()=>{ if(chatLoaded) saveToSupabase(messages, chatHistory, iterCount); }, [messages]);
+  useEffect(()=>{ if(chatLoaded) saveToSupabase(messages, chatHistory, iterCount); }, [chatHistory, iterCount]);
+
+  // ── CLEAR chat history ──
+  const clearChat = async () => {
+    setMessages(DEFAULT_MSG);
+    setChatHistory([]);
+    setIterCount(0);
+    if (!user?.id) return;
+    try {
+      await fetch(`${SB_URL}/rest/v1/evtol_ai_chat?user_id=eq.${user.id}`, {
+        method: "DELETE",
+        headers: SB_HDR,
+      });
+    } catch {}
+  };
 
   /* ── Hard clamp to physical bounds ── */
   const clamp = (v,lo,hi) => Math.min(hi, Math.max(lo, isNaN(+v)?lo:+v));
@@ -2253,13 +2322,66 @@ function AIAssistantPanel({ params, SR, SC, onParamChange }) {
     } catch { return null; }
   };
 
+  /* ── CHAT MODE: plain conversational AI (no optimizer, no injection) ── */
+  const sendChat = async () => {
+    if(!input.trim()||thinking) return;
+    const userMsg = input.trim();
+    setInput('');
+    setMessages(p=>[...p,{role:'user',content:userMsg,mode:'chat'}]);
+    setThinking(true);
+
+    const newHistory = [...chatHistory, {role:'user',content:userMsg}];
+    setChatHistory(newHistory);
+
+    try {
+      const res = await fetch("https://api.groq.com/openai/v1/chat/completions",{
+        method:"POST",
+        headers:{"Content-Type":"application/json","Authorization":`Bearer ${import.meta.env.VITE_GROQ_KEY}`},
+        body: JSON.stringify({
+          model:"llama-3.1-8b-instant",
+          max_tokens:800,
+          messages:[
+            {role:"system", content:`You are a knowledgeable aerospace engineering assistant specializing in eVTOL aircraft. You help engineers and students understand concepts, solve problems, and learn about aviation. The user is working on an eVTOL sizing tool. Current design context: MTOW=${SR?.MTOW||'unknown'}kg, range=${params.range}km, payload=${params.payload}kg, ${params.nPropHover} rotors. Answer clearly and helpfully. For technical questions give depth. For simple questions be concise.`},
+            ...newHistory.slice(-10) // keep last 10 for context
+          ]
+        })
+      });
+      if(!res.ok){const t=await res.text();throw new Error(`AI ${res.status}: ${t.slice(0,150)}`);}
+      const data = await res.json();
+      const reply = data.choices?.[0]?.message?.content || "No response.";
+      setChatHistory(h=>[...h,{role:'assistant',content:reply}]);
+      setMessages(p=>[...p,{role:'assistant',content:reply,mode:'chat'}]);
+    } catch(e){
+      setMessages(p=>[...p,{role:'assistant',content:`⚠️ ${e.message}`,mode:'chat'}]);
+    }
+    setThinking(false);
+  };
+
+  /* ── unified send dispatcher ── */
   const send = async () => {
+    if(mode==='chat') { await sendChat(); return; }
+    await sendDesign();
+  };
+
+  const sendDesign = async () => {
+    if(!input.trim()||thinking) return;
+    const userMsg = input.trim();
+    setInput('');
+    setMessages(p=>[...p,{role:'user',content:userMsg,mode:'design'}]);
+    setThinking(true);
+    /* ─────────── original design optimizer logic (unchanged) ─────────── */
     if(!input.trim()||thinking) return;
     const userMsg = input.trim();
     setInput('');
     setMessages(p=>[...p,{role:'user',content:userMsg}]);
     setThinking(true);
 
+  const _originalSend = async () => {
+    if(!input.trim()||thinking) return;
+    const userMsg = input.trim();
+    setInput('');
+    setMessages(p=>[...p,{role:'user',content:userMsg,mode:'design'}]);
+    setThinking(true);
     try {
       /* Step 1: Parse user intent */
       const intent = parseIntent(userMsg);
@@ -2332,14 +2454,53 @@ function AIAssistantPanel({ params, SR, SC, onParamChange }) {
 
   return (
     <div style={{display:'flex',flexDirection:'column',gap:12}}>
+      {/* ── Header ── */}
       <div style={{background:`linear-gradient(135deg,${SC.bg},#120a1f)`,border:`1px solid ${SC.purple}44`,borderRadius:10,padding:'16px 20px'}}>
-        <div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace",letterSpacing:'0.18em',marginBottom:4}}>DETERMINISTIC OPTIMIZER + LLAMA 3 SUMMARY · ALL TABS UPDATE LIVE</div>
-        <div style={{fontSize:18,fontWeight:800,color:SC.text,marginBottom:6}}>
-          <span style={{color:SC.purple}}>AI</span> Design Assistant
-          {iterCount>0&&<span style={{fontSize:11,color:SC.green,marginLeft:12}}>✅ {iterCount} design{iterCount>1?'s':''} optimized</span>}
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:10}}>
+          <div>
+            <div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace",letterSpacing:'0.18em',marginBottom:4}}>
+              {mode==='design'?'DETERMINISTIC OPTIMIZER · ALL TABS UPDATE LIVE':'LLAMA 3 VIA GROQ · CONVERSATIONAL · CONTEXT-AWARE'}
+            </div>
+            <div style={{fontSize:18,fontWeight:800,color:SC.text}}>
+              <span style={{color:SC.purple}}>AI</span> {mode==='design'?'Design Assistant':'Chat Assistant'}
+              {mode==='design'&&iterCount>0&&<span style={{fontSize:11,color:SC.green,marginLeft:12}}>✅ {iterCount} design{iterCount>1?'s':''} optimized</span>}
+          <span style={{fontSize:9,color:SC.dim,marginLeft:8,fontFamily:"'DM Mono',monospace"}}>💾 auto-saved</span>
+            </div>
+          </div>
+
+          {/* ── Mode Toggle ── */}
+          <div style={{display:'flex',gap:0,background:SC.bg,border:`1px solid ${SC.border}`,borderRadius:8,overflow:'hidden',flexShrink:0}}>
+            {[
+              {key:'design', icon:'🛠️', label:'Design Mode',  tip:'Optimizer finds best feasible aircraft and injects into all tabs'},
+              {key:'chat',   icon:'💬', label:'Chat Mode',    tip:'Ask anything — concepts, theory, problems, comparisons'},
+            ].map(({key,icon,label,tip})=>(
+              <button key={key} onClick={()=>{
+                setMode(key);
+                // Add a context message when switching
+                setMessages(p=>[...p,{role:'assistant',mode:key,content:
+                  key==='design'
+                  ?'🛠️ Switched to Design Mode. Describe your eVTOL requirements and I'll find the optimal design and inject it into all app tabs.'
+                  :'💬 Switched to Chat Mode. Ask me anything — BEM theory, certification questions, aerodynamics, comparisons, or general eVTOL concepts.'
+                }]);
+              }} type="button" title={tip}
+                style={{
+                  padding:'8px 16px',
+                  background:mode===key?`linear-gradient(135deg,#2d1b69,${SC.purple})`:'transparent',
+                  border:'none',
+                  color:mode===key?'#e9d5ff':SC.muted,
+                  fontSize:10,fontWeight:mode===key?800:500,
+                  cursor:'pointer',fontFamily:"'DM Mono',monospace",
+                  transition:'all 0.15s',
+                }}>
+                {icon} {label}
+              </button>
+            ))}
+          </div>
         </div>
-        <div style={{fontSize:11,color:SC.muted,lineHeight:1.7}}>
-          Describe requirements → optimizer searches {6*6*5*2*3} design combinations → injects best feasible design into every tab instantly.
+        <div style={{fontSize:11,color:SC.muted,lineHeight:1.6,marginTop:8}}>
+          {mode==='design'
+            ?'Describe requirements → optimizer searches design combinations → injects best feasible design into every tab instantly.'
+            :'Ask anything about eVTOL design, aerodynamics, BEM theory, certification, or any engineering concept. Maintains conversation context.'}
         </div>
       </div>
 
@@ -2351,7 +2512,7 @@ function AIAssistantPanel({ params, SR, SC, onParamChange }) {
                 background:m.role==='user'?`${SC.purple}33`:SC.bg,
                 border:`1px solid ${m.role==='user'?SC.purple+'55':SC.border}`,
                 fontSize:11,color:SC.text,fontFamily:"'DM Mono',monospace",lineHeight:1.8,whiteSpace:'pre-wrap',wordBreak:'break-word'}}>
-                {m.role==='assistant'&&<span style={{fontSize:8,color:SC.purple,fontWeight:800,display:'block',marginBottom:4}}>🤖 AI ASSISTANT</span>}
+                {m.role==='assistant'&&<span style={{fontSize:8,color:SC.purple,fontWeight:800,display:'block',marginBottom:4}}>🤖 AI ASSISTANT{m.mode==='chat'?' · CHAT':m.mode==='design'?' · DESIGN':''}</span>}
                 {m.content}
               </div>
             </div>
@@ -2360,7 +2521,7 @@ function AIAssistantPanel({ params, SR, SC, onParamChange }) {
             <div style={{display:'flex',justifyContent:'flex-start'}}>
               <div style={{padding:'10px 14px',borderRadius:10,background:SC.bg,border:`1px solid ${SC.border}`,fontSize:11,color:SC.muted,fontFamily:"'DM Mono',monospace"}}>
                 <span style={{fontSize:8,color:SC.purple,fontWeight:800,display:'block',marginBottom:4}}>🤖 AI ASSISTANT</span>
-                ⟳ Optimizing…
+                {mode==='design'?'⟳ Optimizing…':'⟳ Thinking…'}
               </div>
             </div>
           )}
@@ -2369,7 +2530,7 @@ function AIAssistantPanel({ params, SR, SC, onParamChange }) {
         <div style={{borderTop:`1px solid ${SC.border}`,padding:'10px 14px',display:'flex',gap:10}}>
           <input value={input} onChange={e=>setInput(e.target.value)}
             onKeyDown={e=>e.key==='Enter'&&!e.shiftKey&&send()}
-            placeholder="e.g. '4 passengers, 100km, EASA SC-VTOL, minimise MTOW'"
+            placeholder={mode==='design'?"e.g. '4 passengers, 100km, EASA SC-VTOL, minimise MTOW'":"Ask anything — BEM theory, certification, aerodynamics, comparisons…"}
             style={{flex:1,background:SC.bg,border:`1px solid ${SC.border}`,borderRadius:6,color:SC.text,fontSize:11,padding:'8px 12px',fontFamily:"'DM Mono',monospace",outline:'none'}}
             disabled={thinking}/>
           <button onClick={send} disabled={thinking||!input.trim()} type="button"
@@ -2380,12 +2541,34 @@ function AIAssistantPanel({ params, SR, SC, onParamChange }) {
       </div>
 
       <div style={{background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:8,padding:'12px 14px'}}>
-        <div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace",marginBottom:8}}>QUICK PROMPTS</div>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
+          <div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace"}}>
+            {mode==='design'?'🛠️ DESIGN QUICK PROMPTS':'💬 CHAT QUICK PROMPTS'}
+          </div>
+          <button onClick={()=>{ if(window.confirm('Clear all chat history? This cannot be undone.')) clearChat(); }}
+            type="button"
+            style={{padding:'3px 10px',background:'transparent',border:`1px solid ${SC.red}55`,borderRadius:4,color:SC.red,fontSize:9,cursor:'pointer',fontFamily:"'DM Mono',monospace"}}>
+            🗑 Clear History
+          </button>
+        </div>
         <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
-          {["4 passengers, 80km range, EASA SC-VTOL","Minimise MTOW for current range and payload",
-            "6 passengers, 150km, minimise battery weight","2 passengers, 50km, urban air taxi",
-            "Maximise range with battery under 40% MTOW","Best design for 320kg payload, 100km range",
-          ].map(q=>(
+          {(mode==='design'?[
+            "4 passengers, 80km range, EASA SC-VTOL",
+            "Minimise MTOW for current range and payload",
+            "6 passengers, 150km, minimise battery weight",
+            "2 passengers, 50km, urban air taxi",
+            "Maximise range with battery under 40% MTOW",
+            "Best design for 320kg payload, 100km range",
+          ]:[
+            "What is Blade Element Momentum theory?",
+            "Explain static margin in simple terms",
+            "What's the difference between Joby S4 and Archer Midnight?",
+            "Why does increasing aspect ratio improve L/D?",
+            "How does battery degradation affect eVTOL range?",
+            "What is the Glauert correction and when is it needed?",
+            "Explain EASA SC-VTOL certification requirements",
+            "What is figure of merit for a helicopter rotor?",
+          ]).map(q=>(
             <button key={q} onClick={()=>setInput(q)} type="button"
               style={{padding:'5px 12px',background:`${SC.purple}18`,border:`1px solid ${SC.purple}44`,borderRadius:5,color:SC.purple,fontSize:9,cursor:'pointer',fontFamily:"'DM Mono',monospace"}}>
               {q}
@@ -7083,7 +7266,7 @@ export default function App(){
 
             {/* ──── TAB 22: AI DESIGN ASSISTANT ──── */}
             {tab===22&&(
-              <AIAssistantPanel params={params} SR={SR} SC={SC} onParamChange={set}/>
+              <AIAssistantPanel params={params} SR={SR} SC={SC} onParamChange={set} user={user}/>
             )}
 
             {/* ──── TAB 17: REAL-TIME COLLABORATION ────
