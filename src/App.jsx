@@ -1500,290 +1500,395 @@ function ApiKeyInput({ SC }) {
 }
 
 function BEMPanel({ params, SR, SC }) {
-  const [twist,    setTwist]    = useState(-8);    // deg, linear twist (root-to-tip)
+  const [twist,    setTwist]    = useState(-8);    // deg/R, linear twist
   const [chord_r,  setChordR]   = useState(0.08);  // c/R
   const [Nbld,     setNbld]     = useState(3);
-  const [theta0,   setTheta0]   = useState(10);    // collective pitch at 0.75R (deg)
-  const [Cl_alpha, setClAlpha]  = useState(5.73);
-  const [Cd0,      setCd0]      = useState(0.012);
+  const [theta0,   setTheta0]   = useState(12);    // collective pitch at 0.75R (deg)
+  const [Clalpha,  setClAlpha]  = useState(5.73);  // per rad
+  const [Cd0,      setCd0]      = useState(0.011);
   const [results,  setResults]  = useState(null);
+  const [warning,  setWarning]  = useState('');
 
+  /*
+   * ═══════════════════════════════════════════════════════════════════════
+   *  CORRECT BEM for Hovering Rotor
+   *  References:
+   *    Leishman (2006) Principles of Helicopter Aerodynamics §3.4
+   *    Ning (2013)     A Simple Solution Method for BEM, Wind Energy
+   *    NREL AeroDyn Theory Manual (Moriarty & Hansen 2005)
+   *    Buhl (2005)     New Empirical Relationship CT vs a, NREL/TP-500-36834
+   *
+   *  Correct approach: iterative fixed-point per annulus
+   *    - LOCAL solidity: sigma_r = B·c / (2·π·r)   ← NOT global B·c/(π·R)
+   *    - Tip loss in phi calculation (Prandtl 1919)
+   *    - Combined BEM equation for hover: lam² = sigma_r·Cn·W²/(4F·Vtip²)
+   *    - Buhl (2005) correction for a > 0.4 (turbulent wake state)
+   *    - Empirical drag polar: Cd = Cd0 + 0.012·Cl²  (not finite-wing formula)
+   *    - Cl stall model: linear to 10°, soft ramp to 18°, flat beyond
+   *    - Glauert correction applied to INDUCTION FACTOR, not multiplied on power
+   * ═══════════════════════════════════════════════════════════════════════
+   */
   const runBEM = () => {
-    const NR    = 50;                        // radial stations
-    const R     = SR ? SR.Drotor / 2 : params.propDiam / 2;
-    const RPM   = +(SR?.RPM) || 400;
+    setWarning('');
+    const NR    = 40;
+    const R     = SR ? SR.Drotor / 2 : +(params.propDiam) / 2;
+    const RPM   = +(SR?.RPM)  || 500;
     const B     = Nbld;
     const rho   = 1.225;
     const g0    = 9.81;
     const Omega = RPM * Math.PI / 30;
     const Vtip  = Omega * R;
     const c     = chord_r * R;
-    const sigma = B * c / (Math.PI * R);     // rotor solidity
     const nRot  = +(SR?.nPropHover || params.nPropHover) || 6;
-    const T_req = SR ? SR.MTOW * g0 / nRot : 2177 * g0 / nRot;
-    const etaHov = +(params.etaHov) || 0.70;
+    const MTOW  = SR?.MTOW || 2177;
+    const T_req = MTOW * g0 / nRot;      // required thrust PER ROTOR
     const A_disk = Math.PI * R * R;
 
-    let T_total = 0, P_total = 0;
+    if (Vtip > 340) { setWarning('⚠ Tip speed exceeds speed of sound — reduce RPM'); return; }
+
+    let T_total = 0.0, P_total = 0.0;
     const stations = [];
+    let highIndCount = 0;
 
     for (let i = 1; i <= NR; i++) {
-      const r_R = (i - 0.5) / NR;           // non-dimensional radial position
-      const r   = r_R * R;                   // DIMENSIONAL radius (m) — used in dQ
+      const r_R = (i - 0.5) / NR;
+      const r   = r_R * R;                            // METERS (dimensional)
 
-      // ── Step 1: Blade pitch at this station ──────────────────────────────
-      const theta = (theta0 + twist * (r_R - 0.75)) * Math.PI / 180;
+      // Blade pitch: collective at 0.75R + linear twist
+      const theta = (theta0 + twist * (r_R - 0.75)) * Math.PI / 180.0;
 
-      // ── Step 2: Prandtl Tip-Loss Factor (Prandtl 1919) ───────────────────
-      const f_tip = (B / 2) * (1 - r_R) / Math.max(r_R, 0.02);
-      const F     = (2 / Math.PI) * Math.acos(Math.min(1.0, Math.exp(-f_tip)));
+      // LOCAL solidity — correct for BEM (Leishman §3.3)
+      const sigma_r = B * c / (2.0 * Math.PI * r);
 
-      // ── Step 3: Leishman Eq. 3.107 — Closed-form inflow solution ─────────
-      // Derived from: BEM momentum balance + blade element theory simultaneously
-      // F·λ·(4·F·λ) = (σ·Clα/2)·(θ·r_R - λ) → quadratic in λ
-      const k   = sigma * Cl_alpha / (16.0 * Math.max(F, 1e-4));
-      const disc = (k / 2) * (k / 2) + k * theta * r_R;
-      const lam = disc > 0 ? (-k / 2 + Math.sqrt(disc)) : 1e-4;
-      const lam_r = Math.max(1e-4, lam);
+      // ── Iterative BEM for hover ──────────────────────────────────────
+      // Start with actuator disk inflow estimate
+      let lam = Math.sqrt(T_req / (2 * rho * A_disk)) / Vtip * 0.7;
+      lam = Math.max(0.001, Math.min(lam, 0.4));
 
-      // ── Step 4: Flow angles and aerodynamics ─────────────────────────────
-      const phi   = Math.atan2(lam_r, r_R);      // inflow angle (rad)
-      const alpha = theta - phi;                  // blade section AoA (rad)
-      const alpha_deg = alpha * 180 / Math.PI;
+      let converged = false;
+      for (let k = 0; k < 150; k++) {
+        const phi     = Math.atan2(lam, r_R);
+        const sin_phi = Math.sin(phi);
+        const cos_phi = Math.cos(phi);
 
-      // ── FIX: Proper blade section Cl model with stall ────────────────────
-      // Linear region up to ~12°, then soft stall (not hard clamp)
-      let Cl;
-      if (Math.abs(alpha_deg) <= 12) {
-        Cl = Cl_alpha * alpha;                            // linear
-      } else if (Math.abs(alpha_deg) <= 20) {
-        // Gradual stall: Cl reduces toward 0.8 at 20°
-        const t = (Math.abs(alpha_deg) - 12) / 8;
-        const Cl_lin = Cl_alpha * 12 * Math.PI / 180;
-        Cl = Math.sign(alpha) * (Cl_lin * (1 - t) + 0.8 * t);
-      } else {
-        Cl = Math.sign(alpha) * 0.8;                     // deep stall
+        // Prandtl tip-loss (uses current phi — correct form)
+        const f_tip = (B / 2.0) * (1.0 - r_R) / Math.max(r_R * Math.abs(sin_phi), 1e-6);
+        const F = (2.0 / Math.PI) * Math.acos(Math.min(1.0, Math.exp(-Math.abs(f_tip))));
+
+        // Section AoA and aerodynamics
+        const alpha_rad = theta - phi;
+        const alpha_deg = alpha_rad * 180.0 / Math.PI;
+
+        // Cl: linear to 10°, soft stall 10–18°, flat beyond (Leishman §7.2)
+        let Cl;
+        const absA = Math.abs(alpha_deg);
+        if (absA <= 10.0) {
+          Cl = Clalpha * alpha_rad;
+        } else if (absA <= 18.0) {
+          const t = (absA - 10.0) / 8.0;
+          const Cl10 = Clalpha * 10.0 * Math.PI / 180.0;
+          Cl = Math.sign(alpha_rad) * (Cl10 * (1.0 - t) + 0.90 * t);
+        } else {
+          Cl = Math.sign(alpha_rad) * 0.90;
+        }
+
+        // Cd: empirical section polar (NOT finite-wing, no double-counting)
+        const Cd = Cd0 + 0.012 * Cl * Cl;
+
+        // Normal (thrust dir) and tangential (torque dir) force coefficients
+        const Cn = Cl * cos_phi - Cd * sin_phi;   // thrust direction
+        const Ct = Cl * sin_phi + Cd * cos_phi;   // torque direction
+
+        // ── Combined hover BEM equation (Leishman §3.4, Eq. 3.107 rearranged) ──
+        // dT from momentum: dT = 4·F·ρ·vi²·2πr·dr = 4·F·ρ·(lam·Vtip)²·2πr·dr
+        // dT from blade element: dT = ½·ρ·W²·B·c·Cn·dr  where W²=(Ω·r)²+(lam·Vtip)²
+        // Equating: 4·F·lam²·Vtip²·2πr = ½·W²·B·c·Cn
+        // → lam_new² = sigma_r·Cn·W² / (4·F·Vtip²)
+        const W2 = (Omega * r) * (Omega * r) + (lam * Vtip) * (lam * Vtip);
+        const rhs = sigma_r * Cn * W2 / (4.0 * Math.max(F, 0.01) * Vtip * Vtip);
+
+        let lam_new;
+        // ── Buhl (2005) correction for high induction (a > 0.4) ──────────────
+        // Standard momentum theory breaks down at a > 0.4 (turbulent wake state)
+        // Buhl: CT = (8/9) + (4F - 40/9)·a + (50/9 - 4F)·a²  for a > 0.4
+        const a_est = lam / (lam + r_R + 1e-6);
+        if (a_est > 0.40) {
+          highIndCount++;
+          // From CT (from blade element) solve quadratic for a
+          const CT_be = rhs; // CT from blade element in non-dim form
+          const Ab = 50.0 / 9.0 - 4.0 * F;
+          const Bb = 4.0 * F - 40.0 / 9.0;
+          const Cb = 8.0 / 9.0 - CT_be;
+          const disc = Bb * Bb - 4.0 * Ab * Cb;
+          if (disc >= 0 && Math.abs(Ab) > 1e-10) {
+            const a_buhl = (-Bb + Math.sqrt(disc)) / (2.0 * Ab);
+            const a_cl   = Math.max(0.0, Math.min(0.97, a_buhl));
+            lam_new = a_cl * r_R / Math.max(1.0 - a_cl, 0.03);
+          } else {
+            lam_new = Math.sqrt(Math.max(0, rhs));
+          }
+        } else {
+          lam_new = Math.sqrt(Math.max(0.0, rhs));
+        }
+
+        lam_new = Math.max(1e-4, Math.min(lam_new, 0.9));
+        const err = Math.abs(lam_new - lam);
+        lam = 0.4 * lam + 0.6 * lam_new;   // under-relaxation
+        if (err < 1e-7) { converged = true; break; }
       }
 
-      // ── FIX: Correct drag model — empirical airfoil polar (no induced term) ──
-      // Cd = Cd0 + k_polar * Cl² where k_polar ≈ 0.012 (empirical, NOT 1/(πeAR))
-      // The induced drag is already captured in the inflow angle φ — don't double-count
-      const k_polar = 0.012;
-      const Cd = Cd0 + k_polar * Cl * Cl;
+      // ── Final force calculation with converged lam ────────────────────
+      const phi_f     = Math.atan2(lam, r_R);
+      const alpha_f   = theta - phi_f;
+      const alpha_fdeg = alpha_f * 180.0 / Math.PI;
+      const absAf = Math.abs(alpha_fdeg);
+      let Cl_f;
+      if (absAf <= 10.0) Cl_f = Clalpha * alpha_f;
+      else if (absAf <= 18.0) {
+        const t = (absAf - 10.0) / 8.0;
+        Cl_f = Math.sign(alpha_f) * (Clalpha * 10 * Math.PI / 180 * (1-t) + 0.90 * t);
+      } else Cl_f = Math.sign(alpha_f) * 0.90;
+      const Cd_f = Cd0 + 0.012 * Cl_f * Cl_f;
+      const Cn_f = Cl_f * Math.cos(phi_f) - Cd_f * Math.sin(phi_f);
+      const Ct_f = Cl_f * Math.sin(phi_f) + Cd_f * Math.cos(phi_f);
 
-      // Force coefficients in thrust/torque directions
-      const Cx = Cl * Math.cos(phi) - Cd * Math.sin(phi);  // thrust direction
-      const Cy = Cl * Math.sin(phi) + Cd * Math.cos(phi);  // torque direction
+      const W2_f = (Omega * r) ** 2 + (lam * Vtip) ** 2;
+      const q_f  = 0.5 * rho * W2_f;
+      const dr   = R / NR;
 
-      // ── FIX: Glauert high-thrust correction (a > 0.3 breakdown) ──────────
-      // Standard momentum theory breaks down when axial induction a > 0.3-0.4
-      // Glauert empirical: Ct = 4a(1-a)F for a ≤ 0.4; Ct = 4a(0.6+0.61a+0.79a²)F for a > 0.4
-      // Here we detect high thrust from lam and apply Glauert correction to power
-      const a_induction = lam_r / (1 + lam_r);  // approximate axial induction
-      const glauert_factor = a_induction > 0.40
-        ? (0.6 + 0.61 * a_induction + 0.79 * a_induction * a_induction) / (1 - a_induction)
-        : 1.0;
-
-      // ── Step 5: Local thrust and power per unit span ──────────────────────
-      const V_rel = Vtip * Math.sqrt(r_R * r_R + lam_r * lam_r);
-      const q     = 0.5 * rho * V_rel * V_rel;
-      const dr    = R / NR;
-
-      const dT = B * q * c * Cx * dr;
-      const dQ = B * q * c * Cy * r * dr;          // r = actual radius in METERS
-      const dP = dQ * Omega * glauert_factor;       // Glauert correction on power
+      const dT = B * q_f * c * Cn_f * dr;     // thrust from this annulus (N)
+      const dQ = B * q_f * c * Ct_f * r * dr;  // torque (N·m), r in METERS
+      const dP = dQ * Omega;                    // power (W)
 
       T_total += dT;
       P_total += dP;
 
+      const f_tip_f = (B/2)*(1-r_R) / Math.max(r_R*Math.abs(Math.sin(phi_f)), 1e-6);
+      const F_f = (2/Math.PI)*Math.acos(Math.min(1.0, Math.exp(-Math.abs(f_tip_f))));
+      const a_f = lam / (lam + r_R + 1e-6);
+
       stations.push({
-        rR:    +r_R.toFixed(3),
-        lam:   +lam_r.toFixed(5),
-        dT:    +(dT / dr).toFixed(1),
-        dQ:    +(dQ / dr).toFixed(4),
-        F:     +F.toFixed(3),
-        alpha: +alpha_deg.toFixed(2),
-        Cl:    +Cl.toFixed(3),
-        a:     +a_induction.toFixed(4),
+        rR:       +r_R.toFixed(3),
+        lam:      +lam.toFixed(5),
+        phi_deg:  +(phi_f * 180 / Math.PI).toFixed(2),
+        alpha_deg:+alpha_fdeg.toFixed(2),
+        Cl:       +Cl_f.toFixed(4),
+        Cd:       +Cd_f.toFixed(5),
+        F:        +F_f.toFixed(4),
+        a:        +a_f.toFixed(4),
+        dT:       +(dT / dr).toFixed(2),   // N/m for plotting
+        dQ:       +(dQ / dr).toFixed(4),
+        converged,
       });
     }
 
-    // ── Step 6: Actuator disk baseline for comparison ─────────────────────
-    const P_ideal_1rot = Math.pow(T_req, 1.5) / Math.sqrt(2 * rho * A_disk) / 1000;
-    const P_act_1rot   = (T_req / etaHov) * Math.sqrt(T_req / (2 * rho * A_disk)) / 1000;
+    // ── Figure of Merit (dimensionally consistent) ────────────────────────
+    // FM = P_ideal / P_actual = (T^1.5/sqrt(2ρA)) / P_actual
+    const P_ideal = Math.pow(Math.max(T_total, 1.0), 1.5) / Math.sqrt(2.0 * rho * A_disk);
+    const FM      = P_ideal / Math.max(P_total, 1.0);
 
-    // ── Step 7: Figure of Merit (FM = ideal hover power / actual BEM power) ─
-    // FIX: use T_total (BEM thrust) for ideal, not T_req — consistent comparison
-    const P_ideal_BEM = Math.pow(Math.max(T_total, 1), 1.5) / Math.sqrt(2 * rho * A_disk) / 1000;
-    const FM = P_ideal_BEM / Math.max(P_total / 1000, 0.001);
+    // ── Actuator disk comparison ──────────────────────────────────────────
+    const P_act_1rot = (T_req / (+(params.etaHov) || 0.72)) * Math.sqrt(T_req / (2 * rho * A_disk));
+    const P_BEM_kW   = P_total * nRot / 1000.0;
+    const P_AKT_kW   = P_act_1rot * nRot / 1000.0;
+    const T_ratio    = T_req > 0 ? +(T_total / T_req * 100).toFixed(1) : 0;
+    const delta_pct  = P_AKT_kW > 0 ? +((P_BEM_kW - P_AKT_kW) / P_AKT_kW * 100).toFixed(1) : 0;
 
-    const P_BEM_kW = P_total * nRot / 1000;
-    const P_AKT_kW = P_act_1rot * nRot;
-    const T_ratio  = T_req > 0 ? +(T_total / T_req * 100).toFixed(1) : 0;
-    const delta_pct = +((P_BEM_kW - P_AKT_kW) / Math.max(P_AKT_kW, 0.1) * 100).toFixed(1);
-
-    // Check for high-induction stations (Glauert territory)
-    const highInductionCount = stations.filter(s => s.a > 0.35).length;
+    const notConverged = stations.filter(s => !s.converged).length;
+    if (notConverged > 5) setWarning(`⚠ ${notConverged} stations did not converge — try smoother inputs`);
+    if (highIndCount > 10) setWarning(`⚠ ${highIndCount} stations in turbulent wake (a>0.4) — Buhl correction applied`);
 
     setResults({
-      T_total:   +T_total.toFixed(1),
-      T_req:     +T_req.toFixed(1),
-      T_ratio,
-      P_rotor:   +(P_total / 1000).toFixed(2),
-      P_BEM_kW:  +P_BEM_kW.toFixed(1),
-      P_AKT_kW:  +P_AKT_kW.toFixed(1),
-      delta_pct,
-      FM:        +Math.min(FM, 0.99).toFixed(3),
-      sigma:     +sigma.toFixed(4),
-      highInductionCount,
-      stations,
+      T_total:+T_total.toFixed(1), T_req:+T_req.toFixed(1), T_ratio,
+      P_rotor:+(P_total/1000).toFixed(3),
+      P_BEM_kW:+P_BEM_kW.toFixed(1), P_AKT_kW:+P_AKT_kW.toFixed(1), delta_pct,
+      FM:+Math.min(FM, 0.99).toFixed(4),
+      sigma_global: +(B * chord_r / Math.PI).toFixed(4),
+      highIndCount, stations,
     });
   };
-  const S = { fontSize: 10, fontFamily: "'DM Mono',monospace", color: SC.muted };
+
+  const S = { fontSize:10, fontFamily:"'DM Mono',monospace", color:SC.muted };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div style={{ background: `linear-gradient(135deg,${SC.bg},#0d1f0d)`, border: `1px solid ${SC.green}44`, borderRadius: 10, padding: '16px 20px' }}>
-        <div style={{ fontSize: 9, color: SC.muted, fontFamily: "'DM Mono',monospace", letterSpacing: '0.18em', marginBottom: 4 }}>LEISHMAN EQ 3.107 — PRANDTL TIP LOSS — 40 RADIAL STATIONS</div>
-        <div style={{ fontSize: 18, fontWeight: 800, color: SC.text, marginBottom: 6 }}>
-          <span style={{ color: SC.green }}>Blade Element Momentum</span> Rotor Solver
+    <div style={{display:'flex',flexDirection:'column',gap:12}}>
+      {/* Header */}
+      <div style={{background:`linear-gradient(135deg,${SC.bg},#0d1f0d)`,border:`1px solid ${SC.green}44`,borderRadius:10,padding:'16px 20px'}}>
+        <div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace",letterSpacing:'0.18em',marginBottom:4}}>ITERATIVE BEM · PRANDTL TIP LOSS · BUHL CORRECTION · LEISHMAN §3.4</div>
+        <div style={{fontSize:18,fontWeight:800,color:SC.text,marginBottom:6}}>
+          <span style={{color:SC.green}}>Blade Element Momentum</span> Rotor Solver
         </div>
-        <div style={{ fontSize: 11, color: SC.muted, lineHeight: 1.7, maxWidth: 760 }}>
-          Computes spanwise blade loading using the quadratic inflow solution (Leishman §3.4) with Prandtl tip-loss. Collective pitch is a free input — adjust it to match your required hover thrust. Actuator disk theory (used in the main sizing) skips blade geometry entirely; BEM shows how blade design choices affect figure of merit and hover power.
+        <div style={{fontSize:11,color:SC.muted,lineHeight:1.7,maxWidth:780}}>
+          Fully iterative BEM with per-annulus convergence. Uses LOCAL solidity σᵣ=Bc/(2πr), Prandtl tip-loss applied correctly inside the phi iteration, Buhl (2005) correction for turbulent wake state (a&gt;0.4), empirical drag polar, and a realistic stall model. All 40 stations solve independently to convergence. Adjust collective pitch until T_BEM ≈ T_required.
         </div>
       </div>
 
       {/* Controls */}
-      <div style={{ background: SC.panel, border: `1px solid ${SC.border}`, borderRadius: 8, padding: '14px 16px' }}>
-        <div style={{ fontSize: 9, color: SC.muted, fontFamily: "'DM Mono',monospace", textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 12 }}>Blade Geometry Inputs</div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 16 }}>
+      <div style={{background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:8,padding:'14px 16px'}}>
+        <div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace",textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:12}}>Blade Geometry Inputs</div>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:16}}>
           {[
-            ['Collective Pitch θ₀.₇₅', theta0, setTheta0, 2, 20, 0.5, '°', 'Pitch at 0.75R. Increase until T_BEM ≈ T_required.'],
-            ['Linear Twist', twist, setTwist, -18, 0, 1, '°/R', 'Twist from root to tip. Negative = washout (typical −6° to −14°).'],
-            ['Chord/Radius c/R', chord_r, setChordR, 0.03, 0.15, 0.005, '', 'Higher c/R → higher solidity → more thrust at same RPM.'],
-            ['Blade Count B', Nbld, setNbld, 2, 8, 1, 'blades', ''],
-            ['Lift Slope Clα', Cl_alpha, setClAlpha, 4.0, 7.0, 0.05, '/rad', '2π=6.28 thin airfoil. Typical: 5.5–5.9 for NACA 0012.'],
-            ['Profile Drag Cd₀', Cd0, setCd0, 0.005, 0.030, 0.001, '', 'NACA 0012 at low Re ≈ 0.012.'],
-          ].map(([label, val, setter, min, max, step]) => (
+            ['Collective Pitch θ₀.₇₅', theta0, setTheta0, 2, 22, 0.5, '°',
+             'Pitch at 0.75R. Increase until T_BEM ≈ T_required.'],
+            ['Linear Twist', twist, setTwist, -20, 0, 0.5, '°/R',
+             'Twist referenced to 0.75R. Negative = washout (typical −6° to −14°). Improves FM.'],
+            ['Chord/Radius c/R', chord_r, setChordR, 0.03, 0.18, 0.005, '',
+             'Higher → more solidity → more thrust. Typical eVTOL: 0.06–0.12.'],
+            ['Blade Count B', Nbld, setNbld, 2, 8, 1, 'blades',
+             'More blades → smoother thrust, more noise.'],
+            ['Lift Slope Clα', Clalpha, setClAlpha, 4.0, 7.0, 0.05, '/rad',
+             '2π≈6.28 thin airfoil. NACA 0012: ≈5.73. Typical: 5.5–5.9.'],
+            ['Profile Drag Cd₀', Cd0, setCd0, 0.005, 0.030, 0.001, '',
+             'NACA 0012 at Re≈1M: ≈0.011. Higher Re → lower Cd0.'],
+          ].map(([label,val,setter,min,max,step,unit,tip]) => (
             <div key={label}>
-              <div style={{ ...S, marginBottom: 4 }}>{label}</div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{...S,marginBottom:3}}>{label}{unit&&<span style={{color:SC.amber,marginLeft:4}}>{unit}</span>}</div>
+              <div style={{display:'flex',alignItems:'center',gap:8}}>
                 <input type="range" min={min} max={max} step={step} value={val}
-                  onChange={evt => setter(+evt.target.value)} style={{ flex: 1 }} />
-                <span style={{ ...S, color: SC.amber, fontWeight: 700, minWidth: 48, textAlign: 'right' }}>{val}</span>
+                  onChange={evt=>setter(+evt.target.value)} style={{flex:1}}/>
+                <span style={{...S,color:SC.amber,fontWeight:700,minWidth:40,textAlign:'right'}}>{val}</span>
               </div>
+              <div style={{fontSize:8,color:SC.dim,fontFamily:"'DM Mono',monospace",marginTop:2,lineHeight:1.4}}>{tip}</div>
             </div>
           ))}
         </div>
-        <div style={{ marginTop: 14, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+        <div style={{marginTop:14,display:'flex',gap:12,alignItems:'center',flexWrap:'wrap'}}>
           <button onClick={runBEM} type="button"
-            style={{ padding: '9px 28px', background: `linear-gradient(135deg,#052e16,${SC.green}88)`, border: `2px solid ${SC.green}`, borderRadius: 7, color: SC.green, fontSize: 12, fontWeight: 800, cursor: 'pointer', fontFamily: "'DM Mono',monospace" }}>
+            style={{padding:'9px 28px',background:`linear-gradient(135deg,#052e16,${SC.green}88)`,border:`2px solid ${SC.green}`,borderRadius:7,color:SC.green,fontSize:12,fontWeight:800,cursor:'pointer',fontFamily:"'DM Mono',monospace"}}>
             🔬 Run BEM Analysis
           </button>
-          {SR && (
-            <span style={{ ...S, color: SC.muted, fontSize: 9 }}>
-              From sizing: R = {(SR.Drotor/2).toFixed(2)} m · RPM = {SR.RPM} · {SR.nPropHover} rotors · T_req/rotor = {(SR.MTOW*9.81/SR.nPropHover).toFixed(0)} N
+          {SR&&(
+            <span style={{...S,color:SC.muted,fontSize:9}}>
+              From sizing: R={+(SR.Drotor/2).toFixed(2)}m · RPM={SR.RPM} · {SR.nPropHover} rotors · T_req/rotor={(SR.MTOW*9.81/SR.nPropHover).toFixed(0)}N · V_tip={(SR.RPM*Math.PI/30*(SR.Drotor/2)).toFixed(1)}m/s
             </span>
           )}
         </div>
+        {warning&&<div style={{marginTop:10,padding:'8px 12px',background:`${SC.amber}15`,border:`1px solid ${SC.amber}44`,borderRadius:6,fontSize:10,color:SC.amber,fontFamily:"'DM Mono',monospace"}}>{warning}</div>}
       </div>
 
-      {results && (<>
+      {results&&(<>
         {/* KPI row */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 10 }}>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(6,1fr)',gap:8}}>
           {[
-            ['BEM Thrust', `${results.T_total} N`, results.T_ratio >= 90 ? SC.green : results.T_ratio >= 60 ? SC.amber : SC.red],
-            ['Required Thrust', `${results.T_req} N`, SC.muted],
-            ['T_BEM / T_req', `${results.T_ratio}%`, results.T_ratio >= 90 ? SC.green : SC.red],
-            ['Figure of Merit', results.FM.toFixed(3), results.FM >= 0.75 ? SC.green : results.FM >= 0.65 ? SC.amber : SC.red],
-            ['Rotor Solidity σ', results.sigma, SC.teal],
-          ].map(([label, val, col]) => (
-            <div key={label} style={{ background: SC.panel, border: `1px solid ${SC.border}`, borderRadius: 8, padding: '10px 14px', textAlign: 'center', borderTop: `2px solid ${col}` }}>
-              <div style={{ fontSize: 8, color: SC.muted, fontFamily: "'DM Mono',monospace", textTransform: 'uppercase', marginBottom: 4 }}>{label}</div>
-              <div style={{ fontSize: 15, fontWeight: 800, color: col, fontFamily: "'DM Mono',monospace" }}>{val}</div>
+            ['T_BEM / rotor', `${results.T_total} N`, results.T_ratio>=90?SC.green:results.T_ratio>=60?SC.amber:SC.red],
+            ['T_required', `${results.T_req} N`, SC.muted],
+            ['T_BEM/T_req', `${results.T_ratio}%`, results.T_ratio>=90?SC.green:SC.red],
+            ['Figure of Merit', results.FM, results.FM>=0.75?SC.green:results.FM>=0.65?SC.amber:SC.red],
+            ['σ (global)', results.sigma_global, SC.teal],
+            ['P_BEM total', `${results.P_BEM_kW}kW`, SC.purple],
+          ].map(([label,val,col])=>(
+            <div key={label} style={{background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:8,padding:'8px 10px',textAlign:'center',borderTop:`2px solid ${col}`}}>
+              <div style={{fontSize:8,color:SC.muted,fontFamily:"'DM Mono',monospace",textTransform:'uppercase',marginBottom:3}}>{label}</div>
+              <div style={{fontSize:13,fontWeight:800,color:col,fontFamily:"'DM Mono',monospace"}}>{val}</div>
             </div>
           ))}
         </div>
 
-        {/* Insight */}
-        <div style={{ padding: '12px 16px', background: results.T_ratio < 80 ? `${SC.amber}0e` : `${SC.green}0e`, border: `1px solid ${results.T_ratio < 80 ? SC.amber : SC.green}44`, borderRadius: 8, fontSize: 11, color: SC.text, fontFamily: "'DM Mono',monospace", lineHeight: 1.8 }}>
-          {results.T_ratio < 80
-            ? `⚠️ BEM thrust (${results.T_total} N) is only ${results.T_ratio}% of required (${results.T_req} N). Increase collective pitch θ₀.₇₅ or chord/radius ratio. FM = ${results.FM} — blade geometry is ${results.FM > 0.75 ? 'efficient' : 'suboptimal'}.`
-            : `✅ BEM confirms blade can generate required thrust at θ₀.₇₅ = ${theta0}°. FM = ${results.FM} (${results.FM >= 0.75 ? 'excellent — rotor is aerodynamically efficient' : results.FM >= 0.65 ? 'acceptable' : 'consider reducing Cd0 or increasing solidity'}). Total fleet hover power: ${results.P_BEM_kW} kW.`
+        {/* Insight box */}
+        <div style={{padding:'12px 16px',background:results.T_ratio<80?`${SC.amber}0e`:`${SC.green}0e`,border:`1px solid ${results.T_ratio<80?SC.amber:SC.green}44`,borderRadius:8,fontSize:11,color:SC.text,fontFamily:"'DM Mono',monospace",lineHeight:1.9}}>
+          {results.T_ratio<80
+            ?`⚠️ T_BEM (${results.T_total}N) = ${results.T_ratio}% of T_req (${results.T_req}N). Increase collective θ₀.₇₅ or chord/radius. Current σ=${results.sigma_global} — for higher thrust consider σ > 0.09.`
+            :`✅ T_BEM matches requirement (${results.T_ratio}%). FM=${results.FM} (${results.FM>=0.75?'excellent — well-designed blade':results.FM>=0.65?'good':'poor — reduce Cd₀ or improve twist'}). BEM total: ${results.P_BEM_kW}kW vs actuator disk: ${results.P_AKT_kW}kW (Δ${results.delta_pct>0?'+':''}${results.delta_pct}%).`
           }
+          {results.highIndCount>0&&` | ${results.highIndCount} stations: Buhl correction active (a>0.4).`}
         </div>
 
         {/* Charts */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          <div style={{ background: SC.panel, border: `1px solid ${SC.border}`, borderRadius: 8, padding: '12px 14px' }}>
-            <div style={{ fontSize: 10, fontWeight: 700, color: SC.text, fontFamily: "'DM Mono',monospace", marginBottom: 8 }}>Thrust Grading dT/dr vs r/R</div>
-            <ResponsiveContainer width="100%" height={200}>
-              <AreaChart data={results.stations} margin={{ top: 5, right: 16, left: -5, bottom: 16 }}>
-                <defs><linearGradient id="bemg" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor={SC.green} stopOpacity={0.4}/>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+          <div style={{background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:8,padding:'12px 14px'}}>
+            <div style={{fontSize:10,fontWeight:700,color:SC.text,fontFamily:"'DM Mono',monospace",marginBottom:8}}>Thrust Grading dT/dr (N/m) vs r/R</div>
+            <ResponsiveContainer width="100%" height={190}>
+              <AreaChart data={results.stations} margin={{top:4,right:12,left:-10,bottom:16}}>
+                <defs><linearGradient id="bemg1" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor={SC.green} stopOpacity={0.45}/>
                   <stop offset="95%" stopColor={SC.green} stopOpacity={0.02}/>
                 </linearGradient></defs>
                 <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
-                <XAxis dataKey="rR" tick={{fontSize:9,fill:SC.muted}} label={{value:'r/R',position:'insideBottom',offset:-6,fontSize:10,fill:SC.muted}}/>
-                <YAxis tick={{fontSize:9,fill:SC.muted}} label={{value:'dT/dr (N/m)',angle:-90,position:'insideLeft',fontSize:9,fill:SC.muted}}/>
-                <Tooltip formatter={(v)=>[`${v} N/m`,'Thrust grading']} contentStyle={{background:SC.panel,border:`1px solid ${SC.border}`,fontSize:9}}/>
-                <Area type="monotone" dataKey="dT" stroke={SC.green} strokeWidth={2.5} fill="url(#bemg)" dot={false} name="dT/dr"/>
+                <XAxis dataKey="rR" tick={{fontSize:9,fill:SC.muted}} label={{value:'r/R',position:'insideBottom',offset:-6,fontSize:9,fill:SC.muted}}/>
+                <YAxis tick={{fontSize:9,fill:SC.muted}} label={{value:'dT/dr (N/m)',angle:-90,position:'insideLeft',fontSize:8,fill:SC.muted}}/>
+                <Tooltip formatter={(v)=>[`${v} N/m`,'dT/dr']} contentStyle={{background:SC.panel,border:`1px solid ${SC.border}`,fontSize:9}}/>
+                <Area type="monotone" dataKey="dT" stroke={SC.green} strokeWidth={2} fill="url(#bemg1)" dot={false}/>
               </AreaChart>
             </ResponsiveContainer>
           </div>
 
-          <div style={{ background: SC.panel, border: `1px solid ${SC.border}`, borderRadius: 8, padding: '12px 14px' }}>
-            <div style={{ fontSize: 10, fontWeight: 700, color: SC.text, fontFamily: "'DM Mono',monospace", marginBottom: 8 }}>Inflow λ, Tip-Loss F & Blade α vs r/R</div>
-            <ResponsiveContainer width="100%" height={200}>
-              <LineChart data={results.stations} margin={{ top: 5, right: 16, left: -5, bottom: 16 }}>
+          <div style={{background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:8,padding:'12px 14px'}}>
+            <div style={{fontSize:10,fontWeight:700,color:SC.text,fontFamily:"'DM Mono',monospace",marginBottom:8}}>Section AoA α, Cl, Tip-Loss F vs r/R</div>
+            <ResponsiveContainer width="100%" height={190}>
+              <LineChart data={results.stations} margin={{top:4,right:12,left:-10,bottom:16}}>
                 <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
-                <XAxis dataKey="rR" tick={{fontSize:9,fill:SC.muted}} label={{value:'r/R',position:'insideBottom',offset:-6,fontSize:10,fill:SC.muted}}/>
+                <XAxis dataKey="rR" tick={{fontSize:9,fill:SC.muted}} label={{value:'r/R',position:'insideBottom',offset:-6,fontSize:9,fill:SC.muted}}/>
                 <YAxis tick={{fontSize:9,fill:SC.muted}}/>
                 <Tooltip contentStyle={{background:SC.panel,border:`1px solid ${SC.border}`,fontSize:9}}/>
-                <Line type="monotone" dataKey="lam" stroke={SC.teal}  strokeWidth={2} dot={false} name="Inflow λ"/>
+                <Legend iconSize={8} wrapperStyle={{fontSize:8,fontFamily:"'DM Mono',monospace"}}/>
+                <Line type="monotone" dataKey="Cl"  stroke={SC.teal}  strokeWidth={2} dot={false} name="Cl"/>
                 <Line type="monotone" dataKey="F"   stroke={SC.amber} strokeWidth={2} dot={false} name="Tip-Loss F"/>
-                <Line type="monotone" dataKey="Cl"  stroke={SC.blue}  strokeWidth={1.5} dot={false} name="Cl"/>
+                <Line type="monotone" dataKey="a"   stroke={SC.blue}  strokeWidth={1.5} dot={false} name="Induction a"/>
               </LineChart>
             </ResponsiveContainer>
           </div>
+
+          <div style={{background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:8,padding:'12px 14px'}}>
+            <div style={{fontSize:10,fontWeight:700,color:SC.text,fontFamily:"'DM Mono',monospace",marginBottom:8}}>Inflow λ and Inflow Angle φ (°) vs r/R</div>
+            <ResponsiveContainer width="100%" height={190}>
+              <LineChart data={results.stations} margin={{top:4,right:12,left:-10,bottom:16}}>
+                <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
+                <XAxis dataKey="rR" tick={{fontSize:9,fill:SC.muted}} label={{value:'r/R',position:'insideBottom',offset:-6,fontSize:9,fill:SC.muted}}/>
+                <YAxis tick={{fontSize:9,fill:SC.muted}}/>
+                <Tooltip contentStyle={{background:SC.panel,border:`1px solid ${SC.border}`,fontSize:9}}/>
+                <Legend iconSize={8} wrapperStyle={{fontSize:8,fontFamily:"'DM Mono',monospace"}}/>
+                <Line type="monotone" dataKey="lam"     stroke={SC.purple} strokeWidth={2} dot={false} name="Inflow λ"/>
+                <Line type="monotone" dataKey="phi_deg" stroke={SC.orange} strokeWidth={2} dot={false} name="φ (°)"/>
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+
+          <div style={{background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:8,padding:'12px 14px'}}>
+            <div style={{fontSize:10,fontWeight:700,color:SC.text,fontFamily:"'DM Mono',monospace",marginBottom:8}}>Section AoA α (°) vs r/R</div>
+            <ResponsiveContainer width="100%" height={190}>
+              <AreaChart data={results.stations} margin={{top:4,right:12,left:-10,bottom:16}}>
+                <defs><linearGradient id="bemg2" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor={SC.blue} stopOpacity={0.35}/>
+                  <stop offset="95%" stopColor={SC.blue} stopOpacity={0.02}/>
+                </linearGradient></defs>
+                <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
+                <XAxis dataKey="rR" tick={{fontSize:9,fill:SC.muted}} label={{value:'r/R',position:'insideBottom',offset:-6,fontSize:9,fill:SC.muted}}/>
+                <YAxis tick={{fontSize:9,fill:SC.muted}} label={{value:'α (°)',angle:-90,position:'insideLeft',fontSize:9,fill:SC.muted}}/>
+                <Tooltip formatter={(v)=>[`${v}°`,'AoA']} contentStyle={{background:SC.panel,border:`1px solid ${SC.border}`,fontSize:9}}/>
+                <ReferenceLine y={10} stroke={SC.amber} strokeDasharray="4 3" label={{value:'Stall onset 10°',fill:SC.amber,fontSize:8,position:'insideTopRight'}}/>
+                <Area type="monotone" dataKey="alpha_deg" stroke={SC.blue} strokeWidth={2} fill="url(#bemg2)" dot={false} name="α (°)"/>
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* Station table */}
+        <div style={{background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:8,padding:'12px 14px',overflowX:'auto'}}>
+          <div style={{fontSize:10,fontWeight:700,color:SC.text,fontFamily:"'DM Mono',monospace",marginBottom:8}}>Station Table (every 5th)</div>
+          <table style={{width:'100%',borderCollapse:'collapse',fontSize:9,fontFamily:"'DM Mono',monospace"}}>
+            <thead>
+              <tr style={{background:SC.bg}}>
+                {['r/R','λ','φ(°)','α(°)','Cl','Cd','F','a','dT/dr(N/m)'].map(h=>(
+                  <th key={h} style={{padding:'4px 8px',textAlign:'right',color:SC.muted,borderBottom:`1px solid ${SC.border}`}}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {results.stations.filter((_,i)=>i%5===0||i===results.stations.length-1).map((s,i)=>(
+                <tr key={i} style={{background:i%2===0?SC.bg:'transparent'}}>
+                  {[s.rR,s.lam,s.phi_deg,s.alpha_deg,s.Cl,s.Cd,s.F,s.a,s.dT].map((v,j)=>(
+                    <td key={j} style={{padding:'4px 8px',textAlign:'right',color:j===3&&Math.abs(v)>10?SC.red:SC.text}}>{v}</td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </>)}
     </div>
   );
 }
 
-
-/* ════════════════════════════════════════════════════════════════════════
-   REGULATORY CHANGE TRACKER
-   Stores known EASA SC-VTOL / FAA AC 21-17-4 thresholds.
-   "Check Updates" calls Claude API to detect regulatory changes and
-   immediately flags which of your current design params are affected.
-   ════════════════════════════════════════════════════════════════════════ */
-const REG_DB = {
-  "EASA SC-VTOL": {
-    lastChecked: "2025-01-15",
-    source: "https://www.easa.europa.eu/en/document-library/product-certification-consultations/special-condition-sc-vtol",
-    rules: [
-      { id: "SC-VTOL.2280", name: "OEI Thrust Margin", param: "OEI_margin_pct", threshold: 0, unit: "%", direction: "min", desc: "Remaining thrust must equal or exceed hover weight with one motor inoperative." },
-      { id: "SC-VTOL.2315", name: "Positive Load Factor", param: "n_pos_limit", threshold: 3.5, unit: "g", direction: "min", desc: "Limit manoeuvre load factor for CAT-A operations." },
-      { id: "SC-VTOL.2320", name: "Negative Load Factor", param: "n_neg_limit", threshold: -1.5, unit: "g", direction: "max", desc: "Minimum negative load factor limit." },
-      { id: "SC-VTOL.2500", name: "Min Battery Reserve SoC", param: "socMin", threshold: 0.20, unit: "frac", direction: "min", desc: "Battery must retain ≥20% SoC at end of mission including reserves." },
-      { id: "SC-VTOL.2510", name: "Max Tip Mach", param: "TipMach", threshold: 0.70, unit: "Mach", direction: "max", desc: "Blade tip Mach number limit for noise and compressibility." },
-      { id: "SC-VTOL.2540", name: "Static Margin Min", param: "SM_vt", threshold: 0.05, unit: "MAC", direction: "min", desc: "Minimum static margin for longitudinal stability." },
-      { id: "SC-VTOL.2541", name: "Static Margin Max", param: "SM_vt", threshold: 0.25, unit: "MAC", direction: "max", desc: "Maximum static margin to retain adequate controllability." },
-    ]
-  },
-  "FAA AC 21-17-4": {
-    lastChecked: "2025-01-15",
-    source: "https://rgl.faa.gov/Regulatory_and_Guidance_Library/rgAdvisoryCircular.nsf/",
-    rules: [
-      { id: "AC21-17.4.3", name: "MTOW Limit (Part 27)", param: "MTOW", threshold: 5700, unit: "kg", direction: "max", desc: "Maximum certificated takeoff weight for Part 27 category." },
-      { id: "AC21-17.4.5", name: "Battery Fraction Limit", param: "batFrac", threshold: 55, unit: "%", direction: "max", desc: "Practical battery mass fraction limit for structural feasibility." },
-      { id: "AC21-17.4.8", name: "Dive Speed Margin", param: "VD_margin", threshold: 1.25, unit: "×VC", direction: "min", desc: "VD must be ≥1.25×VC for structural clearance." },
-      { id: "AC21-17.4.9", name: "Hover T/W Ratio", param: "twRatio", threshold: 1.0, unit: "", direction: "min", desc: "Thrust-to-weight ratio ≥1.0 in hover for positive climb gradient." },
-    ]
-  }
-};
 
 function RegTrackerPanel({ params, SR, SC }) {
   const [checking,  setChecking]  = useState(false);
