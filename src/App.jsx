@@ -6390,7 +6390,6 @@ export default function App(){
 
                           </div>
                     </div>
-                  </div>
                 </Panel>
               </div>
             )}
