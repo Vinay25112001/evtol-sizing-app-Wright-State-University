@@ -20,8 +20,8 @@ function runSizing(p) {
   const RoC=p.rateOfClimb,clAng=p.climbAngle;
   const Vcl=RoC/Math.sin(clAng*Math.PI/180);
   const LDcl=p.LD*(1-0.13);
-  const desAng=Math.atan(1/p.LD)*180/Math.PI;
-  const Vdc=-RoC/Math.sin(-desAng*Math.PI/180);
+  const desAng=p.descentAngle||6;
+  const Vdc=Math.min(RoC/Math.sin(desAng*Math.PI/180),p.vCruise);
   const Vres=0.7*p.vCruise;
   const hvtol=p.hoverHeight;
   const ClimbR=(p.cruiseAlt-hvtol)/Math.tan(clAng*Math.PI/180);
@@ -64,13 +64,15 @@ function runSizing(p) {
     Pcl=(W/p.etaSys)*(RoC+Vcl/LDcl)/1000;
     Pcr=(W/p.etaSys)*(p.vCruise/p.LD)/1000;
     Pdc=(W/p.etaSys)*(-RoC+Vdc/p.LD)/1000;  // descent: uses cruise L/D
-    // Regenerative braking NOT modelled: Pdc clamped to ≥0 for energy accounting
-    // (rotor wake + poor regen efficiency makes meaningful regen unrealistic for most eVTOL)
+    // eVTOL rotors must remain spinning throughout descent for pitch/roll/yaw authority.
+    // Minimum control authority power ≈ 22% of hover power (Uber Elevate 2016, eVTOL descent data).
+    // rawPdc is often negative (gravity > drag) — floor ensures physically realistic draw.
+    Pdc=Math.max(0.22*Phov, Pdc);
     Pres=(W/p.etaSys)*(Vres/p.LD)/1000;
     tto=hvtol/0.5; tcl=ClimbR/Vcl; tcr=Math.max(0,CruiseRange/p.vCruise);
     tdc=DescR/Vdc; tld=hvtol/0.5; tres=p.reserveRange*1000/Vres;
     Eto=Phov*tto/3600; Ecl=Pcl*tcl/3600; Ecr=Pcr*tcr/3600;
-    Edc=Math.abs(Pdc)*tdc/3600; Eld=Phov*tld/3600; Eres=Pres*tres/3600;
+    Edc=Math.max(0,Pdc)*tdc/3600; Eld=Phov*tld/3600; Eres=Pres*tres/3600;
     Etot=Eto+Ecl+Ecr+Edc+Eld+Eres;
     Wempty=p.ewf*MTOW;
     Wbat=Etot*1000*(1+p.socMin)/(p.sedCell*p.etaBat);
@@ -579,7 +581,7 @@ function runSizing(p) {
 
   return {
     MTOW:+MTOW.toFixed(2),MTOW1:+MTOW1.toFixed(2),Wempty:+Wempty.toFixed(2),Wbat:+Wbat.toFixed(2),
-    Phov:+Phov.toFixed(2),Pcl:+Pcl.toFixed(2),Pcr:+Pcr.toFixed(2),Pdc:+Math.abs(Pdc).toFixed(2),Pres:+Pres.toFixed(2),
+    Phov:+Phov.toFixed(2),Pcl:+Pcl.toFixed(2),Pcr:+Pcr.toFixed(2),Pdc:+Math.max(0,Pdc).toFixed(2),Pres:+Pres.toFixed(2),
     tto:+tto.toFixed(0),tcl:+tcl.toFixed(0),tcr:+tcr.toFixed(0),tdc:+tdc.toFixed(0),tld:+tld.toFixed(0),tres:+tres.toFixed(0),
     Tend:+Tend.toFixed(0),
     Eto:+Eto.toFixed(3),Ecl:+Ecl.toFixed(3),Ecr:+Ecr.toFixed(3),Edc:+Edc.toFixed(3),Eld:+Eld.toFixed(3),Eres:+Eres.toFixed(3),Etot:+Etot.toFixed(3),
@@ -1107,8 +1109,8 @@ function generateReport(p, SR, branding={}) {
   const RoCd=p.rateOfClimb, clAngd=p.climbAngle;
   const Vcld=RoCd/Math.sin(clAngd*Math.PI/180);
   const LDcld=p.LD*(1-0.13);
-  const desAngd=Math.atan(1/p.LD)*180/Math.PI;
-  const Vdcd=RoCd/Math.sin(desAngd*Math.PI/180);
+  const desAngd=p.descentAngle||6;
+  const Vdcd=Math.min(RoCd/Math.sin(desAngd*Math.PI/180),p.vCruise);
   const Vresd=0.7*p.vCruise;
   const hvtold=p.hoverHeight;
   const ClimbRd=(p.cruiseAlt-hvtold)/Math.tan(clAngd*Math.PI/180);
@@ -3002,12 +3004,12 @@ export default function App(){
     // ── Aerodynamics (calibrated vs Joby S4 / Archer Midnight / NASA NDARC) ──
     LD:14,AR:9,eOsw:0.85,clDesign:0.55,taper:0.45,tc:0.15,
     // ── Propulsion ───────────────────────────────────────────────────────
-    nPropHover:6,propDiam:3.0,twRatio:1.2,convTolExp:-6,
+    nPropHover:6,propDiam:3.0,twRatio:1.3,convTolExp:-6,
     etaHov:0.70,          // FOM 0.70 — achievable with optimised eVTOL hover rotor (was 0.63)
     etaSys:0.80,          // drivetrain η — modern PMSM motors + inverter ~93%×93% (was 0.765)
-    rateOfClimb:5.08,climbAngle:5,
+    rateOfClimb:5.08,climbAngle:5,descentAngle:6,
     // ── Battery (2025 state-of-art; Joby claims ~300 Wh/kg cell-level) ──
-    sedCell:300,etaBat:0.90,socMin:0.2,
+    sedCell:300,etaBat:0.90,socMin:0.19,
     // ── Weights (composite airframe; Joby EWF=0.43, Archer~0.45, conservative 0.50) ──
     ewf:0.50,
     // ── Geometry (Lf/b target 0.55–0.70; fL=7.2 gives 0.564 with 12.77 m span) ──
@@ -3581,8 +3583,8 @@ export default function App(){
 
           {/* Reset */}
           <button onClick={()=>setParams({payload:455,range:250,vCruise:67,cruiseAlt:1000,reserveRange:60,hoverHeight:15.24,
-            LD:14,AR:9,eOsw:0.85,clDesign:0.55,taper:0.45,tc:0.15,nPropHover:6,propDiam:3.0,twRatio:1.2,convTolExp:-6,
-            etaHov:0.70,etaSys:0.80,rateOfClimb:5.08,climbAngle:5,sedCell:300,etaBat:0.90,socMin:0.2,ewf:0.50,
+            LD:14,AR:9,eOsw:0.85,clDesign:0.55,taper:0.45,tc:0.15,nPropHover:6,propDiam:3.0,twRatio:1.3,convTolExp:-6,
+            etaHov:0.70,etaSys:0.80,rateOfClimb:5.08,climbAngle:5,sedCell:300,etaBat:0.90,socMin:0.19,ewf:0.50,
             fusLen:7.2,fusDiam:1.65,vtGamma:45,vtCh:0.45,vtCv:0.032,vtAR:2.5})}
             style={{padding:"5px 12px",background:"transparent",border:`1px solid ${SC.border}`,
               borderRadius:4,color:SC.muted,fontSize:9,cursor:"pointer",fontFamily:"'DM Mono',monospace"}}>
@@ -3686,6 +3688,7 @@ export default function App(){
             <Slider label="System η" unit="" value={params.etaSys} min={0.5} max={0.95} step={0.01} onChange={set("etaSys")} note="Motor+inverter chain: 0.78–0.85"/>
             <Slider label="Rate of Climb" unit="m/s" value={params.rateOfClimb} min={1} max={12} step={0.1} onChange={set("rateOfClimb")}/>
             <Slider label="Climb Angle" unit="°" value={params.climbAngle} min={2} max={15} step={0.5} onChange={set("climbAngle")}/>
+            <Slider label="Descent Angle" unit="°" value={params.descentAngle||6} min={2} max={15} step={0.5} onChange={set("descentAngle")} note="6° typical IFR approach; steeper = slower Vdc"/>
           </Acc>
           <Acc title="Battery" icon="🔋">
             <Slider label="Cell SED" unit="Wh/kg" value={params.sedCell} min={150} max={500} step={5} onChange={set("sedCell")} note="Joby/Archer 2025: ~300 Wh/kg cell"/>
@@ -6291,20 +6294,16 @@ export default function App(){
 
                 {/* ── Acoustic Model Methodology ── */}
                 <Panel title="Acoustic Model — Methodology & Limitations">
-                  {(()=>{
-                    const [open,setOpen]=useState(false);
-                    return(
-                      <div>
-                        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',cursor:'pointer',padding:'4px 0'}} onClick={()=>setOpen(o=>!o)}>
-                          <span style={{fontSize:11,color:SC.muted,fontFamily:"'DM Mono',monospace"}}>
-                            {open?'▲ Hide':'▼ Show'} full methodology, assumptions and validity envelope
-                          </span>
-                          <span style={{fontSize:9,color:SC.amber,fontFamily:"'DM Mono',monospace",padding:'3px 10px',border:`1px solid ${SC.amber}44`,borderRadius:4}}>
-                            Calibrated empirical model — not certification-grade
-                          </span>
-                        </div>
-                        {open&&(
-                          <div style={{marginTop:12,display:'flex',flexDirection:'column',gap:10}}>
+                  <div>
+                    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'4px 0 10px 0'}}>
+                      <span style={{fontSize:10,color:SC.muted,fontFamily:"'DM Mono',monospace"}}>
+                        Gutin-inspired far-field approximation · 8 harmonics · per-frequency A-weighting
+                      </span>
+                      <span style={{fontSize:9,color:SC.amber,fontFamily:"'DM Mono',monospace",padding:'3px 10px',border:`1px solid ${SC.amber}44`,borderRadius:4}}>
+                        Calibrated empirical model — not certification-grade
+                      </span>
+                    </div>
+                    <div style={{display:'flex',flexDirection:'column',gap:10}}>
 
                             {/* Formula box */}
                             <div style={{background:SC.bg,border:`1px solid ${SC.border}`,borderRadius:8,padding:'14px 16px'}}>
@@ -6392,10 +6391,7 @@ export default function App(){
                             </div>
 
                           </div>
-                        )}
-                      </div>
-                    );
-                  })()}
+                    </div>
                 </Panel>
               </div>
             )}
