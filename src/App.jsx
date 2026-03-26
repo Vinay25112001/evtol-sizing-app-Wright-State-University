@@ -13,16 +13,25 @@ import {
    ═══════════════════════════════════════════════════════════════════════ */
 function runSizing(p) {
   const g0=9.81,rhoMSL=1.225,T0=288.15,L=0.0065,Rgas=287,GAM=1.4,mu0=1.47e-5;
-  const Tcr=T0-L*p.cruiseAlt;
-  const rhoCr=rhoMSL*Math.pow(Tcr/T0,(-g0/(-L*Rgas))-1);
-  const muCr=mu0*Math.pow(Tcr/T0,0.75);
+  // ISA deviation: deltaISA=0 → standard day; deltaISA=15 → hot day (ISA+15)
+  const deltaT=p.deltaISA||0;
+  const T0eff=T0+deltaT;  // effective sea-level temperature
+  const Tcr=T0eff-L*p.cruiseAlt;
+  const rhoCr=rhoMSL*Math.pow(Tcr/T0eff,(-g0/(-L*Rgas))-1);
+  const muCr=mu0*Math.pow(Tcr/T0eff,0.75);
   const aCr=Math.sqrt(GAM*Rgas*Tcr);
+  // Hover altitude density — affects rotor power at T/O and landing altitude
+  const Thov=T0eff-L*(p.hoverHeight||15.24);
+  const rhoHov=rhoMSL*Math.pow(Thov/T0eff,(-g0/(-L*Rgas))-1);
   const RoC=p.rateOfClimb,clAng=p.climbAngle;
   const Vcl=RoC/Math.sin(clAng*Math.PI/180);
-  const LDcl=p.LD*(1-0.13);
+  // Climb L/D derating: induced drag increases at climb AoA (user-adjustable, default 13%)
+  const LDcl=p.LD*(1-(p.climbLDPenalty||0.13));
+  // Descent angle: user-set (default 6°) — independent of L/D to avoid algebraic cancellation
   const desAng=p.descentAngle||6;
-  const Vdc=Math.min(RoC/Math.sin(desAng*Math.PI/180),p.vCruise);
-  const Vres=0.7*p.vCruise;
+  const Vdc=Math.min(RoC/Math.sin(desAng*Math.PI/180),p.vCruise);  // cap at cruise speed
+  // Reserve: loiter at best-endurance speed ≈ 0.76×cruise (min-power speed for electric)
+  const Vres=0.76*p.vCruise;
   const hvtol=p.hoverHeight;
   const ClimbR=(p.cruiseAlt-hvtol)/Math.tan(clAng*Math.PI/180);
   const DescR=(p.cruiseAlt-hvtol)/Math.tan(desAng*Math.PI/180);
@@ -59,23 +68,30 @@ function runSizing(p) {
     // T/W ratio is a structural margin for climb/OEI — NOT applied to steady hover.
     // In hover: each rotor supports W/N (not W*TW/N). Motors sized for TW but fly at W.
     const DL=(W)/(Math.PI*Math.pow(p.propDiam/2,2)*p.nPropHover);  // T/W=1.0
-    Phov=(W/p.etaHov)*Math.sqrt(DL/(2*rhoMSL))/1000;  // W in N, result in W→÷1000→kW
+    Phov=(W/p.etaHov)*Math.sqrt(DL/(2*rhoHov))/1000;  // uses hover-altitude density
     // η_hov absorbs: non-uniform inflow, swirl losses, figure-of-merit deviation from ideal
     Pcl=(W/p.etaSys)*(RoC+Vcl/LDcl)/1000;
     Pcr=(W/p.etaSys)*(p.vCruise/p.LD)/1000;
-    Pdc=(W/p.etaSys)*(-RoC+Vdc/p.LD)/1000;  // descent: uses cruise L/D
-    // eVTOL rotors must remain spinning throughout descent for pitch/roll/yaw authority.
-    // Minimum control authority power ≈ 22% of hover power (Uber Elevate 2016, eVTOL descent data).
-    // rawPdc is often negative (gravity > drag) — floor ensures physically realistic draw.
+    Pdc=(W/p.etaSys)*(-RoC+Vdc/LDcl)/1000;  // descent: uses climb L/D (derated)
+    // eVTOL rotors must keep spinning throughout descent for pitch/roll/yaw authority.
+    // Minimum control authority ≈ 22% hover power (Uber Elevate 2016 / eVTOL descent data).
     Pdc=Math.max(0.22*Phov, Pdc);
     Pres=(W/p.etaSys)*(Vres/p.LD)/1000;
-    tto=hvtol/0.5; tcl=ClimbR/Vcl; tcr=Math.max(0,CruiseRange/p.vCruise);
+    // Hover-to-climb transition: ~45 s at 65% hover power (rotor tilt / speed-up phase)
+    const ttrans=45, Ptrans=0.65*Phov;
+    tto=hvtol/0.5+ttrans; tcl=ClimbR/Vcl; tcr=Math.max(0,CruiseRange/p.vCruise);
     tdc=DescR/Vdc; tld=hvtol/0.5; tres=p.reserveRange*1000/Vres;
-    Eto=Phov*tto/3600; Ecl=Pcl*tcl/3600; Ecr=Pcr*tcr/3600;
-    Edc=Math.max(0,Pdc)*tdc/3600; Eld=Phov*tld/3600; Eres=Pres*tres/3600;
+    // Eto includes hover ascent + transition power
+    Eto=(Phov*(hvtol/0.5)+Ptrans*ttrans)/3600;
+    Ecl=Pcl*tcl/3600; Ecr=Pcr*tcr/3600;
+    Edc=Pdc*tdc/3600;  // Pdc already floored ≥0 above
+    Eld=Phov*tld/3600; Eres=Pres*tres/3600;
     Etot=Eto+Ecl+Ecr+Edc+Eld+Eres;
     Wempty=p.ewf*MTOW;
-    Wbat=Etot*1000*(1+p.socMin)/(p.sedCell*p.etaBat);
+    // Battery C-rate derating: SED drops at high discharge rates (hover peaks 3–5C)
+    // Approximate: SED_eff = sedCell × (1 - cRateDerate); default 8% for ~3-4C hover
+    const sedEff=p.sedCell*(1-(p.cRateDerate||0.08));
+    Wbat=Etot*1000*(1+p.socMin)/(sedEff*p.etaBat);
     const mn=p.payload+Wempty+Wbat;
     const residual=Math.abs(mn-MTOW);
     energyH.push(+Etot.toFixed(3)); mtowH.push(+mn.toFixed(2));
@@ -330,7 +346,7 @@ function runSizing(p) {
 
   /* Time-power-velocity-SoC profiles */
   const tPhases=[0,tto,tto+tcl,tto+tcl+tcr,tto+tcl+tcr+tdc,tto+tcl+tcr+tdc+tld,tto+tcl+tcr+tdc+tld+tres];
-  const Tend=tPhases[6],phPow=[Phov,Pcl,Pcr,Math.abs(Pdc),Phov,Pres];
+  const Tend=tPhases[6],phPow=[Phov,Pcl,Pcr,Pdc,Phov,Pres];
   const phV=[0.5,Vcl,p.vCruise,Vdc,0.5,Vres];
   const Ecum_ph=[0,Eto,Eto+Ecl,Eto+Ecl+Ecr,Eto+Ecl+Ecr+Edc,Eto+Ecl+Ecr+Edc+Eld,Etot];
   const N=200,powerSteps=[],socSteps=[],velSteps=[],energySteps=[];
@@ -369,13 +385,16 @@ function runSizing(p) {
       n2=o+1;
       const W2=m2*g0;
       const DL2=(W2*TW)/(Math.PI*Math.pow(p.propDiam/2,2)*p.nPropHover);
-      const Ph2=(W2*TW/p.etaHov)*Math.sqrt(DL2/(2*rhoMSL))/1000;
+      const Ph2=(W2/p.etaHov)*Math.sqrt(DL2/(2*rhoHov))/1000;
       const Pc2=(W2/p.etaSys)*(RoC+Vcl/LDcl)/1000;
       const Pcr2=(W2/p.etaSys)*(p.vCruise/p.LD)/1000;
-      const Pd2=(W2/p.etaSys)*(-RoC+Vdc/LDcl)/1000;
+      const Pd2_raw=(W2/p.etaSys)*(-RoC+Vdc/LDcl)/1000;
+      const Pd2=Math.max(0.22*Ph2,Pd2_raw);
       const Pr2=(W2/p.etaSys)*(Vres/p.LD)/1000;
-      const Et2=Ph2*tto/3600+Pc2*tcl/3600+Pcr2*tcr/3600+Math.abs(Pd2)*tdc/3600+Ph2*tld/3600+Pr2*tres/3600;
-      const Wb2=Et2*1000*(1+p.socMin)/(p.sedCell*p.etaBat);
+      const ttrans2=45,Ptrans2=0.65*Ph2;
+      const Et2=(Ph2*(hvtol/0.5)+Ptrans2*ttrans2)/3600+Pc2*tcl/3600+Pcr2*tcr/3600+Pd2*tdc/3600+Ph2*tld/3600+Pr2*tres/3600;
+      const sedEff2=p.sedCell*(1-(p.cRateDerate||0.08));
+      const Wb2=Et2*1000*(1+p.socMin)/(sedEff2*p.etaBat);
       const mn=p.payload+p.ewf*m2+Wb2;
       if(Math.abs(mn-m2)<t){m2=mn;break;}
       m2=mn;
@@ -389,13 +408,16 @@ function runSizing(p) {
     for(let i=0;i<60;i++){
       const W=m*g0;
       const DLtw=(W)/(Math.PI*Math.pow(p.propDiam/2,2)*p.nPropHover);  // T/W=1.0
-      const Phov_tw=(W/p.etaHov)*Math.sqrt(DLtw/(2*rhoMSL))/1000;               // T/W=1.0
+      const Phov_tw=(W/p.etaHov)*Math.sqrt(DLtw/(2*rhoHov))/1000;               // T/W=1.0
       const Pcl_tw=(W/p.etaSys)*(RoC+Vcl/LDcl)/1000;
       const Pcr_tw=(W/p.etaSys)*(p.vCruise/p.LD)/1000;
-      const Pdc_tw=(W/p.etaSys)*(-RoC+Vdc/LDcl)/1000;
+      const Pdc_tw_raw=(W/p.etaSys)*(-RoC+Vdc/LDcl)/1000;
+      const Pdc_tw=Math.max(0.22*Phov_tw,Pdc_tw_raw);
       const Pres_tw=(W/p.etaSys)*(Vres/p.LD)/1000;
-      const Etot_tw=Phov_tw*tto/3600+Pcl_tw*tcl/3600+Pcr_tw*tcr/3600+Math.abs(Pdc_tw)*tdc/3600+Phov_tw*tld/3600+Pres_tw*tres/3600;
-      const Wbat_tw=Etot_tw*1000*(1+p.socMin)/(p.sedCell*p.etaBat);
+      const ttrans_tw=45,Ptrans_tw=0.65*Phov_tw;
+      const Etot_tw=(Phov_tw*(hvtol/0.5)+Ptrans_tw*ttrans_tw)/3600+Pcl_tw*tcl/3600+Pcr_tw*tcr/3600+Pdc_tw*tdc/3600+Phov_tw*tld/3600+Pres_tw*tres/3600;
+      const sedEff_tw=p.sedCell*(1-(p.cRateDerate||0.08));
+      const Wbat_tw=Etot_tw*1000*(1+p.socMin)/(sedEff_tw*p.etaBat);
       const mn=p.payload+p.ewf*m+Wbat_tw;
       if(Math.abs(mn-m)<1e-4){m=mn;break;}
       m=mn;
@@ -418,6 +440,7 @@ function runSizing(p) {
   /* Feasibility */
   const checks=[
     {label:"MTOW < 5700 kg",ok:MTOW<5700,val:`${MTOW.toFixed(1)} kg`},
+    {label:"Cruise range > 0 km",ok:CruiseRange>0,val:`${(CruiseRange/1000).toFixed(1)} km (climb+desc+res use ${((ClimbR+DescR+p.reserveRange*1000)/1000).toFixed(1)} km)`},
     {label:"Pack ≥ Mission E",ok:PackkWh>=Etot,val:`${PackkWh.toFixed(2)} ≥ ${Etot.toFixed(2)} kWh`},
     {label:"SM 5–25% MAC",ok:SM_vt>=0.05&&SM_vt<=0.25,val:`${(SM_vt*100).toFixed(1)}%`},
     {label:"Tip Mach < 0.70",ok:TipMach<0.70,val:`M${TipMach.toFixed(3)}`},
@@ -430,6 +453,10 @@ function runSizing(p) {
     {label:"Tail/Wing area 25–50%",ok:(Svt_total/Swing)>=0.20&&(Svt_total/Swing)<=0.55,val:`${(Svt_total/Swing*100).toFixed(1)}%`},
     {label:"Fus/Span 0.50–0.72",ok:(fL/bWing)>=0.50&&(fL/bWing)<=0.72,val:`${(fL/bWing).toFixed(3)}`},
     {label:`Hover T/W ≥ ${TW.toFixed(2)}`,ok:TW>=1.0,val:`${TW.toFixed(2)} (Phov = ${Phov.toFixed(1)} kW)`},
+    // Cross-parameter feasibility checks
+    {label:"AR vs LD compatible",ok:LDact>=(p.LD*0.70),val:`Act L/D ${LDact.toFixed(1)} vs target ${p.LD} (min 70%)`},
+    {label:"Vdc ≤ vCruise",ok:Vdc<=p.vCruise,val:`${Vdc.toFixed(1)} m/s (cruise ${p.vCruise} m/s)`},
+    {label:"Rotors: even & ≥ 4",ok:p.nPropHover>=4&&p.nPropHover%2===0,val:`${p.nPropHover} rotors`},
   ];
 
   /* ════════════════════════════════════════════════════════════════
@@ -581,7 +608,7 @@ function runSizing(p) {
 
   return {
     MTOW:+MTOW.toFixed(2),MTOW1:+MTOW1.toFixed(2),Wempty:+Wempty.toFixed(2),Wbat:+Wbat.toFixed(2),
-    Phov:+Phov.toFixed(2),Pcl:+Pcl.toFixed(2),Pcr:+Pcr.toFixed(2),Pdc:+Math.max(0,Pdc).toFixed(2),Pres:+Pres.toFixed(2),
+    Phov:+Phov.toFixed(2),Pcl:+Pcl.toFixed(2),Pcr:+Pcr.toFixed(2),Pdc:+Pdc.toFixed(2),Pres:+Pres.toFixed(2),
     tto:+tto.toFixed(0),tcl:+tcl.toFixed(0),tcr:+tcr.toFixed(0),tdc:+tdc.toFixed(0),tld:+tld.toFixed(0),tres:+tres.toFixed(0),
     Tend:+Tend.toFixed(0),
     Eto:+Eto.toFixed(3),Ecl:+Ecl.toFixed(3),Ecr:+Ecr.toFixed(3),Edc:+Edc.toFixed(3),Eld:+Eld.toFixed(3),Eres:+Eres.toFixed(3),Etot:+Etot.toFixed(3),
@@ -1102,16 +1129,18 @@ function generateReport(p, SR, branding={}) {
 
   // ── Intermediate values recomputed for display ─────────────────────
   const g0d=9.81,T0d=288.15,L_d=0.0065,Rgasd=287,rhoSLd=1.225;
-  const Tcrd=T0d-L_d*p.cruiseAlt;
-  const rhoCrd=rhoSLd*Math.pow(Tcrd/T0d,(-g0d/(-L_d*Rgasd))-1);
+  const deltaISAd=p.deltaISA||0;
+  const T0effd=T0d+deltaISAd;
+  const Tcrd=T0effd-L_d*p.cruiseAlt;
+  const rhoCrd=rhoSLd*Math.pow(Tcrd/T0effd,(-g0d/(-L_d*Rgasd))-1);
   const muSLd=1.789e-5;
-  const muCrd=muSLd*Math.pow(Tcrd/T0d,0.75);
+  const muCrd=muSLd*Math.pow(Tcrd/T0effd,0.75);
   const RoCd=p.rateOfClimb, clAngd=p.climbAngle;
   const Vcld=RoCd/Math.sin(clAngd*Math.PI/180);
-  const LDcld=p.LD*(1-0.13);
+  const LDcld=p.LD*(1-(p.climbLDPenalty||0.13));
   const desAngd=p.descentAngle||6;
   const Vdcd=Math.min(RoCd/Math.sin(desAngd*Math.PI/180),p.vCruise);
-  const Vresd=0.7*p.vCruise;
+  const Vresd=0.76*p.vCruise;
   const hvtold=p.hoverHeight;
   const ClimbRd=(p.cruiseAlt-hvtold)/Math.tan(clAngd*Math.PI/180);
   const DescRd=(p.cruiseAlt-hvtold)/Math.tan(desAngd*Math.PI/180);
@@ -3007,7 +3036,11 @@ export default function App(){
     nPropHover:6,propDiam:3.0,twRatio:1.3,convTolExp:-6,
     etaHov:0.70,          // FOM 0.70 — achievable with optimised eVTOL hover rotor (was 0.63)
     etaSys:0.80,          // drivetrain η — modern PMSM motors + inverter ~93%×93% (was 0.765)
-    rateOfClimb:5.08,climbAngle:5,descentAngle:6,
+    rateOfClimb:5.08,climbAngle:5,
+    descentAngle:6,        // degrees — approach descent (independent of L/D)
+    climbLDPenalty:0.13,   // fractional L/D derating during climb (induced drag increase)
+    deltaISA:0,            // ISA deviation °C: 0=standard day, 15=hot day
+    cRateDerate:0.08,      // battery SED derate for C-rate: 8% default (~3-4C hover)
     // ── Battery (2025 state-of-art; Joby claims ~300 Wh/kg cell-level) ──
     sedCell:300,etaBat:0.90,socMin:0.19,
     // ── Weights (composite airframe; Joby EWF=0.43, Archer~0.45, conservative 0.50) ──
@@ -3688,12 +3721,15 @@ export default function App(){
             <Slider label="System η" unit="" value={params.etaSys} min={0.5} max={0.95} step={0.01} onChange={set("etaSys")} note="Motor+inverter chain: 0.78–0.85"/>
             <Slider label="Rate of Climb" unit="m/s" value={params.rateOfClimb} min={1} max={12} step={0.1} onChange={set("rateOfClimb")}/>
             <Slider label="Climb Angle" unit="°" value={params.climbAngle} min={2} max={15} step={0.5} onChange={set("climbAngle")}/>
-            <Slider label="Descent Angle" unit="°" value={params.descentAngle||6} min={2} max={15} step={0.5} onChange={set("descentAngle")} note="6° typical IFR approach; steeper = slower Vdc"/>
+            <Slider label="Descent Angle" unit="°" value={params.descentAngle||6} min={2} max={15} step={0.5} onChange={set("descentAngle")} note="6° typical IFR approach; steeper → slower Vdc"/>
+            <Slider label="Climb L/D Penalty" unit="" value={params.climbLDPenalty||0.13} min={0.02} max={0.25} step={0.01} onChange={set("climbLDPenalty")} note="Induced drag increase during climb (0.13 = 13%)"/>
+            <Slider label="ISA Deviation ΔT" unit="°C" value={params.deltaISA||0} min={-15} max={30} step={1} onChange={set("deltaISA")} note="0=std day · 15=ISA+15 hot day · -15=cold day"/>
           </Acc>
           <Acc title="Battery" icon="🔋">
             <Slider label="Cell SED" unit="Wh/kg" value={params.sedCell} min={150} max={500} step={5} onChange={set("sedCell")} note="Joby/Archer 2025: ~300 Wh/kg cell"/>
             <Slider label="Battery η" unit="" value={params.etaBat} min={0.70} max={0.99} step={0.01} onChange={set("etaBat")}/>
             <Slider label="Min SoC" unit="" value={params.socMin} min={0.05} max={0.40} step={0.01} onChange={set("socMin")}/>
+            <Slider label="C-Rate SED Derate" unit="" value={params.cRateDerate||0.08} min={0.0} max={0.20} step={0.01} onChange={set("cRateDerate")} note="SED loss at peak hover C-rate (8% default for ~3-4C)"/>
           </Acc>
           <Acc title="V-Tail Design" icon="🦋">
             <Slider label="Dihedral Angle Γ" unit="°" value={params.vtGamma} min={20} max={70} step={1} onChange={set("vtGamma")}
@@ -3760,6 +3796,34 @@ export default function App(){
                   <KPI label="Static Margin" value={(SR.SM*100).toFixed(1)} unit="% MAC" color={SR.SM>0.05&&SR.SM<0.25?SC.green:SC.red}/>
                   <KPI label="Mach" value={SR.Mach} unit="" color={SR.Mach<0.35?SC.green:SC.amber} sub={`Re ${(SR.Re_/1e6).toFixed(2)}×10⁶`}/>
                 </div>
+                {/* ── Uncertainty bands from Monte Carlo (shown when MC has been run) ── */}
+                {mcResults&&(
+                  <div style={{background:SC.panel,border:`1px solid #7c3aed44`,borderRadius:8,padding:"12px 16px"}}>
+                    <div style={{fontSize:9,color:"#a78bfa",fontFamily:"'DM Mono',monospace",letterSpacing:"0.14em",marginBottom:8}}>MC UNCERTAINTY BANDS — {mcResults.N.toLocaleString()} SAMPLES</div>
+                    <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
+                      {[
+                        ["MTOW",SR.MTOW,mcResults.MTOW.stats,"kg",SC.amber],
+                        ["Total Energy",SR.Etot,mcResults.Etot.stats,"kWh",SC.teal],
+                        ["Hover Power",SR.Phov,mcResults.Phov.stats,"kW",SC.blue],
+                        ["Static Margin",(SR.SM_vt*100).toFixed(1),mcResults.SM?.stats||null,"%",SC.purple],
+                      ].map(([label,nominal,stats,unit,col])=>(
+                        <div key={label} style={{background:SC.bg,border:`1px solid ${col}33`,borderRadius:6,padding:"8px 10px"}}>
+                          <div style={{fontSize:9,color:col,fontFamily:"'DM Mono',monospace",fontWeight:700,marginBottom:4}}>{label}</div>
+                          <div style={{fontSize:13,fontWeight:800,color:SC.text,fontFamily:"'DM Mono',monospace"}}>{nominal} <span style={{fontSize:9,color:SC.muted}}>{unit}</span></div>
+                          <div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace",marginTop:3}}>
+                            μ={typeof stats.mean==="number"?stats.mean.toFixed(1):stats.mean} ± {typeof stats.std==="number"?stats.std.toFixed(1):stats.std} {unit}
+                          </div>
+                          <div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace"}}>
+                            P5={typeof stats.p5==="number"?stats.p5.toFixed(1):stats.p5} — P95={typeof stats.p95==="number"?stats.p95.toFixed(1):stats.p95} {unit}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace",marginTop:6}}>
+                      ⓘ Run Monte Carlo (Tab 9) to update these bands. Current nominal is the deterministic point estimate.
+                    </div>
+                  </div>
+                )}
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
                   <Panel title="Power per Phase (kW)" ht={255}>
                     <ResponsiveContainer width="100%" height={205}>
@@ -3798,7 +3862,7 @@ export default function App(){
                         {[["🛫 Takeoff Hover",SR.tto,SR.Phov,SR.Eto,0.5],
                           ["📈 Climb",SR.tcl,SR.Pcl,SR.Ecl,+(params.rateOfClimb/Math.sin(params.climbAngle*Math.PI/180)).toFixed(1)],
                           ["✈️ Cruise",SR.tcr,SR.Pcr,SR.Ecr,params.vCruise],
-                          ["📉 Descent",SR.tdc,SR.Pdc,SR.Edc,+(params.cruiseAlt/Math.tan(Math.atan(1/params.LD))/SR.tdc).toFixed(1)],
+                          ["📉 Descent",SR.tdc,SR.Pdc,SR.Edc,+Math.min(params.rateOfClimb/Math.sin((params.descentAngle||6)*Math.PI/180),params.vCruise).toFixed(1)],
                           ["🛬 Landing Hover",SR.tld,SR.Phov,SR.Eld,0.5],
                           ["🔄 Reserve",SR.tres,SR.Pres,SR.Eres,+(0.7*params.vCruise).toFixed(1)],
                         ].map(([ph,t,pw,e,v],i)=>(
@@ -6392,6 +6456,7 @@ export default function App(){
 
                           </div>
                     </div>
+                  </div>
                 </Panel>
               </div>
             )}
