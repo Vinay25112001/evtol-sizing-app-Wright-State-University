@@ -3304,24 +3304,21 @@ function DesignSpacePanel({ params, SC, TTP, runSizingFn, onApply }) {
                   label={{value:axes.find(a=>a.key===yAxis)?.label,angle:-90,position:"insideLeft",fontSize:10,fill:SC.muted}}/>
                 <Tooltip cursor={{strokeDasharray:"3 3"}} content={TooltipContent}/>
                 {Object.entries(buckets).map(([key,{col,r,pts:bpts}])=>(
-                  <Scatter key={key} data={bpts.map((pt,i)=>({...pt,x:pt[xAxis],y:pt[yAxis],_idx:i}))}
+                  <Scatter key={key}
+                    data={bpts.map((pt)=>({...pt,x:pt[xAxis],y:pt[yAxis]}))}
                     dataKey="y" fill={col} opacity={0.85}
                     onClick={onApply?(data)=>{
-                      const pt=data;
-                      // Map sampled params back to full params object
-                      const newParams={
-                        ...params,
-                        range:pt.range, payload:pt.payload,
-                        LD:pt.LD, sedCell:pt.sedCell,
-                        ewf:pt.ewf, AR:pt.AR,
-                        etaHov:pt.etaHov, etaSys:pt.etaSys,
-                      };
-                      onApply(newParams);
-                      setApplied(pt._idx||0);
+                      // Recharts Scatter onClick: actual point is in data.payload (not data directly)
+                      const pt = data?.payload ?? data;
+                      if(!pt||pt.range==null) return;
+                      onApply(pt);
+                      // Use a unique fingerprint of the point as applied key
+                      setApplied(`${pt.range}_${pt.payload}_${pt.MTOW}`);
                     }:undefined}
                     shape={(props)=>{
                       const{cx,cy,payload}=props;
-                      const isApplied=applied!==null&&payload._idx===applied;
+                      const key_=`${payload.range}_${payload.payload}_${payload.MTOW}`;
+                      const isApplied=applied!==null&&key_===applied;
                       return(
                         <circle cx={cx} cy={cy} r={isApplied?7:r}
                           fill={isApplied?"#f59e0b":col}
@@ -3347,8 +3344,8 @@ function DesignSpacePanel({ params, SC, TTP, runSizingFn, onApply }) {
                 <thead><tr style={{background:SC.bg}}>{["Range km","Payload kg","MTOW kg","Energy kWh","L/D","Bat%"].map(h=><th key={h} style={{padding:"5px 8px",textAlign:"right",color:SC.muted,fontWeight:700,borderBottom:`1px solid ${SC.border}`}}>{h}</th>)}</tr></thead>
                 <tbody>{results.pts.filter(p=>p.pareto).sort((a,b)=>b.range-a.range).slice(0,10).map((pt,i)=>(
                   <tr key={i} onClick={onApply?()=>{
-                    onApply({...params,range:pt.range,payload:pt.payload,LD:pt.LD,sedCell:pt.sedCell,ewf:pt.ewf,AR:pt.AR,etaHov:pt.etaHov,etaSys:pt.etaSys});
-                    setApplied(i);
+                    onApply(pt);
+                    setApplied(`${pt.range}_${pt.payload}_${pt.MTOW}`);
                   }:undefined}
                   style={{background:i%2===0?"#f59e0b08":"transparent",cursor:onApply?"pointer":"default"}}
                   onMouseEnter={e=>{if(onApply)e.currentTarget.style.background="#f59e0b22";}}
@@ -8116,17 +8113,16 @@ export default function App(){
                   </div>
                 </div>
                 <DesignSpacePanel params={params} SC={SC} TTP={TTP} runSizingFn={runSizing}
-                  onApply={newP=>setParams(prev=>({
+                  onApply={pt=>setParams(prev=>({
                     ...prev,
-                    // Clamp types to match param expectations
-                    range:    +newP.range.toFixed(1),
-                    payload:  Math.round(newP.payload),   // integer kg
-                    LD:       +newP.LD.toFixed(2),
-                    sedCell:  Math.round(newP.sedCell),   // integer Wh/kg
-                    ewf:      +newP.ewf.toFixed(3),
-                    AR:       +newP.AR.toFixed(1),
-                    etaHov:   +newP.etaHov.toFixed(3),
-                    etaSys:   +newP.etaSys.toFixed(3),
+                    range:    +Number(pt.range).toFixed(1),
+                    payload:  Math.round(Number(pt.payload)),
+                    LD:       +Number(pt.LD).toFixed(2),
+                    sedCell:  Math.round(Number(pt.sedCell)),
+                    ewf:      +Number(pt.ewf).toFixed(3),
+                    AR:       +Number(pt.AR).toFixed(1),
+                    etaHov:   +Number(pt.etaHov).toFixed(3),
+                    etaSys:   +Number(pt.etaSys).toFixed(3),
                   }))}/>
               </div>
             </div>
