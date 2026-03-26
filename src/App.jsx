@@ -98,7 +98,11 @@ function runSizing(p) {
     // Battery C-rate derating: SED drops at high discharge rates (hover peaks 3–5C)
     // Approximate: SED_eff = sedCell × (1 - cRateDerate); default 8% for ~3-4C hover
     const sedEff=p.sedCell*(1-(p.cRateDerate||0.08));
-    Wbat=Etot*1000*(1+p.socMin)/(sedEff*p.etaBat);
+    // Battery mass: E_pack*(1-SoCmin) = E_usable → E_pack = E_usable/(1-SoCmin)
+    // SoCmin is a FLOOR (unusable fraction), not an additive margin.
+    // Correct: Wbat = Etot / ((1-socMin) × SED_eff × etaBat)
+    // Note: 1/(1-socMin) > (1+socMin) for socMin>0, so this is slightly MORE conservative.
+    Wbat=Etot*1000/((1-p.socMin)*sedEff*p.etaBat);
     const mn=p.payload+Wempty+Wbat;
     const residual=Math.abs(mn-MTOW);
     energyH.push(+Etot.toFixed(3)); mtowH.push(+mn.toFixed(2));
@@ -340,7 +344,7 @@ function runSizing(p) {
   const rpData=Array.from({length:60},(_,i)=>{
     const pay=(MTOW-Wempty-50)*i/59,Wavail=MTOW-Wempty-pay;
     if(Wavail<=0)return{payload:+pay.toFixed(0),range:0};
-    const Eavail=Wavail*p.sedCell*p.etaBat/(1000*(1+p.socMin));  // usable fraction = 1/(1+SoCmin)
+    const Eavail=Wavail*p.sedCell*p.etaBat*(1-p.socMin)/1000;  // usable energy = pack × (1-SoCmin)
     return{payload:+pay.toFixed(0),range:+Math.max(0,((Eavail-Eto-Eld)/Efl_design)*p.range).toFixed(1)};
   });
 
@@ -361,7 +365,7 @@ function runSizing(p) {
     const t=Tend*i/N;
     let ph=5; for(let j=0;j<6;j++)if(t>=tPhases[j]&&t<tPhases[j+1]){ph=j;break;}
     const Ec=Ecum_ph[ph]+phPow[ph]*((t-tPhases[ph])/3600);
-    const socFloor=p.socMin/(1+p.socMin);
+    const socFloor=p.socMin;  // SoCmin is a floor fraction of full pack capacity
     const soc=Math.max(socFloor,(1-Ec/PackkWh))*100;
     powerSteps.push({t:+t.toFixed(0),P:+phPow[ph].toFixed(1),ph:["TO","Climb","Cruise","Desc","Land","Res"][ph]});
     socSteps.push({t:+t.toFixed(0),SoC:+soc.toFixed(2)});
@@ -401,7 +405,7 @@ function runSizing(p) {
       const ttrans2=45,Ptrans2=0.65*Ph2;
       const Et2=(Ph2*(hvtol/0.5)+Ptrans2*ttrans2)/3600+Pc2*tcl/3600+Pcr2*tcr/3600+Pd2*tdc/3600+Ph2*tld/3600+Pr2*tres_s/3600;
       const sedEff2=p.sedCell*(1-(p.cRateDerate||0.08));
-      const Wb2=Et2*1000*(1+p.socMin)/(sedEff2*p.etaBat);
+      const Wb2=Et2*1000/((1-p.socMin)*sedEff2*p.etaBat);
       const mn=p.payload+p.ewf*m2+Wb2;
       if(Math.abs(mn-m2)<t){m2=mn;break;}
       m2=mn;
@@ -424,7 +428,7 @@ function runSizing(p) {
       const ttrans_tw=45,Ptrans_tw=0.65*Phov_tw;
       const Etot_tw=(Phov_tw*(hvtol/0.5)+Ptrans_tw*ttrans_tw)/3600+Pcl_tw*tcl/3600+Pcr_tw*tcr/3600+Pdc_tw*tdc/3600+Phov_tw*tld/3600+Pres_tw*tres_s/3600;
       const sedEff_tw=p.sedCell*(1-(p.cRateDerate||0.08));
-      const Wbat_tw=Etot_tw*1000*(1+p.socMin)/(sedEff_tw*p.etaBat);
+      const Wbat_tw=Etot_tw*1000/((1-p.socMin)*sedEff_tw*p.etaBat);
       const mn=p.payload+p.ewf*m+Wbat_tw;
       if(Math.abs(mn-m)<1e-4){m=mn;break;}
       m=mn;
@@ -452,7 +456,7 @@ function runSizing(p) {
     {label:"SM 5–25% MAC",ok:SM_vt>=0.05&&SM_vt<=0.25,val:`${(SM_vt*100).toFixed(1)}%`},
     {label:"Tip Mach < 0.70",ok:TipMach<0.70,val:`M${TipMach.toFixed(3)}`},
     {label:"Battery Frac < 55%",ok:Wbat/MTOW<0.55,val:`${(Wbat/MTOW*100).toFixed(1)}%`},
-    {label:"Final SoC ≥ SoCmin",ok:(1-Etot/PackkWh)>=(p.socMin/(1+p.socMin))-0.01,val:`${((1-Etot/PackkWh)*100).toFixed(1)}% (floor ${(p.socMin/(1+p.socMin)*100).toFixed(1)}%)`},
+    {label:"Final SoC ≥ SoCmin",ok:(1-Etot/PackkWh)>=p.socMin-0.01,val:`${((1-Etot/PackkWh)*100).toFixed(1)}% (floor ${(p.socMin*100).toFixed(1)}%)`},
     {label:"Actual L/D > 10",ok:LDact>10,val:LDact.toFixed(2)},
     {label:"V-tail pitch auth.",ok:pitch_ratio>=1.0,val:`${(pitch_ratio*100).toFixed(0)}%`},
     {label:"V-tail yaw auth.",ok:yaw_ratio>=1.0,val:`${(yaw_ratio*100).toFixed(0)}%`},
