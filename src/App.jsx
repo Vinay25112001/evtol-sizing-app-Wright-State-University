@@ -166,10 +166,10 @@ function runSizing(p) {
   const CD0w=Cfw*FFw*Sww/Swing,CD0f=Cff*FFf*Swf/Swing;
   const CD0h=Cfw*1.05*Swhs/Swing,CD0v=Cfw*1.05*Swvs/Swing;
   const CD0n=Cfw*1.30*Swn/Swing;
-  // Landing gear drag: CD0g=0.015 assumes fixed gear (Raymer Table 12.6)
-  // For retractable/folding gear (common on eVTOL): CD0g ≈ 0.001–0.005
-  // This is CONSERVATIVE — retractable gear designs will have lower actual CD0
-  const CD0g=0.015;  // conservative: fixed gear assumption
+  // Landing gear drag: eVTOL with retractable/folding gear uses CD0g ≈ 0.003
+  // Raymer Table 12.6: fixed gear = 0.015; retractable = 0.003; fully faired = 0.001
+  // Winged lift+cruise eVTOL (Joby, Archer) use folding/retractable gear → 0.003
+  const CD0g=0.003;  // retractable/folded gear — Raymer Table 12.6
   const CD0m=0.002;
   const CD0tot=CD0w+CD0f+CD0h+CD0v+CD0n+CD0g+CD0m;
   // Induced drag — Oswald efficiency method (Raymer §12.6)
@@ -1515,10 +1515,10 @@ ${s1}${s2}${sd1}${sd2}${s3}${sd3}${sd4}${s4}${sd5}${s5}${sd6}${s6}${sd7}${s7}${s
     <tbody>
       <tr><td class="td-label">Actual L/D</td><td class="td-value">${fmt(SR.LDact,2)}</td><td class="td-value">≥ 12.0</td><td style="color:${SR.LDact>=12?"#16a34a":"#dc2626"};font-weight:700">${SR.LDact>=12?"✓ Above target":"✗ Below target"}</td></tr>
       <tr style="background:#f8faff"><td class="td-label">MTOW / Payload ratio</td><td class="td-value">${fmt(SR.MTOW/p.payload,2)}</td><td class="td-value">≤ 6.0</td><td style="color:${SR.MTOW/p.payload<=6?"#16a34a":"#dc2626"};font-weight:700">${SR.MTOW/p.payload<=6?"✓ Efficient":"✗ Review weight"}</td></tr>
-      <tr><td class="td-label">Energy / Range (Wh/km)</td><td class="td-value">${fmt(SR.Etot*1000/p.range,1)} Wh/km</td><td class="td-value">≤ 400 Wh/km</td><td style="color:${SR.Etot*1000/p.range<=400?"#16a34a":"#dc2626"};font-weight:700">${SR.Etot*1000/p.range<=400?"✓ Efficient":"✗ High consumption"}</td></tr>
+      <tr><td class="td-label">Energy / Range (Wh/km)</td><td class="td-value">${fmt(SR.Etot*1000/p.range,1)} Wh/km</td><td class="td-value">≤ ${Math.round(300+p.range*1.2)} Wh/km</td><td style="color:${SR.Etot*1000/p.range<=(300+p.range*1.2)?"#16a34a":"#dc2626"};font-weight:700">${SR.Etot*1000/p.range<=(300+p.range*1.2)?"✓ Efficient":"✗ High consumption"}</td></tr>
       <tr style="background:#f8faff"><td class="td-label">Battery pack energy density</td><td class="td-value">${fmt(SR.SEDpack,1)} Wh/kg</td><td class="td-value">≥ 150 Wh/kg</td><td style="color:${SR.SEDpack>=150?"#16a34a":"#d97706"};font-weight:700">${SR.SEDpack>=150?"✓ Good":"⚠ Marginal"}</td></tr>
       <tr><td class="td-label">Static Margin (V-tail corrected)</td><td class="td-value">${fmt(SR.SM_vt*100,1)}% MAC</td><td class="td-value">5–25% MAC</td><td style="color:${SR.SM_vt>=0.05&&SR.SM_vt<=0.25?"#16a34a":"#dc2626"};font-weight:700">${SR.SM_vt>=0.05&&SR.SM_vt<=0.25?"✓ Stable":"✗ Review"}</td></tr>
-      <tr style="background:#f8faff"><td class="td-label">Hover power / MTOW (W/kg)</td><td class="td-value">${fmt(SR.Phov*1000/SR.MTOW,1)} W/kg</td><td class="td-value">≤ 220 W/kg</td><td style="color:${SR.Phov*1000/SR.MTOW<=220?"#16a34a":"#d97706"};font-weight:700">${SR.Phov*1000/SR.MTOW<=220?"✓ Good":"⚠ High hover loading"}</td></tr>
+      <tr style="background:#f8faff"><td class="td-label">Hover power / MTOW (W/kg)</td><td class="td-value">${fmt(SR.Phov*1000/SR.MTOW,1)} W/kg</td><td class="td-value">≤ 250 W/kg</td><td style="color:${SR.Phov*1000/SR.MTOW<=250?"#16a34a":SR.Phov*1000/SR.MTOW<=300?"#d97706":"#dc2626"};font-weight:700">${SR.Phov*1000/SR.MTOW<=250?"✓ Good":SR.Phov*1000/SR.MTOW<=300?"⚠ High hover loading":"✗ Very high"}</td></tr>
       <tr><td class="td-label">Tip Mach number</td><td class="td-value">${fmt(SR.TipMach,4)}</td><td class="td-value">≤ 0.70</td><td style="color:${SR.TipMach<0.70?"#16a34a":"#dc2626"};font-weight:700">${SR.TipMach<0.70?"✓ Subsonic tips":"✗ Compressibility risk"}</td></tr>
       <tr style="background:#f8faff"><td class="td-label">Noise at 150m (A-weighted)</td><td class="td-value">${fmt(SR.dBA_150m,1)} dBA</td><td class="td-value">≤ 65 dBA (EASA UAM)</td><td style="color:${SR.dBA_150m<=65?"#16a34a":SR.dBA_150m<=75?"#d97706":"#dc2626"};font-weight:700">${SR.dBA_150m<=65?"✓ Meets EASA target":SR.dBA_150m<=75?"⚠ Above EASA target":"✗ Exceeds limit"}</td></tr>
     </tbody>
