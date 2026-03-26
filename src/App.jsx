@@ -294,15 +294,12 @@ function runSizing(p) {
   const Ttot=MTOW*g0*TW,Trotor=Ttot/p.nPropHover,Protor_W=Phov*1000/p.nPropHover;
   const TW_hover=TW;
   const TW_cruise=(Pcr*p.etaSys*1000)/(p.vCruise*MTOW*g0);
-  const Adisk=Trotor**3/(2*rhoMSL*(Protor_W*p.etaHov)**2);
-  const Rrotor=Math.sqrt(Adisk/Math.PI),Drotor=2*Rrotor;
+  // Rotor geometry: use user-set propDiam directly — Drotor IS propDiam.
+  // Previously Adisk was back-computed from T³/(2ρP²) which is circular and gave a
+  // different (larger) diameter than the slider. propDiam drives DL and Phov; Drotor = propDiam.
+  const Rrotor=p.propDiam/2, Drotor=p.propDiam;
+  const Adisk=Math.PI*Rrotor**2;
   const DLrotor=Trotor/Adisk,PLrotor=Trotor/(Protor_W/1000);
-  // ── FIX: TipSpd was previously induced velocity vi = sqrt(2Pη/ρA)
-  //         which is ~12-16 m/s giving RPM ≈ 89 — off by ~10×.
-  //         Correct tip speed is set by Mach limit (noise + compressibility).
-  //         V_tip = M_tip × a_MSL — use MSL sound speed because rotors hover near ground.
-  //         M_tip = 0.58 → V_tip = 197 m/s, satisfying both 14 CFR Part 36 (≤200 m/s)
-  //         and EASA CS-36 urban noise target (≤200 m/s). Previously 0.62 gave 208 m/s.
   const aMSL_=Math.sqrt(GAM*Rgas*T0);                         // MSL sound speed (340.3 m/s)
   const vi_ind=Math.sqrt(Trotor/(2*rhoMSL*Adisk));            // true induced velocity (m/s)
   const Mtip_design=0.58;                                      // ≤0.58 → Vtip ≤ 200 m/s (14 CFR / CS-36)
@@ -1171,9 +1168,9 @@ function generateReport(p, SR, branding={}) {
   const FFfd=1+60/lambdaFd**3+lambdaFd/400;
   const Ttotd=SR.MTOW*g0d, Trotord=Ttotd/p.nPropHover;
   const PrWd=SR.Phov*1000/p.nPropHover;
-  const Adiskd=Trotord**3/(2*rhoSLd*(PrWd*p.etaHov)**2);
-  const Rrotord=Math.sqrt(Adiskd/Math.PI);
-  const TipSpdd=Math.sqrt(2*PrWd*p.etaHov/(rhoSLd*Adiskd));
+  const Rrotord=p.propDiam/2;
+  const Adiskd=Math.PI*Rrotord**2;
+  const TipSpdd=SR.TipSpd;  // use value from sizing engine
   const PmotKWd=PrWd/1000*1.15, PpeakKWd=PmotKWd*1.50;
   const Torqued=PmotKWd*1000/(SR.RPM*Math.PI/30);
   const Vcelld=3.6,Ahcelld=5.0,Vpackd=800;
