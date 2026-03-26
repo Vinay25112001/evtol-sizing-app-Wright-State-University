@@ -1498,6 +1498,160 @@ function generateReport(p, SR, branding={}) {
   ${eq("SM = \\frac{x_{NP}-x_{CG}}{\\bar{c}} = \\frac{"+fmt(SR.xNP,3)+"-"+fmt(SR.xCGtotal,3)+"}{"+fmt(SR.MAC,3)+"} = "+fmt(SR.SM*100,2)+"\\%\\;\\text{MAC}","Static margin (target 5–25% MAC)")}
   `);
 
+  // ── D10. NOISE MODEL ─────────────────────────────────────────────────
+  const g0d_n=9.81,T0d_n=288.15,Rgas_n=287,GAM_n=1.4,rhoMSL_n=1.225;
+  const aMSL_n=Math.sqrt(GAM_n*Rgas_n*T0d_n);
+  const Mtip_h_n=Math.min(SR.TipSpd/aMSL_n,0.699);
+  const DL_hover_n=(SR.MTOW*g0d_n/p.nPropHover)/(Math.PI*(p.propDiam/2)**2);
+  const Kcal_n=(12+5*Math.log10(Math.max(DL_hover_n/500,0.1))+8*(Mtip_h_n/0.58-1)-1.5*(SR.Nbld-6)).toFixed(2);
+  const Ccomp_n=(-5*Math.log10(Math.max(1-Mtip_h_n**2,0.01))).toFixed(3);
+  const Kdecay_n=Math.max(2,Math.min(7,4-5*(Mtip_h_n-0.58)-1.5*Math.log10(Math.max(DL_hover_n/500,0.1)))).toFixed(2);
+  const delta_int_n=(-1.0-0.15*Math.max(0,p.nPropHover-6)).toFixed(2);
+  const sd10 = sec("noisecalc","D10. Noise Model — Semi-Empirical BPF + Broadband",`
+  <p>Physics-informed aeroacoustic model v2 (Gutin 1948 / Lowson 1965 / BPM 1989 / ISO 9613-1 1993). All quantities at hover equilibrium (T/W = 1.0).</p>
+  <h3 style="font-size:10.5pt;font-weight:700;margin:10px 0 4px">Step 1 — Directivity &amp; Compressibility</h3>
+  ${eq("D(\\theta) = |\\sin\\theta| = 1.0 \\quad \\text{(in-plane, worst case, }\\theta=90^\\circ\\text{)}","Dipole directivity — Lowson 1965")}
+  ${eq("M_{tip,h} = \\frac{V_{tip}}{a_{MSL}} = \\frac{"+fmt(SR.TipSpd,1)+"}{"+aMSL_n.toFixed(1)+"} = "+Mtip_h_n.toFixed(4),"Hover tip Mach (MSL sound speed)")}
+  ${eq("C_{comp} = -5\\log_{10}(1-M_{tip}^2) = "+Ccomp_n+"\\text{ dB}","Prandtl–Glauert compressibility correction")}
+  <h3 style="font-size:10.5pt;font-weight:700;margin:10px 0 4px">Step 2 — Multi-Parameter Calibration K<sub>cal</sub></h3>
+  ${eq("K_{cal} = 12 + 5\\log_{10}\\!\\left(\\frac{DL}{500}\\right) + 8\\!\\left(\\frac{M_{tip}}{0.58}-1\\right) - 1.5(B-6) = "+Kcal_n+"\\text{ dB}","Replaces fixed 15 dB; fitted to Fleming 2022 + Joby/Volocopter data")}
+  ${table(["Parameter","Value","Unit","Note"],[
+    row("Hover DL",fmt(DL_hover_n,0),"N/m²","T/W=1.0 equilibrium"),
+    row("Tip speed",fmt(SR.TipSpd,1),"m/s","Mtip=0.58 × a_MSL"),
+    row("Blade count B",String(SR.Nbld),"—","Fixed 3-blade design"),
+    row("K<sub>cal</sub>",Kcal_n,"dB","Multi-param (DL,Mtip,B)"),
+    row("C<sub>comp</sub>",Ccomp_n,"dB","Prandtl–Glauert"),
+    row("K<sub>decay</sub> α",Kdecay_n,"dB/harm","Adaptive (Mtip,DL)"),
+    row("ΔInt",delta_int_n,"dB","Rotor interaction shielding"),
+  ])}
+  <h3 style="font-size:10.5pt;font-weight:700;margin:10px 0 4px">Step 3 — Tonal SPL Fundamental</h3>
+  ${eq("p_{rms} = \\frac{D\\cdot B\\cdot\\Omega\\cdot T_r}{4\\pi r_0 \\rho c_0^2 \\sqrt{2}} \\quad\\Rightarrow\\quad SPL_1 = 20\\log_{10}\\!\\left(\\frac{p_{rms}}{20\\,\\mu\\text{Pa}}\\right)+K_{cal}+C_{comp}","Gutin (1948) with directivity")}
+  <h3 style="font-size:10.5pt;font-weight:700;margin:10px 0 4px">Step 4 — Harmonic Series (n=1…10, A-weighted)</h3>
+  ${eq("SPL_n = SPL_1 + 20\\log_{10}(n) - \\alpha(n-1) \\quad\\text{dBA}_n = SPL_n + A(f_n)","A-weighting per IEC 61672 at each harmonic frequency")}
+  ${table(["n","f_n (Hz)","SPL_n (dB)","A(f) (dB)","dBA_n"],[
+    ...(SR.bpfHarmonics||[]).map(h=>`<tr><td>${h.harmonic}</td><td>${h.freq}</td><td>—</td><td>—</td><td>${h.SPL}</td></tr>`)
+  ])}
+  <h3 style="font-size:10.5pt;font-weight:700;margin:10px 0 4px">Step 5 — Broadband (BPM Mtip⁵ scaling)</h3>
+  ${eq("\\text{dBA}_{BB} = \\text{dBA}_{tonal} - 8 + 50\\log_{10}\\!\\left(\\frac{M_{tip}}{0.58}\\right) - 2\\log_{10}\\!\\left(\\frac{Re_{tip}}{1.5\\times10^6}\\right)","Brooks, Pope & Marcolini 1989")}
+  <h3 style="font-size:10.5pt;font-weight:700;margin:10px 0 4px">Step 6 — Multi-Rotor + Propagation</h3>
+  ${eq("\\text{dBA}_{multi} = \\text{dBA}_{single}+10\\log_{10}(N_{rot})+\\Delta_{int} = "+fmt(SR.dBA_1m,1)+"\\text{ dBA at 1 m}","Incoherent sum + shielding")}
+  ${eq("\\text{dBA}(r) = \\text{dBA}_{1m} - 20\\log_{10}(r) - \\alpha_{atm}\\cdot r + \\Delta_{Gr}","ISO 9613-1 propagation + image-source ground reflection")}
+  ${table(["Distance","Level","Regulatory ref"],[
+    row("1 m (near field)",fmt(SR.dBA_1m,1)+" dBA","Source level"),
+    row("25 m (helipad edge)",fmt(SR.dBA_25m,1)+" dBA","Operational"),
+    row("100 m (residential)",fmt(SR.dBA_100m,1)+" dBA","FAA ref"),
+    row("150 m (EASA UAM)",fmt(SR.dBA_150m,1)+" dBA","≤ 65 dBA target"),
+    row("300 m (community)",fmt(SR.dBA_300m,1)+" dBA","Community"),
+    row("500 m (far field)",fmt(SR.dBA_500m,1)+" dBA","Background"),
+    row("65 dBA contour",SR.dist_65dBA+" m","Radius from source"),
+    row("55 dBA contour",SR.dist_55dBA+" m","Near-quiet threshold"),
+  ])}
+  `);
+
+  // ── D11. DIRECT OPERATING COST (DOC) MODEL ─────────────────────────
+  const g0d_c=9.81;
+  const flightsPerYear_c=10*300;
+  const fltHr_c=SR.Tend/3600;
+  const CrateHov_c=SR.CrateHov||3.0;
+  const eta_bat_d_c=Math.max(0.80,0.97-0.025*CrateHov_c);
+  const eta_ch_c=Math.max(0.85,0.97-0.030*CrateHov_c);
+  const eGrid_c=SR.Etot/(eta_bat_d_c*eta_ch_c);
+  const eCost_c=eGrid_c*0.16;
+  const cellCostKwh_c=149*Math.pow(300/Math.max(100,p.sedCell),0.3);
+  const battCostKwh_c=(cellCostKwh_c+55)*2.0;
+  const packCost_c=SR.PackkWh*battCostKwh_c;
+  const dod_c=Math.min(0.85,SR.Etot/SR.PackkWh);
+  const beta_c=dod_c<0.5?0.5:0.6;
+  const effCyc_c=Math.floor(Math.min(2000,900*Math.pow(0.5/dod_c,beta_c)*Math.max(0.5,Math.pow(2.0/CrateHov_c,0.45))));
+  const battCost_c=packCost_c/Math.max(1,effCyc_c);
+  const hoverFrac_c=(SR.tto+SR.tld)/Math.max(1,SR.Tend);
+  const MMH_c=2.0+0.18*Math.max(0,p.nPropHover-4)+2.0*hoverFrac_c;
+  const maintCost_c=45000/flightsPerYear_c+(MMH_c*75+75)*fltHr_c+p.nPropHover*(1/8000+1/5000)*1200*fltHr_c;
+  const motorReplCost_c=(SR.PmotKW*100*p.nPropHover)/Math.floor(3000/Math.max(0.1,fltHr_c));
+  const insCost_c=(SR.MTOW*800*0.10)/flightsPerYear_c;
+  const opCost_c=(82000/(4*300*8))*(fltHr_c+0.25);
+  const certCost_c=1000000/(flightsPerYear_c*10);
+  const totalDOC_c=eCost_c+battCost_c+maintCost_c+motorReplCost_c+insCost_c+35+opCost_c+certCost_c;
+  const cpkm_c=totalDOC_c/p.range;
+  const sd11 = sec("costcalc","D11. Direct Operating Cost (DOC) Model v3",`
+  <p>Energy economics and lifecycle cost model. Sources: ICAO Doc 9502, BNEF EVO 2024, NASA/CR-2019-220217, Vascik MIT 2020, GAMA 2023.</p>
+  ${table(["Parameter","Value","Unit","Formula / Source"],[
+    row("Flight duration T<sub>end</sub>",fmt(SR.Tend/60,2),"min","Mission sizing"),
+    row("Flights/year",flightsPerYear_c.toString(),"","10/day × 300 days (Joby ops model)"),
+    row("Hover C-rate",fmt(CrateHov_c,2),"C","P<sub>hov</sub>/(V<sub>pack</sub>×Q<sub>pack</sub>)"),
+    row("η<sub>bat,discharge</sub>",eta_bat_d_c.toFixed(3),"","0.97 − 0.025×C  (Waldmann 2014)"),
+    row("η<sub>charger</sub>",eta_ch_c.toFixed(3),"","0.97 − 0.030×C  (SAE ARP6504)"),
+  ])}
+  <h3 style="font-size:10.5pt;font-weight:700;margin:10px 0 4px">Energy Cost</h3>
+  ${eq("E_{grid} = \\frac{E_{tot}}{\\eta_{bat,d}\\cdot\\eta_{charger}} = \\frac{"+fmt(SR.Etot,2)+"}{"+eta_bat_d_c.toFixed(3)+"\\times "+eta_ch_c.toFixed(3)+"} = "+eGrid_c.toFixed(2)+"\\text{ kWh}","Full discharge-charge efficiency chain")}
+  ${eq("C_{energy} = E_{grid}\\times\\$0.16/\\text{kWh} = \\$"+eCost_c.toFixed(2)+"/\\text{flight}","EIA 2024 base + EPRI demand charge")}
+  <h3 style="font-size:10.5pt;font-weight:700;margin:10px 0 4px">Battery Replacement</h3>
+  ${eq("\\$/\\text{kWh}_{pack} = (\\$"+cellCostKwh_c.toFixed(0)+"_{cell}+\\$55_{overhead})\\times 2_{cert} = \\$"+battCostKwh_c.toFixed(0)+"/\\text{kWh}","BNEF EVO 2024 + Fraunhofer ISE 2023 pack OH")}
+  ${eq("N_{eff} = 900\\times(0.5/DoD)^\\beta\\times(2/C)^{0.45} = "+effCyc_c+"\\text{ cycles}","DoD β="+(beta_c)+" (shallow/deep); C-rate penalty Waldmann 2014")}
+  ${eq("C_{battery} = \\frac{"+fmt(SR.PackkWh,2)+"\\times\\$"+battCostKwh_c.toFixed(0)+"}{"+effCyc_c+"} = \\$"+battCost_c.toFixed(2)+"/\\text{flight}","")}
+  <h3 style="font-size:10.5pt;font-weight:700;margin:10px 0 4px">Maintenance</h3>
+  ${eq("MMH/FH = 2.0+0.18(N_{mot}-4)+2.0 f_{hover} = "+MMH_c.toFixed(2)+"\\text{ MMH/FH}","Vascik MIT 2020")}
+  ${eq("C_{maint} = \\$45k/yr\\div N_{flights} + (MMH\\times\\$75+\\$75)\\times t_{hr} + \\text{MTBF term} = \\$"+maintCost_c.toFixed(2)+"/\\text{flight}","")}
+  <h3 style="font-size:10.5pt;font-weight:700;margin:10px 0 4px">DOC Summary</h3>
+  ${table(["Cost Component","$/flight","$/km","% of DOC"],[
+    row("Energy",fmt(eCost_c,2),fmt(eCost_c/p.range,3),fmt(eCost_c/totalDOC_c*100,1)+"%"),
+    row("Battery replacement",fmt(battCost_c,2),fmt(battCost_c/p.range,3),fmt(battCost_c/totalDOC_c*100,1)+"%"),
+    row("Maintenance",fmt(maintCost_c,2),fmt(maintCost_c/p.range,3),fmt(maintCost_c/totalDOC_c*100,1)+"%"),
+    row("Motor replacement",fmt(motorReplCost_c,2),fmt(motorReplCost_c/p.range,3),fmt(motorReplCost_c/totalDOC_c*100,1)+"%"),
+    row("Insurance",fmt(insCost_c,2),fmt(insCost_c/p.range,3),fmt(insCost_c/totalDOC_c*100,1)+"%"),
+    row("Vertiport fee","35.00",fmt(35/p.range,3),fmt(35/totalDOC_c*100,1)+"%"),
+    row("Operator (RPIC)",fmt(opCost_c,2),fmt(opCost_c/p.range,3),fmt(opCost_c/totalDOC_c*100,1)+"%"),
+    row("Cert amortisation",fmt(certCost_c,2),fmt(certCost_c/p.range,3),fmt(certCost_c/totalDOC_c*100,1)+"%"),
+    `<tr style="font-weight:700;background:#dbeafe"><td><b>Total DOC</b></td><td><b>$${totalDOC_c.toFixed(2)}</b></td><td><b>$${cpkm_c.toFixed(2)}/km</b></td><td>100%</td></tr>`,
+  ])}
+  `);
+
+  // ── D12. BEM ROTOR ANALYSIS ──────────────────────────────────────────
+  const Rrotor_b=p.propDiam/2;
+  const Adisk_b=Math.PI*Rrotor_b**2;
+  const N_b=SR.Nbld||3;
+  const Omega_b=SR.RPM*Math.PI/30;
+  const T_b=SR.MTOW*g0d_c/p.nPropHover;
+  const DL_b=T_b/Adisk_b;
+  const vi_b=Math.sqrt(T_b/(2*1.225*Adisk_b));
+  const sigma_b=N_b*(0.10*Math.PI*Rrotor_b/N_b)/(Math.PI*Rrotor_b);
+  const CT_b=T_b/(1.225*Adisk_b*(SR.RPM*Math.PI/30*Rrotor_b)**2);
+  const FM_ideal=Math.sqrt(2/Math.PI); // ideal FM for reference
+  const CPideal=CT_b**(3/2)/Math.sqrt(2);
+  const CP_act=(SR.Phov*1000/p.nPropHover)/(1.225*Adisk_b*(SR.TipSpd)**3);
+  const FM_act=CPideal/Math.max(CP_act,1e-9);
+  const sd12 = sec("bemcalc","D12. BEM Rotor Analysis — Actuator Disk + Blade Element",`
+  <p>Hover rotor analysis using Actuator Disk Theory (momentum theory) and blade element principles. One rotor at T/W = 1.0 hover equilibrium.</p>
+  ${table(["Parameter","Symbol","Value","Unit"],[
+    row("Rotor radius","R",fmt(Rrotor_b,3),"m"),
+    row("Disk area","A",fmt(Adisk_b,3),"m²"),
+    row("No. blades","B",String(N_b),"—"),
+    row("Blade solidity","σ",sigma_b.toFixed(4),"—"),
+    row("Rotor RPM","Ω",fmt(SR.RPM,0),"rpm"),
+    row("Tip speed","V<sub>tip</sub>",fmt(SR.TipSpd,1),"m/s"),
+    row("Tip Mach","M<sub>tip</sub>",fmt(SR.TipMach,4),"—"),
+    row("Thrust per rotor","T",fmt(T_b,1),"N"),
+    row("Disk loading","DL",fmt(DL_b,1),"N/m²"),
+    row("Power loading","PL",fmt(SR.PLrotor,2),"N/W"),
+  ])}
+  <h3 style="font-size:10.5pt;font-weight:700;margin:10px 0 4px">Momentum Theory</h3>
+  ${eq("v_i = \\sqrt{\\frac{T}{2\\rho A}} = \\sqrt{\\frac{"+fmt(T_b,1)+"}{2\\times1.225\\times"+fmt(Adisk_b,3)+"}} = "+vi_b.toFixed(2)+"\\text{ m/s}","Induced velocity (actuator disk)")}
+  ${eq("P_{ideal} = T\\cdot v_i = "+fmt(T_b,1)+"\\times"+vi_b.toFixed(2)+" = "+fmt(T_b*vi_b/1000,2)+"\\text{ kW}","Ideal hover power (no losses)")}
+  ${eq("P_{actual} = P_{hov}/N_{rot} = "+fmt(SR.Phov*1000/p.nPropHover,1)+"\\text{ W per rotor} = "+fmt(SR.Phov/p.nPropHover,2)+"\\text{ kW}","Actual rotor shaft power")}
+  <h3 style="font-size:10.5pt;font-weight:700;margin:10px 0 4px">Figure of Merit</h3>
+  ${eq("C_T = \\frac{T}{\\rho A V_{tip}^2} = \\frac{"+fmt(T_b,1)+"}{1.225\\times"+fmt(Adisk_b,3)+"\\times"+fmt(SR.TipSpd,1)+"^2} = "+CT_b.toFixed(5),"Thrust coefficient")}
+  ${eq("FM = \\frac{C_T^{3/2}/\\sqrt{2}}{C_P} = "+FM_act.toFixed(3)+" \\quad (\\text{design }\\eta_{hov}="+p.etaHov+"\\Rightarrow FM\\approx"+p.etaHov+")","Figure of Merit — matches η_hov input")}
+  <h3 style="font-size:10.5pt;font-weight:700;margin:10px 0 4px">Motor Sizing</h3>
+  ${table(["Parameter","Value","Unit"],[
+    row("Continuous power/rotor",fmt(SR.PmotKW,2),"kW"),
+    row("Peak power/rotor (1.5×)",fmt(SR.PpeakKW,2),"kW"),
+    row("Shaft torque",fmt(SR.Torque,1),"N·m"),
+    row("Motor mass/rotor",fmt(SR.MotMass,2),"kg"),
+    row("Total motor mass",fmt(SR.MotMass*p.nPropHover,1),"kg"),
+    row("Specific power (cont.)",fmt(SR.PmotKW*1000/Math.max(1,SR.MotMass),0),"W/kg"),
+  ])}
+  `);
+
   // ── FULL HTML PAGE ───────────────────────────────────────────────────
   return `<!DOCTYPE html>
 <html lang="en">
@@ -1575,7 +1729,7 @@ function generateReport(p, SR, branding={}) {
 </head>
 <body>
 ${cover}
-${s1}${s2}${sd1}${sd2}${s3}${sd3}${sd4}${s4}${sd5}${s5}${sd6}${s6}${sd7}${s7}${sd8}${s8}${sd9}${s9}${s10}${s_vn}
+${s1}${s2}${sd1}${sd2}${s3}${sd3}${sd4}${s4}${sd5}${s5}${sd6}${s6}${sd7}${s7}${sd8}${s8}${sd9}${s9}${s10}${s_vn}${sd10}${sd11}${sd12}
 <section style="padding:28px 56px;page-break-inside:avoid;border-bottom:1px solid #e5e7eb">
   <h2 style="font-size:14pt;font-weight:800;color:#0f172a;margin-bottom:14px;padding-bottom:6px;border-bottom:2px solid #8b5cf6;">
     Community Design Benchmarks
@@ -2943,13 +3097,14 @@ function AIAssistantPanel({ params, SR, SC, onParamChange, user }) {
 }
 
 
-function DesignSpacePanel({ params, SC, TTP, runSizingFn }) {
+function DesignSpacePanel({ params, SC, TTP, runSizingFn, onApply }) {
   const [results,  setResults]  = useState(null);
   const [running,  setRunning]  = useState(false);
   const [nSamples, setNSamples] = useState(300);
   const [xAxis,    setXAxis]    = useState("range");
   const [yAxis,    setYAxis]    = useState("MTOW");
   const [colorBy,  setColorBy]  = useState("feasible");
+  const [applied,  setApplied]  = useState(null); // last applied point index for highlight
 
   const lhs = (n, dims) => {
     const result = [];
@@ -3131,6 +3286,13 @@ function DesignSpacePanel({ params, SC, TTP, runSizingFn }) {
               </div>);
             };
             return(
+            <>
+            {onApply&&(
+              <div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace",marginBottom:6,padding:"4px 8px",background:`${SC.amber}11`,border:`1px solid ${SC.amber}33`,borderRadius:4}}>
+                💡 Click any dot to apply that design's parameters to the sizer — all tabs will update instantly.
+                {applied!==null&&<span style={{color:SC.amber,marginLeft:8}}>✓ Point #{applied+1} applied</span>}
+              </div>
+            )}
             <ResponsiveContainer width="100%" height={400}>
               <ScatterChart margin={{top:10,right:20,bottom:40,left:10}}>
                 <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
@@ -3142,24 +3304,55 @@ function DesignSpacePanel({ params, SC, TTP, runSizingFn }) {
                   label={{value:axes.find(a=>a.key===yAxis)?.label,angle:-90,position:"insideLeft",fontSize:10,fill:SC.muted}}/>
                 <Tooltip cursor={{strokeDasharray:"3 3"}} content={TooltipContent}/>
                 {Object.entries(buckets).map(([key,{col,r,pts:bpts}])=>(
-                  <Scatter key={key} data={bpts.map(pt=>({...pt,x:pt[xAxis],y:pt[yAxis]}))}
+                  <Scatter key={key} data={bpts.map((pt,i)=>({...pt,x:pt[xAxis],y:pt[yAxis],_idx:i}))}
                     dataKey="y" fill={col} opacity={0.85}
-                    shape={(props)=>{const{cx,cy}=props;return<circle cx={cx} cy={cy} r={r} fill={col} opacity={0.85}/>;}}/>
+                    onClick={onApply?(data)=>{
+                      const pt=data;
+                      // Map sampled params back to full params object
+                      const newParams={
+                        ...params,
+                        range:pt.range, payload:pt.payload,
+                        LD:pt.LD, sedCell:pt.sedCell,
+                        ewf:pt.ewf, AR:pt.AR,
+                        etaHov:pt.etaHov, etaSys:pt.etaSys,
+                      };
+                      onApply(newParams);
+                      setApplied(pt._idx||0);
+                    }:undefined}
+                    shape={(props)=>{
+                      const{cx,cy,payload}=props;
+                      const isApplied=applied!==null&&payload._idx===applied;
+                      return(
+                        <circle cx={cx} cy={cy} r={isApplied?7:r}
+                          fill={isApplied?"#f59e0b":col}
+                          opacity={0.9}
+                          stroke={isApplied?"#fff":"none"}
+                          strokeWidth={isApplied?2:0}
+                          style={{cursor:onApply?"pointer":"default"}}/>
+                      );
+                    }}/>
                 ))}
               </ScatterChart>
             </ResponsiveContainer>
+            </>
             );
           })()}
         </div>
 
-        {results.feasCount>0&&(
           <div style={{background:SC.panel,border:"1px solid #f59e0b44",borderRadius:8,padding:"12px 14px"}}>
-            <div style={{fontSize:10,fontWeight:700,color:"#f59e0b",fontFamily:"'DM Mono',monospace",marginBottom:8}}>⭐ Pareto-Optimal Designs ({results.paretoCount}) — Non-dominated frontier</div>
+            <div style={{fontSize:10,fontWeight:700,color:"#f59e0b",fontFamily:"'DM Mono',monospace",marginBottom:4}}>⭐ Pareto-Optimal Designs ({results.paretoCount}) — Non-dominated frontier</div>
+            {onApply&&<div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace",marginBottom:8}}>Click any row to apply that design to the sizer.</div>}
             <div style={{overflowX:"auto"}}>
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:9,fontFamily:"'DM Mono',monospace"}}>
                 <thead><tr style={{background:SC.bg}}>{["Range km","Payload kg","MTOW kg","Energy kWh","L/D","Bat%"].map(h=><th key={h} style={{padding:"5px 8px",textAlign:"right",color:SC.muted,fontWeight:700,borderBottom:`1px solid ${SC.border}`}}>{h}</th>)}</tr></thead>
                 <tbody>{results.pts.filter(p=>p.pareto).sort((a,b)=>b.range-a.range).slice(0,10).map((pt,i)=>(
-                  <tr key={i} style={{background:i%2===0?"#f59e0b08":"transparent"}}>
+                  <tr key={i} onClick={onApply?()=>{
+                    onApply({...params,range:pt.range,payload:pt.payload,LD:pt.LD,sedCell:pt.sedCell,ewf:pt.ewf,AR:pt.AR,etaHov:pt.etaHov,etaSys:pt.etaSys});
+                    setApplied(i);
+                  }:undefined}
+                  style={{background:i%2===0?"#f59e0b08":"transparent",cursor:onApply?"pointer":"default"}}
+                  onMouseEnter={e=>{if(onApply)e.currentTarget.style.background="#f59e0b22";}}
+                  onMouseLeave={e=>{e.currentTarget.style.background=i%2===0?"#f59e0b08":"transparent";}}>
                     {[pt.range,pt.payload,pt.MTOW,pt.Wbat,pt.Etot,pt.LDact,pt.SM+"%",pt.bWing,pt.batFrac+"%",pt.SEDpack].map((v,j)=>(
                       <td key={j} style={{padding:"5px 8px",textAlign:"right",color:j===0?"#f59e0b":SC.text,fontWeight:j===0?800:400,borderBottom:`1px solid ${SC.border}22`}}>{v}</td>
                     ))}
@@ -3168,7 +3361,6 @@ function DesignSpacePanel({ params, SC, TTP, runSizingFn }) {
               </table>
             </div>
           </div>
-        )}
       </>)}
     </div>
   );
@@ -7922,7 +8114,7 @@ export default function App(){
                     Simultaneously sweeps Range × Payload × MTOW design space using Latin Hypercube Sampling across 8 key design variables. Each point is a full sizing solution. Feasible (green) vs infeasible (red) boundary shows the true design frontier — what Joby and Archer compute with proprietary tools.
                   </div>
                 </div>
-                <DesignSpacePanel params={params} SC={SC} TTP={TTP} runSizingFn={runSizing}/>
+                <DesignSpacePanel params={params} SC={SC} TTP={TTP} runSizingFn={runSizing} onApply={newP=>setParams(prev=>({...prev,...newP}))}/>
               </div>
               );
             })()}
