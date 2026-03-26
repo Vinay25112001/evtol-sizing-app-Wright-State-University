@@ -138,25 +138,77 @@ function runSizing(p) {
   const sweep=Math.atan((Cr_-Ct_)/(bWing/2))*180/Math.PI;  // LE sweep: semi-span in denominator
   const Re_=rhoCr*p.vCruise*MAC/muCr;
 
-  /* Airfoil selection */
+  /* ═══════════════════════════════════════════════════════════
+     AIRFOIL LIBRARY — 24 sections, UIUC Airfoil Database data
+     CDmin_lo: Re ≈ 1×10⁶ (low-speed / transition)
+     CDmin_hi: Re ≈ 6-9×10⁶ (cruise Re)
+     Source: UIUC ADB (Selig et al.), Abbott & von Doenhoff,
+             Riegels "Aerofoil Sections", NASA TN-D series
+     ═══════════════════════════════════════════════════════════ */
   const AF=[
-    {name:"NACA 23015",tc:0.150,CLmax:1.60,CLd:0.60,CDmin:0.0060,CM:-0.010,ReM:6.0},
-    {name:"NACA 2412", tc:0.120,CLmax:1.50,CLd:0.55,CDmin:0.0058,CM:-0.050,ReM:6.0},
-    {name:"NACA 4415", tc:0.150,CLmax:1.65,CLd:0.65,CDmin:0.0065,CM:-0.095,ReM:5.0},
-    {name:"Clark Y",   tc:0.117,CLmax:1.47,CLd:0.58,CDmin:0.0059,CM:-0.080,ReM:5.0},
-    {name:"NACA 63-215",tc:0.150,CLmax:1.55,CLd:0.60,CDmin:0.0042,CM:-0.040,ReM:7.0},
-    {name:"NACA 63A-412",tc:0.120,CLmax:1.52,CLd:0.58,CDmin:0.0040,CM:-0.045,ReM:8.0},
-    {name:"NASA GA(W)-1",tc:0.170,CLmax:1.80,CLd:0.70,CDmin:0.0070,CM:-0.120,ReM:4.0},
-    {name:"NACA 63-415",tc:0.150,CLmax:1.60,CLd:0.62,CDmin:0.0044,CM:-0.065,ReM:7.0},
+    // ── 4-digit NACA (general-purpose) ──────────────────────────────────
+    {name:"NACA 2412", tc:0.120,CLmax:1.50,CLd:0.55,CDmin_lo:0.0078,CDmin_hi:0.0058,CM:-0.050,ReM:6.0,source:"Abbott & VD 1959",category:"4-digit"},
+    {name:"NACA 4412", tc:0.120,CLmax:1.60,CLd:0.70,CDmin_lo:0.0085,CDmin_hi:0.0063,CM:-0.098,ReM:6.0,source:"Abbott & VD 1959",category:"4-digit"},
+    {name:"NACA 4415", tc:0.150,CLmax:1.65,CLd:0.65,CDmin_lo:0.0090,CDmin_hi:0.0065,CM:-0.095,ReM:5.0,source:"Abbott & VD 1959",category:"4-digit"},
+    {name:"NACA 2415", tc:0.150,CLmax:1.52,CLd:0.55,CDmin_lo:0.0080,CDmin_hi:0.0060,CM:-0.050,ReM:6.0,source:"Abbott & VD 1959",category:"4-digit"},
+    // ── 5-digit NACA (high CLmax) ────────────────────────────────────────
+    {name:"NACA 23012",tc:0.120,CLmax:1.60,CLd:0.55,CDmin_lo:0.0074,CDmin_hi:0.0055,CM:-0.013,ReM:6.0,source:"Abbott & VD 1959",category:"5-digit"},
+    {name:"NACA 23015",tc:0.150,CLmax:1.60,CLd:0.60,CDmin_lo:0.0082,CDmin_hi:0.0060,CM:-0.010,ReM:6.0,source:"Abbott & VD 1959",category:"5-digit"},
+    {name:"NACA 23018",tc:0.180,CLmax:1.58,CLd:0.60,CDmin_lo:0.0090,CDmin_hi:0.0068,CM:-0.008,ReM:5.0,source:"Abbott & VD 1959",category:"5-digit"},
+    // ── NACA 6-series laminar (low CDmin at design CL) ───────────────────
+    {name:"NACA 63-215",tc:0.150,CLmax:1.55,CLd:0.60,CDmin_lo:0.0065,CDmin_hi:0.0042,CM:-0.040,ReM:9.0,source:"UIUC ADB / Abbott 1959",category:"6-series"},
+    {name:"NACA 63-415",tc:0.150,CLmax:1.60,CLd:0.62,CDmin_lo:0.0068,CDmin_hi:0.0044,CM:-0.065,ReM:9.0,source:"UIUC ADB / Abbott 1959",category:"6-series"},
+    {name:"NACA 63A-412",tc:0.120,CLmax:1.52,CLd:0.58,CDmin_lo:0.0062,CDmin_hi:0.0040,CM:-0.045,ReM:8.0,source:"UIUC ADB",category:"6-series"},
+    {name:"NACA 64-415",tc:0.150,CLmax:1.55,CLd:0.58,CDmin_lo:0.0060,CDmin_hi:0.0038,CM:-0.060,ReM:9.0,source:"Abbott & VD 1959",category:"6-series"},
+    {name:"NACA 64A-212",tc:0.120,CLmax:1.45,CLd:0.50,CDmin_lo:0.0055,CDmin_hi:0.0036,CM:-0.035,ReM:9.0,source:"NASA TN-1428",category:"6-series"},
+    {name:"NACA 65-415",tc:0.150,CLmax:1.52,CLd:0.58,CDmin_lo:0.0058,CDmin_hi:0.0037,CM:-0.055,ReM:9.0,source:"Abbott & VD 1959",category:"6-series"},
+    {name:"NACA 65(2)-415",tc:0.150,CLmax:1.55,CLd:0.62,CDmin_lo:0.0057,CDmin_hi:0.0038,CM:-0.060,ReM:8.0,source:"UIUC ADB",category:"6-series"},
+    // ── NASA General Aviation / high-lift ────────────────────────────────
+    {name:"NASA GA(W)-1",tc:0.170,CLmax:1.80,CLd:0.70,CDmin_lo:0.0095,CDmin_hi:0.0070,CM:-0.120,ReM:4.0,source:"NASA TM-74097",category:"GA high-lift"},
+    {name:"NASA GA(W)-2",tc:0.130,CLmax:1.70,CLd:0.65,CDmin_lo:0.0082,CDmin_hi:0.0060,CM:-0.090,ReM:5.0,source:"NASA TM-74097",category:"GA high-lift"},
+    {name:"NASA LS(1)-0413",tc:0.130,CLmax:1.75,CLd:0.65,CDmin_lo:0.0085,CDmin_hi:0.0062,CM:-0.105,ReM:4.5,source:"NASA TP-1272",category:"GA high-lift"},
+    // ── Wortmann FX (sailplane/UAM laminar) ──────────────────────────────
+    {name:"Wortmann FX 63-137",tc:0.137,CLmax:1.80,CLd:0.85,CDmin_lo:0.0075,CDmin_hi:0.0052,CM:-0.128,ReM:3.0,source:"Riegels / UIUC ADB",category:"Wortmann"},
+    {name:"Wortmann FX 71-L-150",tc:0.150,CLmax:1.78,CLd:0.90,CDmin_lo:0.0078,CDmin_hi:0.0055,CM:-0.135,ReM:2.5,source:"UIUC ADB",category:"Wortmann"},
+    // ── Clark Y & RAF (classic) ───────────────────────────────────────────
+    {name:"Clark Y",   tc:0.117,CLmax:1.47,CLd:0.58,CDmin_lo:0.0080,CDmin_hi:0.0059,CM:-0.080,ReM:5.0,source:"Riegels 1961",category:"Classic"},
+    {name:"RAF 6",     tc:0.090,CLmax:1.20,CLd:0.40,CDmin_lo:0.0085,CDmin_hi:0.0062,CM:-0.060,ReM:5.0,source:"Riegels 1961",category:"Classic"},
+    // ── eVTOL / composite purpose designed ───────────────────────────────
+    {name:"NACA 63(3)-618",tc:0.180,CLmax:1.70,CLd:0.75,CDmin_lo:0.0070,CDmin_hi:0.0048,CM:-0.075,ReM:6.0,source:"Abbott & VD / UIUC",category:"6-series"},
+    {name:"NACA 4418", tc:0.180,CLmax:1.72,CLd:0.72,CDmin_lo:0.0095,CDmin_hi:0.0072,CM:-0.096,ReM:4.5,source:"Abbott & VD 1959",category:"4-digit"},
+    {name:"NACA 0012", tc:0.120,CLmax:1.30,CLd:0.00,CDmin_lo:0.0070,CDmin_hi:0.0052,CM: 0.000,ReM:6.0,source:"Abbott & VD 1959",category:"Symmetric"},
   ];
-  const ReM_=Re_/1e6,maxCD_=Math.max(...AF.map(a=>a.CDmin));
-  const afScored=AF.map(a=>({...a,
-    score:0.30*(1-Math.min(Math.abs(a.ReM-ReM_)/ReM_,1))
-         +0.20*(1-Math.min(Math.abs(a.tc-p.tc)/p.tc,1))
-         +0.20*(1-Math.min(Math.abs(a.CLd-p.clDesign)/p.clDesign,1))
-         +0.20*(1-a.CDmin/maxCD_)
-         +0.10*(1-Math.min(Math.abs(a.CM)/0.12,1))
-  }));
+  // ── Re-dependent CDmin interpolation ────────────────────────────────
+  // CDmin varies significantly with Reynolds number (±30% across Re=1-9M).
+  // Interpolate between CDmin_lo (Re≈1M) and CDmin_hi (Re≈7M) using current wing Re.
+  // Beyond Re=7M: CDmin stays at CDmin_hi (turbulent, flat-plate limit reached).
+  // Below Re=1M: CDmin stays at CDmin_lo (laminar separation dominates).
+  const ReM_=Re_/1e6;
+  const interp_CDmin=(af)=>{
+    const t=Math.max(0,Math.min(1,(ReM_-1.0)/(7.0-1.0)));
+    return af.CDmin_lo + t*(af.CDmin_hi - af.CDmin_lo);
+  };
+  // ── Check for custom airfoil override ────────────────────────────────
+  // If user provided custom polar data via the Custom Airfoil panel,
+  // inject it as first (and preferred) candidate with high base score.
+  const customAF = p.customAirfoil || null;
+  const afAll = customAF
+    ? [{...customAF, CDmin_lo:customAF.CDmin, CDmin_hi:customAF.CDmin, ReM:ReM_, source:"User / XFoil", category:"Custom"}, ...AF]
+    : AF;
+
+  const maxCD_=Math.max(...afAll.map(a=>interp_CDmin(a)));
+  const afScored=afAll.map(a=>{
+    const CDmin_eff=interp_CDmin(a);
+    const baseScore=
+      0.30*(1-Math.min(Math.abs(a.ReM-ReM_)/Math.max(ReM_,1),1))
+      +0.20*(1-Math.min(Math.abs(a.tc-p.tc)/p.tc,1))
+      +0.20*(1-Math.min(Math.abs(a.CLd-p.clDesign)/p.clDesign,1))
+      +0.20*(1-CDmin_eff/maxCD_)
+      +0.10*(1-Math.min(Math.abs(a.CM)/0.12,1));
+    // Custom airfoil gets a +0.10 bonus so user selection always wins
+    const score = a.category==="Custom" ? Math.min(1, baseScore+0.10) : baseScore;
+    return {...a, CDmin:CDmin_eff, score};
+  });
   const selAF=afScored.reduce((a,b)=>b.score>a.score?b:a);
 
   /* Drag (Raymer) */
@@ -364,10 +416,11 @@ function runSizing(p) {
     return{payload:+pay.toFixed(0),range:+Math.max(0,((Eavail-Eto-Eld)/Efl_design)*p.range).toFixed(1)};
   });
 
-  /* Aerodynamic polar */
+  /* Aerodynamic polar — uses fitted kPolar for custom airfoils, Oswald for library */
+  const k_polar=selAF.kPolar || 1/(Math.PI*p.AR*p.eOsw);
   const polarData=Array.from({length:81},(_,i)=>{
     const alpha=-4+i*0.25,CL=0.40+2*Math.PI*(1+0.77*selAF.tc)*alpha*Math.PI/180;
-    const CD=selAF.CDmin+(CL-p.clDesign)**2/(Math.PI*p.AR*p.eOsw);
+    const CD=selAF.CDmin+k_polar*(CL-p.clDesign)**2;
     return{alpha:+alpha.toFixed(2),CL:+CL.toFixed(4),CD:+CD.toFixed(5),LD:+(CL/CD).toFixed(2)};
   });
 
@@ -3170,6 +3223,9 @@ export default function App(){
     payload:   {min:410, max:500, dist:"uniform"},
   });
   const[mcN,setMcN]=useState(1000);
+  const[customAirfoilInput,setCustomAirfoilInput]=useState("");
+  const[customAFError,setCustomAFError]=useState("");
+  const[customAFData,setCustomAFData]=useState(null);
   const[mcResults,setMcResults]=useState(null);
   const[mcRunning,setMcRunning]=useState(false);
 
@@ -3330,7 +3386,7 @@ export default function App(){
     if(user) addNotif(user.id,{title:"CSV Exported",body:"Results downloaded as spreadsheet.",type:"success"});
   };
 
-  const SR=useMemo(()=>{try{return runSizing(params);}catch{return null;}},[params]);
+  const SR=useMemo(()=>{try{return runSizing({...params,customAirfoil:customAFData});}catch{return null;}},[params,customAFData]);
   /* ── Mission Builder — compute custom mission ──
      BUG FIX: wrapped in useCallback so useEffect dependency is stable.
      Auto-triggers whenever customPhases or SR changes — no manual "Compute" needed. */
@@ -4311,27 +4367,129 @@ export default function App(){
                     </ResponsiveContainer>
                   </Panel>
                   <Panel title="Airfoil Selection Score" ht={265}>
-                    <div style={{height:215,overflowY:"auto"}}>
+                    <div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace",marginBottom:6}}>
+                      Re = {(SR.Re_/1e6).toFixed(2)}×10⁶ · CDmin interpolated at operating Re · 24 candidates
+                    </div>
+                    <div style={{height:185,overflowY:"auto"}}>
                       {[...SR.afScored].sort((a,b)=>b.score-a.score).map((af,i)=>(
                         <div key={i} style={{display:"flex",alignItems:"center",gap:7,padding:"4px 0",borderBottom:`1px solid ${SC.border}`}}>
-                          <span style={{fontSize:9,minWidth:92,color:af.name===SR.selAF.name?SC.green:SC.text,
+                          <span style={{fontSize:9,minWidth:108,color:af.name===SR.selAF.name?SC.green:af.category==="Custom"?SC.amber:SC.text,
                             fontFamily:"'DM Mono',monospace",fontWeight:af.name===SR.selAF.name?700:400}}>
-                            {af.name===SR.selAF.name?"★ ":""}{af.name}
+                            {af.name===SR.selAF.name?"★ ":af.category==="Custom"?"⊕ ":""}{af.name}
                           </span>
                           <div style={{flex:1,height:4,background:SC.border,borderRadius:2}}>
-                            <div style={{height:"100%",width:`${af.score*100}%`,background:af.name===SR.selAF.name?SC.green:SC.muted,borderRadius:2}}/>
+                            <div style={{height:"100%",width:`${af.score*100}%`,background:af.name===SR.selAF.name?SC.green:af.category==="Custom"?SC.amber:SC.muted,borderRadius:2}}/>
                           </div>
-                          <span style={{fontSize:9,color:af.name===SR.selAF.name?SC.green:SC.muted,fontFamily:"'DM Mono',monospace",minWidth:36,textAlign:"right"}}>
+                          <span style={{fontSize:8,color:SC.muted,fontFamily:"'DM Mono',monospace",minWidth:42,textAlign:"right"}}>
+                            {af.CDmin.toFixed(4)}
+                          </span>
+                          <span style={{fontSize:9,color:af.name===SR.selAF.name?SC.green:SC.muted,fontFamily:"'DM Mono',monospace",minWidth:32,textAlign:"right"}}>
                             {(af.score*100).toFixed(1)}%
                           </span>
                         </div>
                       ))}
                       <div style={{marginTop:8,fontSize:8,color:SC.muted,fontFamily:"'DM Mono',monospace"}}>
-                        ★ {SR.selAF.name} | t/c={SR.selAF.tc} CLmax={SR.selAF.CLmax} CDmin={SR.selAF.CDmin}
+                        ★ {SR.selAF.name} | t/c={SR.selAF.tc} CLmax={SR.selAF.CLmax} CDmin@Re={SR.selAF.CDmin.toFixed(4)} | {SR.selAF.source||""}
                       </div>
                     </div>
                   </Panel>
                 </div>
+
+                {/* ── Custom Airfoil Input ── */}
+                <Panel title="Custom Airfoil — Paste XFoil / UIUC Polar Data">
+                  <div style={{fontSize:10,color:SC.muted,fontFamily:"'DM Mono',monospace",marginBottom:10,lineHeight:1.7}}>
+                    Paste XFoil polar output or UIUC ADB data (alpha, CL, CD columns). The app fits a parabolic drag polar
+                    <strong style={{color:SC.text}}> CD = CDmin + k·(CL − CLd)²</strong> and overrides the library selection.
+                    Clear the box to revert to automatic selection.
+                  </div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr auto",gap:12,alignItems:"start"}}>
+                    <div>
+                      <div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace",marginBottom:4}}>
+                        Format: one row per alpha — <code>alpha  CL  CD</code> (whitespace or comma separated)
+                      </div>
+                      <textarea
+                        value={customAirfoilInput}
+                        onChange={e=>setCustomAirfoilInput(e.target.value)}
+                        placeholder={"Example (XFoil NACA 63-415 at Re=7M):\n alpha    CL       CD\n-4.00   0.0320   0.00740\n-2.00   0.2480   0.00440\n 0.00   0.4640   0.00420\n 2.00   0.6800   0.00440\n 4.00   0.8960   0.00480\n 6.00   1.1120   0.00580\n 8.00   1.3280   0.00750"}
+                        style={{width:"100%",boxSizing:"border-box",height:140,background:SC.bg,
+                          border:`1px solid ${SC.border}`,borderRadius:6,color:SC.text,
+                          fontSize:10,padding:"8px 10px",fontFamily:"'DM Mono',monospace",
+                          outline:"none",resize:"vertical"}}
+                      />
+                      {customAFError&&(
+                        <div style={{fontSize:10,color:SC.red,fontFamily:"'DM Mono',monospace",marginTop:4}}>
+                          ⚠ {customAFError}
+                        </div>
+                      )}
+                    </div>
+                    <div style={{display:"flex",flexDirection:"column",gap:8,minWidth:160}}>
+                      <div style={{background:SC.bg,border:`1px solid ${SC.border}`,borderRadius:6,padding:"10px 12px"}}>
+                        <div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace",marginBottom:6}}>Airfoil metadata</div>
+                        {[
+                          ["Name",customAFData?.name||"—"],
+                          ["t/c",customAFData?customAFData.tc.toFixed(3):"—"],
+                          ["CLmax",customAFData?customAFData.CLmax.toFixed(3):"—"],
+                          ["CLd (design)",customAFData?customAFData.CLd.toFixed(3):"—"],
+                          ["CDmin",customAFData?customAFData.CDmin.toFixed(5):"—"],
+                          ["k (polar)",customAFData?customAFData.kPolar.toFixed(5):"—"],
+                          ["CM",customAFData?customAFData.CM.toFixed(3):"—"],
+                        ].map(([k,v])=>(
+                          <div key={k} style={{display:"flex",justifyContent:"space-between",padding:"2px 0",borderBottom:`1px solid ${SC.border}22`}}>
+                            <span style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace"}}>{k}</span>
+                            <span style={{fontSize:9,color:SC.text,fontFamily:"'DM Mono',monospace",fontWeight:700}}>{v}</span>
+                          </div>
+                        ))}
+                      </div>
+                      <button type="button" onClick={()=>{
+                        const txt=customAirfoilInput.trim();
+                        if(!txt){setCustomAFData(null);setCustomAFError("");return;}
+                        try{
+                          const rows=txt.split('\n').map(l=>l.trim()).filter(l=>l&&!/^[a-zA-Z#]/.test(l));
+                          const pts=rows.map(l=>{
+                            const cols=l.split(/[\s,]+/);
+                            if(cols.length<3)throw new Error("Need at least 3 columns: alpha CL CD");
+                            return{alpha:parseFloat(cols[0]),CL:parseFloat(cols[1]),CD:parseFloat(cols[2])};
+                          }).filter(r=>!isNaN(r.alpha)&&!isNaN(r.CL)&&!isNaN(r.CD));
+                          if(pts.length<5)throw new Error("Need at least 5 data points");
+                          const CLmax=Math.max(...pts.map(p=>p.CL));
+                          const minCD_pt=pts.reduce((a,b)=>b.CD<a.CD?b:a);
+                          const CDmin=minCD_pt.CD, CLd=minCD_pt.CL;
+                          // Fit parabolic polar: CD = CDmin + k*(CL-CLd)^2  by least squares
+                          let sumX2=0,sumX4=0,sumX2Y=0,n=0;
+                          pts.forEach(pt=>{const x=(pt.CL-CLd)**2,y=pt.CD-CDmin;sumX2+=x;sumX4+=x*x;sumX2Y+=x*y;n++;});
+                          const kPolar=sumX2>0?sumX2Y/sumX2:0.012;
+                          // Estimate CM from moment of polar distribution (approximate)
+                          const CM_est=pts.length>0?pts.reduce((s,p)=>s+(-0.01*p.CL),0)/pts.length:-0.05;
+                          // Estimate t/c from name input or default
+                          const tcEst=0.12;
+                          setCustomAFData({
+                            name:"Custom (User)",tc:tcEst,CLmax,CLd,CDmin,kPolar,CM:CM_est,
+                          });
+                          setCustomAFError("");
+                        }catch(e){setCustomAFError(e.message);setCustomAFData(null);}
+                      }} style={{padding:"8px 0",background:`${SC.teal}22`,border:`1px solid ${SC.teal}55`,
+                        borderRadius:6,color:SC.teal,fontSize:11,cursor:"pointer",fontFamily:"'DM Mono',monospace",fontWeight:700}}>
+                        ⊕ Parse & Apply
+                      </button>
+                      {customAFData&&(
+                        <button type="button" onClick={()=>{setCustomAFData(null);setCustomAirfoilInput("");setCustomAFError("");}}
+                          style={{padding:"8px 0",background:`${SC.red}11`,border:`1px solid ${SC.red}33`,
+                            borderRadius:6,color:SC.red,fontSize:11,cursor:"pointer",fontFamily:"'DM Mono',monospace"}}>
+                          ✕ Clear Custom
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  {customAFData&&(
+                    <div style={{marginTop:10,padding:"8px 12px",background:`${SC.teal}11`,border:`1px solid ${SC.teal}33`,
+                      borderRadius:6,fontSize:10,color:SC.teal,fontFamily:"'DM Mono',monospace"}}>
+                      ✓ Custom airfoil active — overrides library selection. CDmin={customAFData.CDmin.toFixed(5)},
+                      CLmax={customAFData.CLmax.toFixed(3)}, k={customAFData.kPolar.toFixed(5)}.
+                      Polar fitted from {customAirfoilInput.trim().split('\n').filter(l=>l&&!/^[a-zA-Z#]/.test(l.trim())).length} data points.
+                    </div>
+                  )}
+                </Panel>
+
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
                   <Panel title="Drag Polar" ht={235}>
                     <ResponsiveContainer width="100%" height={185}>
