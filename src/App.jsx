@@ -1461,7 +1461,7 @@ function generateReport(p, SR, branding={}) {
   ${eq("N = \\frac{V_{tip}}{R_{rot}}\\times\\frac{60}{2\\pi} = \\frac{"+fmt(TipSpdd,2)+"}{"+fmt(Rrotord,4)+"}\\times\\frac{60}{2\\pi} = "+fmt(SR.RPM,0)+"\\text{ rpm}","Rotational speed")}
   ${eq("c_{blade} = \\sigma\\pi R_{rot}/N_{bl} = 0.10\\times\\pi\\times "+fmt(Rrotord,4)+"/3 = "+fmt(SR.ChordBl,4)+"\\text{ m}\\;(\\sigma=0.10,\\;N_{bl}=3)","Blade chord")}
   ${eq("P_{motor,cont} = 1.15\\times P_{rotor} = "+fmt(PmotKWd,2)+"\\text{ kW}, \\quad P_{peak} = 1.50\\times P_{motor} = "+fmt(PpeakKWd,2)+"\\text{ kW}","Motor ratings with margins")}
-  ${eq("Q = P_{motor}\\times 1000/\\Omega = "+fmt(Torqued,1)+"\\text{ N·m}","Motor shaft torque")}
+  ${eq("Q = P_{motor}\\times 1000/\\Omega = "+fmt(Torqued,1)+"\\text{ N}\\cdot\\text{m}","Motor shaft torque")}
   `);
 
   // ── D8. BATTERY PACK ARCHITECTURE ────────────────────────────────────
