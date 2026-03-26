@@ -6947,7 +6947,6 @@ export default function App(){
                     </LineChart>
                   </ResponsiveContainer>
                 </Panel>
-                </Panel>
               </div>
               );
             })()}
