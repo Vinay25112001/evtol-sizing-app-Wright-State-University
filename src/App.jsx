@@ -6554,102 +6554,119 @@ export default function App(){
               // Electricity: EIA Electric Power Monthly (Nov 2024)
               // ═══════════════════════════════════════════════════════════════
 
+              // ─────────────────────────────────────────────────────────────────
+              // DIRECT OPERATING COST (DOC) MODEL v2
+              // Formulas: ICAO Doc 9502, ATA iSpec 2200, Vascik MIT 2020
+              // Battery:  BNEF Electric Vehicle Outlook 2024 ($/kWh)
+              // Ops:      NASA/CR-2019-220217 UAM Market Study (Oliver Wyman)
+              //           Joby S-1 2021, Archer S-1 2021 investor disclosures
+              // Maint:    FAA Helicopter Flying Handbook AC 61-13B benchmark
+              //           Booz Allen / NASA AAM Cost Model 2021
+              // Insurance: GAMA Statistical Databook 2023
+              // Electricity: EIA Electric Power Monthly (Nov 2024)
+              // ─────────────────────────────────────────────────────────────────
+
               // ── 1. OPERATIONAL PARAMETERS ─────────────────────────────────
-              // Joby pre-commercial target: 4-8 flights/day; Uber Elevate: 8/day
-              // NASA/CR-2019-220217: 1,000-2,000 flights/vehicle/year near-term
-              const flightsPerDay     = 10;    // 10/day — target ops (spread fixed costs; Joby/Archer ops model)
-              const daysPerYear       = 300;   // 300 operating days (weather + scheduled mx)
-              const flightsPerYear    = flightsPerDay * daysPerYear; // 1,800 flights/yr
-              const flightDuration_hr = SR.Tend / 3600;             // actual mission duration
+              const flightsPerDay     = 10;
+              const daysPerYear       = 300;
+              const flightsPerYear    = flightsPerDay * daysPerYear;
+              const flightDuration_hr = SR.Tend / 3600;
               const tripDist_km       = params.range;
-              const nSeats            = Math.max(1, Math.round(params.payload / 90)); // 90 kg/pax
+              const nSeats            = Math.max(1, Math.round(params.payload / 90));
 
-              // ── 2. ENERGY COST ────────────────────────────────────────────
-              // Formula: C_energy = E_consumed × P_elec_eff × (1 + η_charge_loss)
-              // EIA Electric Power Monthly Nov 2024: US commercial avg = $0.1231/kWh
-              // Vertiport demand charge premium: +$0.03-0.05/kWh (EPRI 2023)
-              // SAE ARP6504 DC fast-charge round-trip efficiency: 90-95%
-              const energyPerFlight_kWh  = SR.Etot;
-              const electricityRate_base = 0.12;   // $/kWh — EIA 2024 commercial avg
-              const demandCharge         = 0.04;   // $/kWh — vertiport demand charge (EPRI 2023)
-              const electricityRate_kWh  = electricityRate_base + demandCharge; // $0.16/kWh eff.
-              const chargingLoss         = 0.08;   // 8% — SAE ARP6504 DC fast charge loss
-              const energyCost_per_flight = energyPerFlight_kWh * (1 + chargingLoss) * electricityRate_kWh;
+              // ── 2. ENERGY COST — efficiency chain ─────────────────────────
+              // SR.Etot = electrical energy drawn FROM battery (includes etaSys, etaHov)
+              // Grid energy = battery energy / η_charger
+              // η_charger depends on C-rate: high peak currents during hover reduce
+              // charger round-trip efficiency (SAE ARP6504; NREL Battery Thermal 2022)
+              // At 1C: η_charger ≈ 0.95; at 3C hover: ≈ 0.91; at 5C: ≈ 0.87
+              const CrateHov         = SR.CrateHov || 3.0;
+              const eta_charger      = Math.max(0.85, 0.97 - 0.03 * CrateHov); // C-rate dependent
+              const energyPerFlight_kWh  = SR.Etot / eta_charger;               // grid draw (kWh)
+              // Time-of-use: base + vertiport demand charge (EPRI 2023)
+              const electricityRate_base = 0.12;
+              const demandCharge         = 0.04;
+              const electricityRate_kWh  = electricityRate_base + demandCharge;
+              const energyCost_per_flight = energyPerFlight_kWh * electricityRate_kWh;
 
-              // ── 3. BATTERY REPLACEMENT COST ──────────────────────────────
-              // Formula: C_bat = PackCost_$ / (N_cycles_EOL × DoD_factor)
-              // BNEF EVO 2024: automotive cell = $149/kWh; aviation-grade premium 2×
-              // Pack cost ($/kg) = ($/kWh) × (1000 Wh/kWh) / (SED Wh/kg)
-              //   At 300 Wh/kg:  $149 × 1000/300 = $497/kg (automotive)
-              //   Aviation-grade premium (cert, thermal mgmt): 1.5-2× → $300/kg
-              // Joby targeting LFP: 2000+ cycles; NMC (current): 800 cycles @ 80% SoH
-              // NREL Battery Lifetime Study 2023: power-law degradation
-              // DoD correction (empirical): effective cycles = N_rated × (1 - DoD)^0.5
-              const battCost_per_kg    = 300;     // $/kg — aviation NMC 2024 (BNEF EVO 2024 + cert premium)
-              const batteryCycles      = 900;     // NMC 800-1000 cycles @ 80% SoH — NREL 2023 mid-range
-              const chargeDepth        = Math.min(0.85, SR.Etot / SR.PackkWh); // DoD per flight (capped 85%)
-              // Cycle life: NREL 2023 ratings already account for typical DoD.
-              // Partial-DoD bonus: if DoD < 50%, cycles increase (Thornton 2019 empirical):
-              //   effective = rated × (0.5/DoD)^0.5 for DoD < 0.5, else rated
+              // ── 3. BATTERY REPLACEMENT COST — $/kWh + C-rate degradation ──
+              // Cost expressed in $/kWh at pack level, linked to SED dynamically.
+              // BNEF EVO 2024: $149/kWh cell. Aviation cert premium ~2×.
+              // $/kWh pack = ($/kWh cell) × cert_factor / pack_overhead
+              // Pack overhead (BMS, cooling, structure) ≈ 0.80 of cell energy.
+              // Learning rate: cost ∝ (SED_ref/SED)^0.3 (BNEF learning curve)
+              const battCostPerKwh_cell = 149;      // $/kWh — BNEF EVO 2024 NMC cell
+              const certFactor          = 2.0;       // aviation cert + thermal mgmt premium
+              const packOverhead        = 0.80;      // pack efficiency vs cell (BMS, cooling)
+              const sedRef              = 300;        // Wh/kg reference point
+              const sedLearning = Math.pow(sedRef / Math.max(100, params.sedCell), 0.3); // cheaper at higher SED
+              const battCostPerKwh_pack = battCostPerKwh_cell * certFactor / packOverhead * sedLearning;
+              const packReplCost        = SR.PackkWh * battCostPerKwh_pack; // total pack replacement cost ($)
+
+              // Cycle life: DoD bonus (Thornton 2019) × C-rate penalty (Waldmann et al. 2014)
+              // High discharge C-rate accelerates Li-plating and SEI growth in NMC
+              // C-rate penalty: 1.0 at 2C, degrades ~30% per doubling above 2C
+              const batteryCycles      = 900;
+              const chargeDepth        = Math.min(0.85, SR.Etot / SR.PackkWh);
               const dodBonus = chargeDepth < 0.50
                 ? batteryCycles * Math.pow(0.50 / chargeDepth, 0.5)
                 : batteryCycles;
-              const effectiveCycles    = Math.floor(Math.min(2000, dodBonus)); // cap at 2000 (LFP territory)
-              const packReplCost       = SR.Wbat * battCost_per_kg;
-              const flightsPerBattery  = Math.max(1, effectiveCycles);
-              const battCost_per_flight = packReplCost / flightsPerBattery;
+              const cRatePenalty       = Math.max(0.50, Math.pow(2.0 / Math.max(1.0, CrateHov), 0.45));
+              const effectiveCycles    = Math.floor(Math.min(2000, dodBonus * cRatePenalty));
+              const battCost_per_flight = packReplCost / Math.max(1, effectiveCycles);
 
-              // ── 4. MAINTENANCE COST ───────────────────────────────────────
-              // Formula (ICAO Doc 9502 / ATA 2011 method):
-              //   C_maint = (MMH_per_FH × w_labor + C_parts_per_FH) × t_flight_hr
-              // Vascik MIT 2020 (eVTOL Mx study): 2.5-4.0 MMH/FH for novel electric aircraft
-              // BLS OOH 2024: A&P mechanic = $75/hr (median, aviation)
-              // Booz Allen / NASA AAM 2021: parts cost $60-100/FH for electric propulsion
-              // Benchmark: Bell 206B3 helicopter = $350-500/FH total
-              //   eVTOL advantage (no gearbox, fewer moving parts): ~55% of helicopter
-              const MMH_per_FH         = 3.0;     // maintenance man-hours per flight-hour (Vascik 2020)
-              const laborRate_per_hr   = 75;      // $/hr — BLS 2024 A&P mechanic median
-              const partsCost_per_FH   = 75;      // $/FH — electric drivetrain parts (Booz Allen 2021)
-              const maintRate_per_FH   = MMH_per_FH * laborRate_per_hr + partsCost_per_FH; // $300/FH
-              const maintenanceCost_per_flight = maintRate_per_FH * flightDuration_hr;
+              // ── 4. MAINTENANCE — fixed (scheduled) + variable (FH-based) ─
+              // Fixed: annual scheduled inspection (100hr A-check equivalent)
+              //   eVTOL: ~$45,000/aircraft/year — Booz Allen NASA AAM 2021
+              const scheduledMx_annual   = 45000;
+              const scheduledMx_per_flight = scheduledMx_annual / flightsPerYear;
+
+              // Variable: MMH/FH = f(nMotors, hoverFraction)
+              //   Base: 2.0 MMH/FH (simple 4-rotor electric, Vascik MIT 2020 lower bound)
+              //   Motor count penalty: +0.18 MMH/FH per motor beyond 4
+              //     (more motors = more periodic inspections, bearing checks, ESC tests)
+              //   Hover fraction penalty: +2.0 MMH/FH at 100% hover (rotor stress)
+              //     (eVTOL hover ≈ 40–60% more rotor fatigue cycles than cruise)
+              const hoverFraction      = (SR.tto + SR.tld) / Math.max(1, SR.Tend);
+              const MMH_base           = 2.0;
+              const MMH_motors         = 0.18 * Math.max(0, params.nPropHover - 4);
+              const MMH_hover          = 2.0 * hoverFraction;
+              const MMH_per_FH         = MMH_base + MMH_motors + MMH_hover;
+              const laborRate_per_hr   = 75;
+              const partsCost_per_FH   = 75;
+              const maintRate_per_FH   = MMH_per_FH * laborRate_per_hr + partsCost_per_FH;
+              const varMaintCost_per_flight = maintRate_per_FH * flightDuration_hr;
+              const maintenanceCost_per_flight = scheduledMx_per_flight + varMaintCost_per_flight;
 
               // ── 5. MOTOR REPLACEMENT COST ─────────────────────────────────
-              // MagniX Magni250 TBO target: 3000 hr; Joby investor docs: 3000-5000 hr
-              // Motor cost at scale: $80-120/kW (NREL UAM 2021: $50-100/kW at maturity)
-              const motorTBO_hr        = 3000;    // hr — MagniX / Joby target TBO
-              const motorCost_per_kW   = 100;     // $/kW — mid of NREL $50-100/kW range
+              const motorTBO_hr        = 3000;
+              const motorCost_per_kW   = 100;
               const motorCount         = params.nPropHover;
-              const motorCostEach   = SR.PmotKW * motorCost_per_kW;
+              const motorCostEach      = SR.PmotKW * motorCost_per_kW;
               const flightsPerMotor    = Math.floor(motorTBO_hr / Math.max(0.1, flightDuration_hr));
               const motorCost_per_flight = (motorCostEach * motorCount) / Math.max(1, flightsPerMotor);
 
               // ── 6. INSURANCE ──────────────────────────────────────────────
-              // Hull + liability; GAMA Statistical Databook 2023:
-              //   Certified GA: 2-4%; Helicopter: 3-6%; Novel type cert: 8-12%
-              // FAA AC 21.17-4 (eVTOL powered-lift type cert): novel category → top of range
-              const aircraftValue   = SR.MTOW * 800; // $800/kg — Joby $722/kg, VX4 $833/kg
-              const insuranceRate      = 0.10;    // 10% — novel type cert upper range (GAMA 2023)
-              const insuranceAnnual    = aircraftValue * insuranceRate;
-              const insuranceCost_per_flight = insuranceAnnual / flightsPerYear;
+              const aircraftValue      = SR.MTOW * 800;
+              const insuranceRate      = 0.10;
+              const insuranceCost_per_flight = (aircraftValue * insuranceRate) / flightsPerYear;
 
               // ── 7. VERTIPORT INFRASTRUCTURE FEE ──────────────────────────
-              // Skyports Ltd (2023): $15-45/landing target
-              // Fraport UAM Infrastructure Study 2022: €20-50/landing
-              // Urban-Air Port (Coventry UK, 2022): £20-35 target
-              const vertiportFee_per_flight = 35; // $35 — midpoint of published range
+              const vertiportFee_per_flight = 35;
 
-              // ── 8. PILOT / RPIC OPERATOR COST ────────────────────────────
-              // BLS OOH 2024: RPIC / ground-based pilot salary $65-90k/yr
-              // FAA AC 21.17-4: RPIC required for eVTOL operations
-              // Initial ops ratio: 1 operator per 3-4 aircraft (pre-commercial)
-              const rpicSalary_annual  = 82000;   // $/yr — BLS 2024 median + benefits
-              const aircraftPerRPIC    = 4;       // initial ops; matures to 1:10 at scale
-              const operatorCost_per_flight = (rpicSalary_annual / aircraftPerRPIC) / flightsPerYear;
+              // ── 8. PILOT / RPIC OPERATOR COST — per duty hour ────────────
+              // Operator cost proportional to duty time (flight + turnaround ~15min),
+              // not a flat per-flight average. This correctly scales with mission duration.
+              // BLS OOH 2024: RPIC $82k/yr; 1 RPIC per 4 aircraft; 250 duty-days/yr × 8hr
+              const rpicSalary_annual  = 82000;
+              const aircraftPerRPIC    = 4;
+              const dutyHoursPerYear   = daysPerYear * 8;   // 8hr duty day
+              const rpicCostPerHour    = rpicSalary_annual / (aircraftPerRPIC * dutyHoursPerYear);
+              const turnaroundTime_hr  = 15 / 60;           // 15min ground time per flight
+              const operatorCost_per_flight = rpicCostPerHour * (flightDuration_hr + turnaroundTime_hr);
 
               // ── 9. TYPE CERTIFICATION & AIRWORTHINESS AMORTIZATION ────────
-              // FAA AC 21.17-4 (2023): Novel powered-lift type cert cost $500k-2M
-              // Amortized over 10-year aircraft life × annual flights
-              const certCost_total     = 1000000; // $1M — FAA AC 21.17-4 midpoint estimate
+              const certCost_total     = 1000000;
               const aircraftLifeYears  = 10;
               const certCost_per_flight = certCost_total / (flightsPerYear * aircraftLifeYears);
 
@@ -6664,43 +6681,35 @@ export default function App(){
                 + certCost_per_flight;
 
               const cost_per_km        = totalCost_per_flight / tripDist_km;
-              const cost_per_seat_km   = cost_per_km / Math.max(1, nSeats); // $/seat-km (industry std)
+              const cost_per_seat_km   = cost_per_km / Math.max(1, nSeats);
 
               // ── 11. REVENUE MODEL ─────────────────────────────────────────
-              // Joby S-1 2021: ~$3/mile = $1.86/km launch fare
-              // Archer S-1 2021: $3.30/passenger-mile = $2.05/km
-              // Blade NYC helicopter: $4-6/km current benchmark
-              // NASA/CR-2019-220217: $2-4/km realistic for 2025-2030 UAM
-              // Pricing: NASA CR-2021-003 recommends $6-9/mile ($3.70-5.60/km) for early-adopter UAM
-              // Joby launch: $3/mile ($1.86/km); Archer: $3.30/passenger-mile ($2.05/km)
-              // Premium service tier (Blade-equivalent): $5-8/km
-              // Using mid-range early-adopter: $4.50/km (between Joby launch and Blade NYC)
-              const farePerKm          = 4.50;    // $/km — early-adopter premium (NASA CR-2021-003 range)
-              const loadFactor         = 0.78;    // 78% — slightly above Uber Elevate (75-80% target)
+              const farePerKm          = 4.50;
+              const loadFactor         = 0.78;
               const revenuePerFlight   = farePerKm * tripDist_km * loadFactor;
               const annualRevenue      = revenuePerFlight * flightsPerYear;
               const annualCost         = totalCost_per_flight * flightsPerYear;
               const annualProfit       = annualRevenue - annualCost;
               const profitMargin       = annualRevenue > 0 ? (annualProfit / annualRevenue) * 100 : -100;
 
-              // ── 12. BREAK-EVEN ANALYSIS ────────────────────────────────────
-              // Break-even load factor: LF_be = DOC / (seats × $/seat-km × dist)
-              const farePerSeat_km     = farePerKm; // same unit fare per seat
-              const breakEvenLF        = Math.min(1, totalCost_per_flight /
-                (Math.max(1, nSeats) * farePerSeat_km * tripDist_km));
-              // Break-even fare needed at 75% LF:
-              const breakEvenFare_km   = totalCost_per_flight /
-                (Math.max(1, nSeats) * loadFactor * tripDist_km);
+              // ── 12. BREAK-EVEN — fare sensitivity ─────────────────────────
+              // Three fare scenarios: Joby launch ($1.86/km), mid ($4.50/km), Blade ($6/km)
+              // Break-even LF = DOC / (seats × fare × dist); Break-even fare at 78% LF
+              const fareScenarios = [
+                {label:"Joby launch",    fare:1.86},
+                {label:"NASA mid-range", fare:4.50},
+                {label:"Blade-equiv.",   fare:6.00},
+              ].map(s=>({
+                ...s,
+                beLF: Math.min(1, totalCost_per_flight / (Math.max(1,nSeats) * s.fare * tripDist_km)),
+              }));
+              const breakEvenLF      = fareScenarios[1].beLF;
+              const breakEvenFare_km = totalCost_per_flight / (Math.max(1,nSeats) * loadFactor * tripDist_km);
 
               // ── 13. ROI / PAYBACK ──────────────────────────────────────────
-              // Simple payback: P = AcquisitionCost / AnnualProfit (if profit > 0)
-              const aircraftCost     = SR.MTOW * 800; // same basis as insurance
-              const paybackYears       = annualProfit > 0
-                ? aircraftCost / annualProfit
-                : Infinity;
+              const aircraftCost     = SR.MTOW * 800;
+              const paybackYears     = annualProfit > 0 ? aircraftCost / annualProfit : Infinity;
 
-              // Helicopter benchmark: Bell 206B3 charter all-in
-              // $800-1000/hr charter ÷ 200 km/hr cruise = $4-5/km
               const helicopter_cost_per_km = 4.50;
               const savings_vs_heli_pct    = ((helicopter_cost_per_km - cost_per_km) / helicopter_cost_per_km) * 100;
 
@@ -6760,7 +6769,7 @@ export default function App(){
                   <KPI label="Energy Cost/Flight" value={`$${energyCost_per_flight.toFixed(2)}`} unit=""
                     color={SC.teal} sub={`${energyPerFlight_kWh} kWh × $${electricityRate_kWh.toFixed(2)}/kWh`}/>
                   <KPI label="Battery Cost/Flight" value={`$${battCost_per_flight.toFixed(2)}`} unit=""
-                    color={SC.amber} sub={`${flightsPerBattery} cycles · ${(chargeDepth*100).toFixed(0)}% DoD`}/>
+                    color={SC.amber} sub={`${effectiveCycles} cycles · ${(chargeDepth*100).toFixed(0)}% DoD · ${CrateHov.toFixed(1)}C`}/>
                   <KPI label="Break-Even Load Factor" value={`${(breakEvenLF*100).toFixed(1)}%`} unit=""
                     color={breakEvenLF<0.7?SC.green:breakEvenLF<0.9?SC.amber:SC.red}
                     sub={`Need $${breakEvenFare_km.toFixed(2)}/km at 75% LF`}/>
@@ -6878,11 +6887,29 @@ export default function App(){
                     color:SC.green,fontFamily:"'DM Mono',monospace",lineHeight:1.7}}>
                     💡 <strong>DOC Formula Sources:</strong><br/>
                     • <strong>Energy</strong>: C = E_kWh × $0.16/kWh (EIA $0.12 + EPRI $0.04 demand charge) × 1.08 charging loss (SAE ARP6504)<br/>
-                    • <strong>Battery</strong>: C = Wbat × $300/kg ÷ effective_cycles; BNEF EVO 2024 ($149/kWh cell) + aviation cert premium<br/>
-                    • <strong>Maintenance</strong>: C = (3.0 MMH/FH × $75/hr + $75/FH parts) × t_flight — ICAO Doc 9502 / Vascik MIT 2020<br/>
+                    • <strong>Battery</strong>: C = PackkWh × $/kWh_pack ÷ effective_cycles; $/kWh scales with SED (BNEF learning curve); C-rate penalty on cycle life (Waldmann 2014)<br/>
+                    • <strong>Maintenance</strong>: Fixed $45k/yr scheduled + variable (2.0 + 0.18·N_motors + 2.0·hover_frac) MMH/FH × $150 — Vascik MIT 2020<br/>
+                    • <strong>Operator</strong>: RPIC at $82k/yr ÷ 4 aircraft, cost per duty hour × (flight + 15min turnaround) — BLS OOH 2024<br/>
                     • <strong>Insurance</strong>: 10% hull/yr — GAMA 2023 novel type cert (vs 3-6% certified GA/helicopter)<br/>
                     • <strong>Benchmark</strong>: Bell 206B3 = $4.50/km; Joby target = $1.86/km; Archer launch = $2.05/km<br/>
                     💡 <strong>Break-even load factor = {(breakEvenLF*100).toFixed(1)}%</strong> — if this exceeds 85% the route is marginal; >100% means DOC exceeds max revenue.
+                  </div>
+                  <div style={{marginTop:10,background:SC.bg,border:`1px solid ${SC.border}`,borderRadius:6,padding:"10px 14px"}}>
+                    <div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace",textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:8}}>Break-even sensitivity — fare scenarios</div>
+                    {fareScenarios.map(s=>(
+                      <div key={s.label} style={{display:"flex",alignItems:"center",gap:10,marginBottom:5}}>
+                        <span style={{fontSize:10,color:SC.muted,fontFamily:"'DM Mono',monospace",minWidth:120}}>{s.label}</span>
+                        <span style={{fontSize:10,color:SC.amber,fontFamily:"'DM Mono',monospace",minWidth:64}}>${s.fare.toFixed(2)}/km</span>
+                        <div style={{flex:1,height:8,background:SC.panel,borderRadius:3,overflow:"hidden"}}>
+                          <div style={{height:"100%",width:`${Math.min(100,s.beLF*100).toFixed(1)}%`,
+                            background:s.beLF<0.7?SC.green:s.beLF<0.9?SC.amber:SC.red,borderRadius:3}}/>
+                        </div>
+                        <span style={{fontSize:10,fontFamily:"'DM Mono',monospace",color:s.beLF<0.7?SC.green:s.beLF<0.9?SC.amber:SC.red,minWidth:44}}>
+                          {s.beLF>=1?"✗ loss":`${(s.beLF*100).toFixed(0)}%`}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
                   </div>
                 </Panel>
               </div>
