@@ -31,7 +31,12 @@ function runSizing(p) {
   const desAng=p.descentAngle||6;
   const Vdc=Math.min(RoC/Math.sin(desAng*Math.PI/180),p.vCruise);  // cap at cruise speed
   // Reserve: loiter at best-endurance speed ≈ 0.76×cruise (min-power speed for electric)
-  const Vres=0.76*p.vCruise;
+  // Reserve time: regulations define reserve by TIME, not distance.
+  // AC 21.17-4 / SC-VTOL VTOL.1035: 20 min VFR minimum (1,200 s).
+  // tres is computed directly from reserveMinutes — no longer derived from reserveRange/Vres.
+  // reserveRange is kept for CruiseRange geometry deduction only (distance aircraft flies during reserve).
+  const reserveMinutes = p.reserveMinutes || 20;  // VFR default; user can set 30 for IFR
+  const Vres=0.76*p.vCruise;  // best-endurance loiter speed for electric (min-power speed)
   const hvtol=p.hoverHeight;
   const ClimbR=(p.cruiseAlt-hvtol)/Math.tan(clAng*Math.PI/180);
   const DescR=(p.cruiseAlt-hvtol)/Math.tan(desAng*Math.PI/180);
@@ -52,7 +57,9 @@ function runSizing(p) {
     if(MTOW1>5700)break;
   }
 
-  const CruiseRange=p.range*1000-ClimbR-DescR-p.reserveRange*1000;
+  const tres_s = reserveMinutes * 60;                         // reserve time in seconds (regulatory)
+  const reserveDistM = Vres * tres_s;                         // distance flown during reserve (m)
+  const CruiseRange=p.range*1000-ClimbR-DescR-reserveDistM;  // actual cruise distance
 
   /* Round 2 — coupled MTOW+Energy  (T/W ratio applied to hover thrust) */
   const TW = p.twRatio||1.0;
@@ -80,7 +87,7 @@ function runSizing(p) {
     // Hover-to-climb transition: ~45 s at 65% hover power (rotor tilt / speed-up phase)
     const ttrans=45, Ptrans=0.65*Phov;
     tto=hvtol/0.5+ttrans; tcl=ClimbR/Vcl; tcr=Math.max(0,CruiseRange/p.vCruise);
-    tdc=DescR/Vdc; tld=hvtol/0.5; tres=p.reserveRange*1000/Vres;
+    tdc=DescR/Vdc; tld=hvtol/0.5; tres=tres_s;
     // Eto includes hover ascent + transition power
     Eto=(Phov*(hvtol/0.5)+Ptrans*ttrans)/3600;
     Ecl=Pcl*tcl/3600; Ecr=Pcr*tcr/3600;
@@ -293,12 +300,15 @@ function runSizing(p) {
   // ── FIX: TipSpd was previously induced velocity vi = sqrt(2Pη/ρA)
   //         which is ~12-16 m/s giving RPM ≈ 89 — off by ~10×.
   //         Correct tip speed is set by Mach limit (noise + compressibility).
-  //         V_tip = M_tip × a_sound, where M_tip ≈ 0.60–0.65 for eVTOL.
-  const vi_ind=Math.sqrt(Trotor/(2*rhoMSL*Adisk));           // true induced velocity (m/s)
-  const Mtip_design=Math.min(0.62, 340/aCr*0.62);            // design tip Mach ≤ 0.62
-  const TipSpd=Mtip_design*aCr;                              // correct tip speed from Mach limit
-  const TipMach=TipSpd/aCr;                                  // = Mtip_design (cross-check)
-  const RPM=TipSpd/Rrotor*60/(2*Math.PI);                   // RPM from correct Omega=Vtip/R
+  //         V_tip = M_tip × a_MSL — use MSL sound speed because rotors hover near ground.
+  //         M_tip = 0.58 → V_tip = 197 m/s, satisfying both 14 CFR Part 36 (≤200 m/s)
+  //         and EASA CS-36 urban noise target (≤200 m/s). Previously 0.62 gave 208 m/s.
+  const aMSL_=Math.sqrt(GAM*Rgas*T0);                         // MSL sound speed (340.3 m/s)
+  const vi_ind=Math.sqrt(Trotor/(2*rhoMSL*Adisk));            // true induced velocity (m/s)
+  const Mtip_design=0.58;                                      // ≤0.58 → Vtip ≤ 200 m/s (14 CFR / CS-36)
+  const TipSpd=Mtip_design*aMSL_;                             // correct tip speed from Mach limit
+  const TipMach=TipSpd/aCr;                                   // Mach at cruise altitude (for compressibility check)
+  const RPM=TipSpd/Rrotor*60/(2*Math.PI);                    // RPM from correct Omega=Vtip/R
 
   // ── FIX: sigma hardcoded 0.10 → computed from actual blade geometry ──
   // Global solidity: sigma = B*c/(pi*R) where c = chord, B = blade count
@@ -392,7 +402,7 @@ function runSizing(p) {
       const Pd2=Math.max(0.22*Ph2,Pd2_raw);
       const Pr2=(W2/p.etaSys)*(Vres/p.LD)/1000;
       const ttrans2=45,Ptrans2=0.65*Ph2;
-      const Et2=(Ph2*(hvtol/0.5)+Ptrans2*ttrans2)/3600+Pc2*tcl/3600+Pcr2*tcr/3600+Pd2*tdc/3600+Ph2*tld/3600+Pr2*tres/3600;
+      const Et2=(Ph2*(hvtol/0.5)+Ptrans2*ttrans2)/3600+Pc2*tcl/3600+Pcr2*tcr/3600+Pd2*tdc/3600+Ph2*tld/3600+Pr2*tres_s/3600;
       const sedEff2=p.sedCell*(1-(p.cRateDerate||0.08));
       const Wb2=Et2*1000*(1+p.socMin)/(sedEff2*p.etaBat);
       const mn=p.payload+p.ewf*m2+Wb2;
@@ -415,7 +425,7 @@ function runSizing(p) {
       const Pdc_tw=Math.max(0.22*Phov_tw,Pdc_tw_raw);
       const Pres_tw=(W/p.etaSys)*(Vres/p.LD)/1000;
       const ttrans_tw=45,Ptrans_tw=0.65*Phov_tw;
-      const Etot_tw=(Phov_tw*(hvtol/0.5)+Ptrans_tw*ttrans_tw)/3600+Pcl_tw*tcl/3600+Pcr_tw*tcr/3600+Pdc_tw*tdc/3600+Phov_tw*tld/3600+Pres_tw*tres/3600;
+      const Etot_tw=(Phov_tw*(hvtol/0.5)+Ptrans_tw*ttrans_tw)/3600+Pcl_tw*tcl/3600+Pcr_tw*tcr/3600+Pdc_tw*tdc/3600+Phov_tw*tld/3600+Pres_tw*tres_s/3600;
       const sedEff_tw=p.sedCell*(1-(p.cRateDerate||0.08));
       const Wbat_tw=Etot_tw*1000*(1+p.socMin)/(sedEff_tw*p.etaBat);
       const mn=p.payload+p.ewf*m+Wbat_tw;
@@ -887,7 +897,7 @@ function generateReport(p, SR, branding={}) {
     row("Design Range","SR",p.range,"km"),
     row("Cruise Speed","V<sub>cr</sub>",p.vCruise,"m/s ("+fmt(p.vCruise*3.6,1)+" km/h)"),
     row("Cruise Altitude","h<sub>cr</sub>",p.cruiseAlt,"m"),
-    row("Reserve Range","SR<sub>res</sub>",p.reserveRange,"km"),
+    row("Reserve Time","t<sub>res,min</sub>",p.reserveMinutes||20,"min"),
     row("Hover Height","h<sub>hov</sub>",p.hoverHeight,"m"),
     row("L/D (design)","(L/D)<sub>des</sub>",p.LD,""),
     row("Wing AR","AR",p.AR,""),
@@ -1144,7 +1154,10 @@ function generateReport(p, SR, branding={}) {
   const hvtold=p.hoverHeight;
   const ClimbRd=(p.cruiseAlt-hvtold)/Math.tan(clAngd*Math.PI/180);
   const DescRd=(p.cruiseAlt-hvtold)/Math.tan(desAngd*Math.PI/180);
-  const CruiseRanged=p.range*1000-ClimbRd-DescRd-p.reserveRange*1000;
+  const reserveMinutesd=p.reserveMinutes||20;
+  const tres_sd=reserveMinutesd*60;
+  const reserveDistMd=Vresd*tres_sd;
+  const CruiseRanged=p.range*1000-ClimbRd-DescRd-reserveDistMd;
   const bfd=(g0d*p.range*1000)/(p.LD*p.etaSys*p.sedCell*3600);
   const lambdaFd=p.fusLen/p.fusDiam;
   const Swwd=2*SR.Swing*(1+0.25*p.tc*(1+p.taper*0.25));
@@ -1207,9 +1220,9 @@ function generateReport(p, SR, branding={}) {
   ${eq("V_{cl} = \\frac{\\dot{h}}{\\sin\\gamma_{cl}} = \\frac{"+RoCd+"}{\\sin("+clAngd+"^\\circ)} = "+fmt(Vcld,2)+"\\text{ m/s}","Climb speed from RoC and climb angle")}
   ${eq("(L/D)_{cl} = (L/D)_{cr}\\times 0.87 = "+p.LD+"\\times 0.87 = "+fmt(LDcld,3),"Climb L/D — 13% reduction for induced drag increase")}
   ${eq("\\gamma_{dc} = \\arctan\\!\\left(\\frac{1}{(L/D)}\\right) = "+fmt(desAngd,3)+"^\\circ, \\quad V_{dc} = \\frac{\\dot{h}}{\\sin\\gamma_{dc}} = "+fmt(Vdcd,2)+"\\text{ m/s}","Descent angle and speed")}
-  ${eq("V_{res} = 0.7\\,V_{cr} = 0.7\\times "+p.vCruise+" = "+fmt(Vresd,2)+"\\text{ m/s}","Reserve loiter speed")}
+  ${eq("V_{res} = 0.76\\,V_{cr} = 0.76\\times "+p.vCruise+" = "+fmt(Vresd,2)+"\\text{ m/s}","Reserve loiter speed (best-endurance, 0.76×cruise)")}
   ${eq("d_{cl} = \\frac{h_{cr}-h_{hov}}{\\tan\\gamma_{cl}} = "+fmt(ClimbRd,1)+"\\text{ m}, \\quad d_{dc} = \\frac{h_{cr}-h_{hov}}{\\tan\\gamma_{dc}} = "+fmt(DescRd,1)+"\\text{ m}","Climb and descent ground tracks")}
-  ${eq("d_{cr} = SR - d_{cl} - d_{dc} - R_{res} = "+p.range*1000+" - "+fmt(ClimbRd,1)+" - "+fmt(DescRd,1)+" - "+p.reserveRange*1000+" = "+fmt(CruiseRanged,1)+"\\text{ m}","Net cruise distance")}
+  ${eq("d_{cr} = SR - d_{cl} - d_{dc} - d_{res} = "+p.range*1000+" - "+fmt(ClimbRd,1)+" - "+fmt(DescRd,1)+" - "+fmt(reserveDistMd,1)+" = "+fmt(CruiseRanged,1)+"\\text{ m}","Net cruise distance")}
   <p><strong>Final converged iteration (MTOW = ${fmt(SR.MTOW,2)} kg):</strong></p>
   ${eq("DL = \\frac{\\text{MTOW}\\cdot g_0}{N_{rot}\\cdot A_{disk}} = \\frac{"+fmt(SR.MTOW,2)+"\\times 9.81}{"+p.nPropHover+"\\times\\pi("+fmt(p.propDiam/2,3)+")^2} = "+fmt(DLd,2)+"\\text{ N/m}^2","Disk loading")}
   ${eq("P_{hov} = \\frac{W}{\\eta_{hov}}\\sqrt{\\frac{DL}{2\\rho_{SL}}} \\div 1000 = \\frac{"+fmt(SR.MTOW*g0d,1)+"}{"+p.etaHov+"}\\sqrt{\\frac{"+fmt(DLd,2)+"}{2.45}} \\div 1000 = "+fmt(SR.Phov,2)+"\\text{ kW}","Hover power")}
@@ -1228,7 +1241,7 @@ function generateReport(p, SR, branding={}) {
   ${eq("t_{cr} = \\frac{d_{cr}}{V_{cr}} = \\frac{"+fmt(CruiseRanged,1)+"}{"+p.vCruise+"} = "+fmt(SR.tcr,0)+"\\text{ s}","Cruise duration")}
   ${eq("t_{dc} = \\frac{d_{dc}}{V_{dc}} = \\frac{"+fmt(DescRd,1)+"}{"+fmt(Vdcd,2)+"} = "+fmt(SR.tdc,0)+"\\text{ s}","Descent duration")}
   ${eq("t_{ld} = \\frac{h_{hov}}{0.5} = "+fmt(SR.tld,0)+"\\text{ s}","Landing hover time")}
-  ${eq("t_{res} = \\frac{R_{res}}{V_{res}} = \\frac{"+p.reserveRange*1000+"}{"+fmt(Vresd,2)+"} = "+fmt(SR.tres,0)+"\\text{ s}","Reserve duration")}
+  ${eq("t_{res} = t_{res,min} = "+reserveMinutesd+"\\text{ min} = "+tres_sd+"\\text{ s} \\quad (\\text{regulatory minimum, SC-VTOL VTOL.1035})","Reserve duration — time-based, not distance-based")}
   ${eq("T_{mission} = "+fmt(SR.tto,0)+"+"+fmt(SR.tcl,0)+"+"+fmt(SR.tcr,0)+"+"+fmt(SR.tdc,0)+"+"+fmt(SR.tld,0)+"+"+fmt(SR.tres,0)+" = "+fmt(SR.Tend,0)+"\\text{ s} = "+fmt(SR.Tend/60,1)+"\\text{ min}","Total mission time")}
   ${table(["Phase","Distance (m)","Speed (m/s)","Duration (s)","Duration (min)"],[
     row("Takeoff (hover)","Vertical "+hvtold+" m","0.5",fmt(SR.tto,0),fmt(SR.tto/60,1)),
@@ -1236,7 +1249,7 @@ function generateReport(p, SR, branding={}) {
     row("Cruise",fmt(CruiseRanged,1),p.vCruise,fmt(SR.tcr,0),fmt(SR.tcr/60,1)),
     row("Descent",fmt(DescRd,1),fmt(Vdcd,2),fmt(SR.tdc,0),fmt(SR.tdc/60,1)),
     row("Landing (hover)","Vertical "+hvtold+" m","0.5",fmt(SR.tld,0),fmt(SR.tld/60,1)),
-    row("Reserve",fmt(p.reserveRange*1000,0),fmt(Vresd,2),fmt(SR.tres,0),fmt(SR.tres/60,1)),
+    row("Reserve",fmt(reserveDistMd,0)+" ("+reserveMinutesd+" min)",fmt(Vresd,2),fmt(SR.tres,0),fmt(SR.tres/60,1)),
     row("<b>Total</b>","<b>"+fmt(p.range*1000,0)+" m</b>","—","<b>"+fmt(SR.Tend,0)+"</b>","<b>"+fmt(SR.Tend/60,1)+"</b>"),
   ])}
   `);
@@ -3030,6 +3043,7 @@ export default function App(){
   const[params,setParams]=useState({
     // ── Mission ──────────────────────────────────────────────────────────
     payload:455,range:250,vCruise:67,cruiseAlt:1000,reserveRange:60,hoverHeight:15.24,
+    reserveMinutes:20,  // regulatory reserve time (20 min VFR / 30 min IFR per SC-VTOL / FAR 27)
     // ── Aerodynamics (calibrated vs Joby S4 / Archer Midnight / NASA NDARC) ──
     LD:14,AR:9,eOsw:0.85,clDesign:0.55,taper:0.45,tc:0.15,
     // ── Propulsion ───────────────────────────────────────────────────────
@@ -3702,7 +3716,7 @@ export default function App(){
             <Slider label="Range" unit="km" value={params.range} min={50} max={500} step={10} onChange={set("range")}/>
             <Slider label="Cruise Speed" unit="m/s" value={params.vCruise} min={30} max={120} step={1} onChange={set("vCruise")} note={SR?`Mach ${SR.Mach}`:""}/>
             <Slider label="Cruise Altitude" unit="m" value={params.cruiseAlt} min={200} max={3000} step={50} onChange={set("cruiseAlt")}/>
-            <Slider label="Reserve Range" unit="km" value={params.reserveRange} min={20} max={120} step={5} onChange={set("reserveRange")}/>
+            <Slider label="Reserve Time" unit="min" value={params.reserveMinutes||20} min={20} max={45} step={5} onChange={set("reserveMinutes")} note="20 min VFR (SC-VTOL) · 30 min IFR"/>
             <Slider label="VTOL Height" unit="m" value={params.hoverHeight} min={10} max={50} step={0.5} onChange={set("hoverHeight")}/>
           </Acc>
           <Acc title="Aerodynamics" icon="✈️">
