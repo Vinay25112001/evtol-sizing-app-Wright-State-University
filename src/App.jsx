@@ -1679,19 +1679,19 @@ function generateReport(p, SR, branding={}) {
             ${h>14?`<text x="${(x+w/2).toFixed(1)}" y="${(y+h/2+3).toFixed(1)}" text-anchor="middle" font-size="7.5" fill="#fff" font-weight="bold" font-family="Arial,sans-serif">${ph.P.toFixed(0)}</text>`:''}`;
   });
   const yT_f=[0,0.25,0.5,0.75,1].map(t=>{const y=pT_f+cH_f*(1-t);const v=(maxP_f*t).toFixed(0);return `<line x1="${pL_f}" y1="${y.toFixed(1)}" x2="${(pL_f+cW_f).toFixed(1)}" y2="${y.toFixed(1)}" stroke="#e5e7eb" stroke-width="0.5"/><text x="${(pL_f-4).toFixed(1)}" y="${(y+3).toFixed(1)}" text-anchor="end" font-size="7" fill="#64748b" font-family="Arial,sans-serif">${v}</text>`;});
-  const svg_fig1=`<svg viewBox="0 0 500 ${pT_f+cH_f+pB_f}" xmlns="http://www.w3.org/2000/svg">${yT_f.join('')}${pBars_f.join('')}<line x1="${pL_f}" y1="${pT_f}" x2="${pL_f}" y2="${(pT_f+cH_f).toFixed(1)}" stroke="#374151" stroke-width="1"/><line x1="${pL_f}" y1="${(pT_f+cH_f).toFixed(1)}" x2="${(pL_f+cW_f).toFixed(1)}" y2="${(pT_f+cH_f).toFixed(1)}" stroke="#374151" stroke-width="1"/><text x="12" y="${(pT_f+cH_f/2).toFixed(0)}" text-anchor="middle" font-size="7.5" fill="#374151" font-family="Arial,sans-serif" transform="rotate(-90,12,${(pT_f+cH_f/2).toFixed(0)})">Power (kW)</text></svg>`;
+  const svg_fig1=`<svg viewBox="0 0 500 176" width="500" height="176" xmlns="http://www.w3.org/2000/svg">${yT_f.join('')}${pBars_f.join('')}<line x1="${pL_f}" y1="${pT_f}" x2="${pL_f}" y2="${(pT_f+cH_f).toFixed(1)}" stroke="#374151" stroke-width="1"/><line x1="${pL_f}" y1="${(pT_f+cH_f).toFixed(1)}" x2="${(pL_f+cW_f).toFixed(1)}" y2="${(pT_f+cH_f).toFixed(1)}" stroke="#374151" stroke-width="1"/><text x="12" y="${(pT_f+cH_f/2).toFixed(0)}" text-anchor="middle" font-size="7.5" fill="#374151" font-family="Arial,sans-serif" transform="rotate(-90,12,${(pT_f+cH_f/2).toFixed(0)})">Power (kW)</text></svg>`;
 
   // ── SVG Figure 2: Weight Breakdown ───────────────────────────────────
   const wSegs_f=[{lbl:"Payload",val:p.payload,col:"#16a34a"},{lbl:"Empty Weight",val:SR.Wempty,col:"#1e40af"},{lbl:"Battery",val:SR.Wbat,col:"#f59e0b"}];
   const Wtot_f=SR.MTOW||1; let xW_f=10;
   const wBars_f=wSegs_f.map(s=>{const w=460*(s.val/Wtot_f);const b=`<rect x="${xW_f.toFixed(1)}" y="14" width="${Math.max(1,w).toFixed(1)}" height="30" fill="${s.col}" opacity="0.9"/>${w>35?`<text x="${(xW_f+w/2).toFixed(1)}" y="32" text-anchor="middle" font-size="8" fill="#fff" font-weight="bold" font-family="Arial,sans-serif">${s.lbl}</text>`:''}${w>45?`<text x="${(xW_f+w/2).toFixed(1)}" y="55" text-anchor="middle" font-size="7.5" fill="#374151" font-family="Arial,sans-serif">${s.val.toFixed(0)} kg (${(s.val/Wtot_f*100).toFixed(1)}%)</text>`:''}`;xW_f+=w;return b;});
-  const svg_fig2=`<svg viewBox="0 0 480 68" xmlns="http://www.w3.org/2000/svg">${wBars_f.join('')}<rect x="10" y="14" width="460" height="30" fill="none" stroke="#374151" stroke-width="0.75"/></svg>`;
+  const svg_fig2=`<svg viewBox="0 0 480 68" width="480" height="68" xmlns="http://www.w3.org/2000/svg">${wBars_f.join('')}<rect x="10" y="14" width="460" height="30" fill="none" stroke="#374151" stroke-width="0.75"/></svg>`;
 
   // ── SVG Figure 3: Energy Breakdown ───────────────────────────────────
   const eSegs_f=[{lbl:"T/O",val:SR.Eto,col:"#f59e0b"},{lbl:"Climb",val:SR.Ecl,col:"#3b82f6"},{lbl:"Cruise",val:SR.Ecr,col:"#14b8a6"},{lbl:"Desc",val:SR.Edc,col:"#8b5cf6"},{lbl:"Land",val:SR.Eld,col:"#f97316"},{lbl:"Reserve",val:SR.Eres,col:"#ef4444"}];
   const Etot_f2=SR.Etot||1; let xE_f=10;
   const eBars_f=eSegs_f.map(s=>{const w=460*(s.val/Etot_f2);const b=`<rect x="${xE_f.toFixed(1)}" y="14" width="${Math.max(1,w).toFixed(1)}" height="30" fill="${s.col}" opacity="0.85"/>${w>28?`<text x="${(xE_f+w/2).toFixed(1)}" y="32" text-anchor="middle" font-size="7.5" fill="#fff" font-weight="bold" font-family="Arial,sans-serif">${s.lbl}</text>`:''}${w>38?`<text x="${(xE_f+w/2).toFixed(1)}" y="56" text-anchor="middle" font-size="7" fill="#374151" font-family="Arial,sans-serif">${s.val.toFixed(1)} kWh</text>`:''}`;xE_f+=Math.max(1,w);return b;});
-  const svg_fig3=`<svg viewBox="0 0 480 66" xmlns="http://www.w3.org/2000/svg">${eBars_f.join('')}<rect x="10" y="14" width="460" height="30" fill="none" stroke="#374151" stroke-width="0.75"/></svg>`;
+  const svg_fig3=`<svg viewBox="0 0 480 66" width="480" height="66" xmlns="http://www.w3.org/2000/svg">${eBars_f.join('')}<rect x="10" y="14" width="460" height="30" fill="none" stroke="#374151" stroke-width="0.75"/></svg>`;
 
   // ── SVG Figure 4: Drag Polar ──────────────────────────────────────────
   const pPts_f=(SR.polarData||[]).filter(d=>d.CL>=0&&d.CL<=1.6&&d.CD>0&&d.CD<0.12);
@@ -1703,7 +1703,7 @@ function generateReport(p, SR, branding={}) {
   const dp_x_f=px_f(SR.CDtot||0.036), dp_y_f=py_f(p.clDesign);
   const xT_p=[0,0.02,0.04,0.06,0.08].filter(v=>v<=maxCD_f).map(v=>{const x=px_f(v);return `<line x1="${x.toFixed(1)}" y1="${pT_p}" x2="${x.toFixed(1)}" y2="${(pT_p+cH_p).toFixed(1)}" stroke="#e5e7eb" stroke-width="0.5"/><text x="${x.toFixed(1)}" y="${(pT_p+cH_p+11).toFixed(1)}" text-anchor="middle" font-size="7" fill="#64748b" font-family="Arial,sans-serif">${v.toFixed(2)}</text>`;});
   const yT_p=[0,0.4,0.8,1.2,1.6].map(v=>{const y=py_f(v);return `<line x1="${pL_p}" y1="${y.toFixed(1)}" x2="${(pL_p+cW_p).toFixed(1)}" y2="${y.toFixed(1)}" stroke="#e5e7eb" stroke-width="0.5"/><text x="${(pL_p-4).toFixed(1)}" y="${(y+3).toFixed(1)}" text-anchor="end" font-size="7" fill="#64748b" font-family="Arial,sans-serif">${v.toFixed(1)}</text>`;});
-  const svg_fig4=`<svg viewBox="0 0 ${pL_p+cW_p+pR_p} ${pT_p+cH_p+pB_p}" xmlns="http://www.w3.org/2000/svg">${xT_p.join('')}${yT_p.join('')}${polLine?`<polyline points="${polLine}" fill="none" stroke="#1e40af" stroke-width="1.5"/>`:''}<circle cx="${dp_x_f.toFixed(1)}" cy="${dp_y_f.toFixed(1)}" r="4" fill="#f59e0b" stroke="#0f172a" stroke-width="1"/><text x="${(dp_x_f+7).toFixed(1)}" y="${(dp_y_f+4).toFixed(1)}" font-size="7.5" fill="#0f172a" font-family="Arial,sans-serif" font-weight="bold">Design point (CL=${p.clDesign}, L/D=${fmt(SR.LDact,1)})</text><line x1="${pL_p}" y1="${pT_p}" x2="${pL_p}" y2="${(pT_p+cH_p).toFixed(1)}" stroke="#374151" stroke-width="1"/><line x1="${pL_p}" y1="${(pT_p+cH_p).toFixed(1)}" x2="${(pL_p+cW_p).toFixed(1)}" y2="${(pT_p+cH_p).toFixed(1)}" stroke="#374151" stroke-width="1"/><text x="${(pL_p+cW_p/2).toFixed(0)}" y="${(pT_p+cH_p+24).toFixed(0)}" text-anchor="middle" font-size="8" fill="#374151" font-family="Arial,sans-serif">Drag Coefficient C&#x209F;</text><text x="12" y="${(pT_p+cH_p/2).toFixed(0)}" text-anchor="middle" font-size="8" fill="#374151" font-family="Arial,sans-serif" transform="rotate(-90,12,${(pT_p+cH_p/2).toFixed(0)})">Lift Coefficient C&#x2097;</text></svg>`;
+  const svg_fig4=`<svg viewBox="0 0 460 187" width="460" height="187" xmlns="http://www.w3.org/2000/svg">${xT_p.join('')}${yT_p.join('')}${polLine?`<polyline points="${polLine}" fill="none" stroke="#1e40af" stroke-width="1.5"/>`:''}<circle cx="${dp_x_f.toFixed(1)}" cy="${dp_y_f.toFixed(1)}" r="4" fill="#f59e0b" stroke="#0f172a" stroke-width="1"/><text x="${(dp_x_f+7).toFixed(1)}" y="${(dp_y_f+4).toFixed(1)}" font-size="7.5" fill="#0f172a" font-family="Arial,sans-serif" font-weight="bold">Design point (CL=${p.clDesign}, L/D=${fmt(SR.LDact,1)})</text><line x1="${pL_p}" y1="${pT_p}" x2="${pL_p}" y2="${(pT_p+cH_p).toFixed(1)}" stroke="#374151" stroke-width="1"/><line x1="${pL_p}" y1="${(pT_p+cH_p).toFixed(1)}" x2="${(pL_p+cW_p).toFixed(1)}" y2="${(pT_p+cH_p).toFixed(1)}" stroke="#374151" stroke-width="1"/><text x="${(pL_p+cW_p/2).toFixed(0)}" y="${(pT_p+cH_p+24).toFixed(0)}" text-anchor="middle" font-size="8" fill="#374151" font-family="Arial,sans-serif">Drag Coefficient C&#x209F;</text><text x="12" y="${(pT_p+cH_p/2).toFixed(0)}" text-anchor="middle" font-size="8" fill="#374151" font-family="Arial,sans-serif" transform="rotate(-90,12,${(pT_p+cH_p/2).toFixed(0)})">Lift Coefficient C&#x2097;</text></svg>`;
 
   // ── SVG Figure 5: V-n Envelope ────────────────────────────────────────
   const Vstall_f=SR.Vstall||20, VA_f=SR.VA||(SR.Vstall*Math.sqrt(3.5)||28), VD_f=SR.VD||(p.vCruise*1.25);
@@ -1717,7 +1717,7 @@ function generateReport(p, SR, branding={}) {
   const mNeg_f=Array.from({length:25},(_,i)=>{const v=i/24*(VD_f*0.9);const n=Math.max(nNeg_f,-0.5*rho_vf*v*v*CLmax_n2/WL_f);return `${vx_f(v).toFixed(1)},${ny_f(n).toFixed(1)}`;}).join(' ');
   const vTck_f=[0,20,40,60,80,Math.round(VD_f)].filter((v,i,a)=>v<=Vmx_f&&a.indexOf(v)===i).map(v=>{const x=vx_f(v);return `<line x1="${x.toFixed(1)}" y1="${pT_v}" x2="${x.toFixed(1)}" y2="${(pT_v+cH_v).toFixed(1)}" stroke="#e5e7eb" stroke-width="0.5"/><text x="${x.toFixed(1)}" y="${(pT_v+cH_v+12).toFixed(1)}" text-anchor="middle" font-size="7" fill="#64748b" font-family="Arial,sans-serif">${v}</text>`;});
   const nTck_f=[-1.5,-1,0,1,2,3,3.5].map(n=>{const y=ny_f(n);return `<line x1="${pL_v}" y1="${y.toFixed(1)}" x2="${(pL_v+cW_v).toFixed(1)}" y2="${y.toFixed(1)}" stroke="${n===0?'#374151':'#e5e7eb'}" stroke-width="${n===0?0.8:0.5}"/><text x="${(pL_v-4).toFixed(1)}" y="${(y+3).toFixed(1)}" text-anchor="end" font-size="7" fill="#64748b" font-family="Arial,sans-serif">${n}</text>`;});
-  const svg_fig5=`<svg viewBox="0 0 ${pL_v+cW_v+15} ${pT_v+cH_v+pB_v}" xmlns="http://www.w3.org/2000/svg">${vTck_f.join('')}${nTck_f.join('')}<polyline points="${mPts_f}" fill="none" stroke="#1e40af" stroke-width="1.5"/><line x1="${vx_f(VA_f).toFixed(1)}" y1="${ny_f(nPos_f).toFixed(1)}" x2="${vx_f(VD_f).toFixed(1)}" y2="${ny_f(nPos_f).toFixed(1)}" stroke="#1e40af" stroke-width="1.5"/><line x1="${vx_f(VD_f).toFixed(1)}" y1="${ny_f(nPos_f).toFixed(1)}" x2="${vx_f(VD_f).toFixed(1)}" y2="${ny_f(0).toFixed(1)}" stroke="#1e40af" stroke-width="1.5"/><polyline points="${mNeg_f}" fill="none" stroke="#dc2626" stroke-width="1.2" stroke-dasharray="4,2"/><line x1="${vx_f(Vstall_f).toFixed(1)}" y1="${ny_f(nNeg_f).toFixed(1)}" x2="${vx_f(VD_f).toFixed(1)}" y2="${ny_f(nNeg_f).toFixed(1)}" stroke="#dc2626" stroke-width="1.2" stroke-dasharray="4,2"/><text x="${(vx_f(VA_f)+3).toFixed(1)}" y="${(ny_f(nPos_f)-4).toFixed(1)}" font-size="7" fill="#1e40af" font-family="Arial,sans-serif">VA=${VA_f.toFixed(0)} m/s</text><text x="${(vx_f(VD_f)-2).toFixed(1)}" y="${(ny_f(nPos_f)-4).toFixed(1)}" text-anchor="end" font-size="7" fill="#1e40af" font-family="Arial,sans-serif">VD=${VD_f.toFixed(0)}</text><line x1="${pL_v}" y1="${pT_v}" x2="${pL_v}" y2="${(pT_v+cH_v).toFixed(1)}" stroke="#374151" stroke-width="1"/><line x1="${pL_v}" y1="${(pT_v+cH_v).toFixed(1)}" x2="${(pL_v+cW_v).toFixed(1)}" y2="${(pT_v+cH_v).toFixed(1)}" stroke="#374151" stroke-width="1"/><text x="${(pL_v+cW_v/2).toFixed(0)}" y="${(pT_v+cH_v+24).toFixed(0)}" text-anchor="middle" font-size="8" fill="#374151" font-family="Arial,sans-serif">Equivalent Airspeed (m/s)</text><text x="12" y="${(pT_v+cH_v/2).toFixed(0)}" text-anchor="middle" font-size="8" fill="#374151" font-family="Arial,sans-serif" transform="rotate(-90,12,${(pT_v+cH_v/2).toFixed(0)})">Load Factor n (g)</text></svg>`;
+  const svg_fig5=`<svg viewBox="0 0 480 197" width="480" height="197" xmlns="http://www.w3.org/2000/svg">${vTck_f.join('')}${nTck_f.join('')}<polyline points="${mPts_f}" fill="none" stroke="#1e40af" stroke-width="1.5"/><line x1="${vx_f(VA_f).toFixed(1)}" y1="${ny_f(nPos_f).toFixed(1)}" x2="${vx_f(VD_f).toFixed(1)}" y2="${ny_f(nPos_f).toFixed(1)}" stroke="#1e40af" stroke-width="1.5"/><line x1="${vx_f(VD_f).toFixed(1)}" y1="${ny_f(nPos_f).toFixed(1)}" x2="${vx_f(VD_f).toFixed(1)}" y2="${ny_f(0).toFixed(1)}" stroke="#1e40af" stroke-width="1.5"/><polyline points="${mNeg_f}" fill="none" stroke="#dc2626" stroke-width="1.2" stroke-dasharray="4,2"/><line x1="${vx_f(Vstall_f).toFixed(1)}" y1="${ny_f(nNeg_f).toFixed(1)}" x2="${vx_f(VD_f).toFixed(1)}" y2="${ny_f(nNeg_f).toFixed(1)}" stroke="#dc2626" stroke-width="1.2" stroke-dasharray="4,2"/><text x="${(vx_f(VA_f)+3).toFixed(1)}" y="${(ny_f(nPos_f)-4).toFixed(1)}" font-size="7" fill="#1e40af" font-family="Arial,sans-serif">VA=${VA_f.toFixed(0)} m/s</text><text x="${(vx_f(VD_f)-2).toFixed(1)}" y="${(ny_f(nPos_f)-4).toFixed(1)}" text-anchor="end" font-size="7" fill="#1e40af" font-family="Arial,sans-serif">VD=${VD_f.toFixed(0)}</text><line x1="${pL_v}" y1="${pT_v}" x2="${pL_v}" y2="${(pT_v+cH_v).toFixed(1)}" stroke="#374151" stroke-width="1"/><line x1="${pL_v}" y1="${(pT_v+cH_v).toFixed(1)}" x2="${(pL_v+cW_v).toFixed(1)}" y2="${(pT_v+cH_v).toFixed(1)}" stroke="#374151" stroke-width="1"/><text x="${(pL_v+cW_v/2).toFixed(0)}" y="${(pT_v+cH_v+24).toFixed(0)}" text-anchor="middle" font-size="8" fill="#374151" font-family="Arial,sans-serif">Equivalent Airspeed (m/s)</text><text x="12" y="${(pT_v+cH_v/2).toFixed(0)}" text-anchor="middle" font-size="8" fill="#374151" font-family="Arial,sans-serif" transform="rotate(-90,12,${(pT_v+cH_v/2).toFixed(0)})">Load Factor n (g)</text></svg>`;
 
   // ── SVG Figure 6: Noise Propagation ──────────────────────────────────
   const nDists_f=[1,5,10,25,50,100,150,200,300,500];
@@ -1730,7 +1730,7 @@ function generateReport(p, SR, branding={}) {
   const rTck_f=[1,10,50,150,500].map(r=>{const x=nx_f(r);return `<line x1="${x.toFixed(1)}" y1="${pT_n}" x2="${x.toFixed(1)}" y2="${(pT_n+cH_n).toFixed(1)}" stroke="#e5e7eb" stroke-width="0.5"/><text x="${x.toFixed(1)}" y="${(pT_n+cH_n+12).toFixed(1)}" text-anchor="middle" font-size="7" fill="#64748b" font-family="Arial,sans-serif">${r}m</text>`;});
   const dT_f=[40,50,60,70,80,90].filter(v=>v>=25&&v<=(SR.dBA_1m||100)).map(v=>{const y=ny_n2(v);return `<line x1="${pL_n}" y1="${y.toFixed(1)}" x2="${(pL_n+cW_n).toFixed(1)}" y2="${y.toFixed(1)}" stroke="#e5e7eb" stroke-width="0.5"/><text x="${(pL_n-4).toFixed(1)}" y="${(y+3).toFixed(1)}" text-anchor="end" font-size="7" fill="#64748b" font-family="Arial,sans-serif">${v}</text>`;});
   const y65_f=ny_n2(65);
-  const svg_fig6=`<svg viewBox="0 0 ${pL_n+cW_n+15} ${pT_n+cH_n+pB_n}" xmlns="http://www.w3.org/2000/svg">${rTck_f.join('')}${dT_f.join('')}<polyline points="${nLine_f}" fill="none" stroke="#1e40af" stroke-width="2"/>${nPts_f.map(d=>`<circle cx="${nx_f(d.r).toFixed(1)}" cy="${ny_n2(d.dBA).toFixed(1)}" r="2.5" fill="#1e40af"/>`).join('')}<line x1="${pL_n}" y1="${y65_f.toFixed(1)}" x2="${(pL_n+cW_n).toFixed(1)}" y2="${y65_f.toFixed(1)}" stroke="#dc2626" stroke-width="1.2" stroke-dasharray="5,3"/><text x="${(pL_n+cW_n-2).toFixed(1)}" y="${(y65_f-4).toFixed(1)}" text-anchor="end" font-size="7.5" fill="#dc2626" font-family="Arial,sans-serif">EASA limit 65 dBA</text><line x1="${pL_n}" y1="${pT_n}" x2="${pL_n}" y2="${(pT_n+cH_n).toFixed(1)}" stroke="#374151" stroke-width="1"/><line x1="${pL_n}" y1="${(pT_n+cH_n).toFixed(1)}" x2="${(pL_n+cW_n).toFixed(1)}" y2="${(pT_n+cH_n).toFixed(1)}" stroke="#374151" stroke-width="1"/><text x="${(pL_n+cW_n/2).toFixed(0)}" y="${(pT_n+cH_n+24).toFixed(0)}" text-anchor="middle" font-size="8" fill="#374151" font-family="Arial,sans-serif">Distance from source — log scale (m)</text><text x="12" y="${(pT_n+cH_n/2).toFixed(0)}" text-anchor="middle" font-size="8" fill="#374151" font-family="Arial,sans-serif" transform="rotate(-90,12,${(pT_n+cH_n/2).toFixed(0)})">A-weighted SPL (dBA)</text></svg>`;
+  const svg_fig6=`<svg viewBox="0 0 480 187" width="480" height="187" xmlns="http://www.w3.org/2000/svg">${rTck_f.join('')}${dT_f.join('')}<polyline points="${nLine_f}" fill="none" stroke="#1e40af" stroke-width="2"/>${nPts_f.map(d=>`<circle cx="${nx_f(d.r).toFixed(1)}" cy="${ny_n2(d.dBA).toFixed(1)}" r="2.5" fill="#1e40af"/>`).join('')}<line x1="${pL_n}" y1="${y65_f.toFixed(1)}" x2="${(pL_n+cW_n).toFixed(1)}" y2="${y65_f.toFixed(1)}" stroke="#dc2626" stroke-width="1.2" stroke-dasharray="5,3"/><text x="${(pL_n+cW_n-2).toFixed(1)}" y="${(y65_f-4).toFixed(1)}" text-anchor="end" font-size="7.5" fill="#dc2626" font-family="Arial,sans-serif">EASA limit 65 dBA</text><line x1="${pL_n}" y1="${pT_n}" x2="${pL_n}" y2="${(pT_n+cH_n).toFixed(1)}" stroke="#374151" stroke-width="1"/><line x1="${pL_n}" y1="${(pT_n+cH_n).toFixed(1)}" x2="${(pL_n+cW_n).toFixed(1)}" y2="${(pT_n+cH_n).toFixed(1)}" stroke="#374151" stroke-width="1"/><text x="${(pL_n+cW_n/2).toFixed(0)}" y="${(pT_n+cH_n+24).toFixed(0)}" text-anchor="middle" font-size="8" fill="#374151" font-family="Arial,sans-serif">Distance from source — log scale (m)</text><text x="12" y="${(pT_n+cH_n/2).toFixed(0)}" text-anchor="middle" font-size="8" fill="#374151" font-family="Arial,sans-serif" transform="rotate(-90,12,${(pT_n+cH_n/2).toFixed(0)})">A-weighted SPL (dBA)</text></svg>`;
 
   // ── SVG Figure 7: Battery SoH Degradation ────────────────────────────
   const shPts_f=Array.from({length:21},(_,i)=>{const c=i*900/20;const s=Math.max(60,100-20*Math.pow(c/900,0.8));return{c,s};});
@@ -1741,7 +1741,7 @@ function generateReport(p, SR, branding={}) {
   const y80_f=sy_f(80);
   const shXT=[0,200,400,600,800,900].map(c=>{const x=sx_f(c);return `<line x1="${x.toFixed(1)}" y1="${pT_sh}" x2="${x.toFixed(1)}" y2="${(pT_sh+cH_sh).toFixed(1)}" stroke="#e5e7eb" stroke-width="0.5"/><text x="${x.toFixed(1)}" y="${(pT_sh+cH_sh+12).toFixed(1)}" text-anchor="middle" font-size="7" fill="#64748b" font-family="Arial,sans-serif">${c}</text>`;});
   const shYT=[60,70,80,90,100].map(s=>{const y=sy_f(s);return `<line x1="${pL_sh}" y1="${y.toFixed(1)}" x2="${(pL_sh+cW_sh).toFixed(1)}" y2="${y.toFixed(1)}" stroke="#e5e7eb" stroke-width="0.5"/><text x="${(pL_sh-4).toFixed(1)}" y="${(y+3).toFixed(1)}" text-anchor="end" font-size="7" fill="#64748b" font-family="Arial,sans-serif">${s}%</text>`;});
-  const svg_fig7=`<svg viewBox="0 0 ${pL_sh+cW_sh+15} ${pT_sh+cH_sh+pB_sh}" xmlns="http://www.w3.org/2000/svg">${shXT.join('')}${shYT.join('')}<polyline points="${shLine_f}" fill="none" stroke="#1e40af" stroke-width="2"/><line x1="${pL_sh}" y1="${y80_f.toFixed(1)}" x2="${(pL_sh+cW_sh).toFixed(1)}" y2="${y80_f.toFixed(1)}" stroke="#dc2626" stroke-width="1.2" stroke-dasharray="5,3"/><text x="${(pL_sh+cW_sh-2).toFixed(1)}" y="${(y80_f-4).toFixed(1)}" text-anchor="end" font-size="7.5" fill="#dc2626" font-family="Arial,sans-serif">80% SoH → replacement threshold</text><line x1="${pL_sh}" y1="${pT_sh}" x2="${pL_sh}" y2="${(pT_sh+cH_sh).toFixed(1)}" stroke="#374151" stroke-width="1"/><line x1="${pL_sh}" y1="${(pT_sh+cH_sh).toFixed(1)}" x2="${(pL_sh+cW_sh).toFixed(1)}" y2="${(pT_sh+cH_sh).toFixed(1)}" stroke="#374151" stroke-width="1"/><text x="${(pL_sh+cW_sh/2).toFixed(0)}" y="${(pT_sh+cH_sh+24).toFixed(0)}" text-anchor="middle" font-size="8" fill="#374151" font-family="Arial,sans-serif">Charge Cycle Count</text><text x="12" y="${(pT_sh+cH_sh/2).toFixed(0)}" text-anchor="middle" font-size="8" fill="#374151" font-family="Arial,sans-serif" transform="rotate(-90,12,${(pT_sh+cH_sh/2).toFixed(0)})">State of Health (%)</text></svg>`;
+  const svg_fig7=`<svg viewBox="0 0 480 177" width="480" height="177" xmlns="http://www.w3.org/2000/svg">${shXT.join('')}${shYT.join('')}<polyline points="${shLine_f}" fill="none" stroke="#1e40af" stroke-width="2"/><line x1="${pL_sh}" y1="${y80_f.toFixed(1)}" x2="${(pL_sh+cW_sh).toFixed(1)}" y2="${y80_f.toFixed(1)}" stroke="#dc2626" stroke-width="1.2" stroke-dasharray="5,3"/><text x="${(pL_sh+cW_sh-2).toFixed(1)}" y="${(y80_f-4).toFixed(1)}" text-anchor="end" font-size="7.5" fill="#dc2626" font-family="Arial,sans-serif">80% SoH → replacement threshold</text><line x1="${pL_sh}" y1="${pT_sh}" x2="${pL_sh}" y2="${(pT_sh+cH_sh).toFixed(1)}" stroke="#374151" stroke-width="1"/><line x1="${pL_sh}" y1="${(pT_sh+cH_sh).toFixed(1)}" x2="${(pL_sh+cW_sh).toFixed(1)}" y2="${(pT_sh+cH_sh).toFixed(1)}" stroke="#374151" stroke-width="1"/><text x="${(pL_sh+cW_sh/2).toFixed(0)}" y="${(pT_sh+cH_sh+24).toFixed(0)}" text-anchor="middle" font-size="8" fill="#374151" font-family="Arial,sans-serif">Charge Cycle Count</text><text x="12" y="${(pT_sh+cH_sh/2).toFixed(0)}" text-anchor="middle" font-size="8" fill="#374151" font-family="Arial,sans-serif" transform="rotate(-90,12,${(pT_sh+cH_sh/2).toFixed(0)})">State of Health (%)</text></svg>`;
 
   // ── SVG Figure 8: MTOW Convergence History ────────────────────────────
   const cvD_f=(SR.convData||[]).slice(0,40).filter(d=>isFinite(d.MTOW));
@@ -1753,7 +1753,7 @@ function generateReport(p, SR, branding={}) {
   const cvy_f=(m)=>pT_cv+cH_cv*(1-(m-cvMin_f)/cvRange_f);
   const cvLine_f=cvD_f.map((d,i)=>`${cvx_f(i).toFixed(1)},${cvy_f(d.MTOW).toFixed(1)}`).join(' ');
   const cvYT=[0,0.25,0.5,0.75,1].map(t=>{const y=pT_cv+cH_cv*(1-t);const v=(cvMin_f+cvRange_f*t).toFixed(0);return `<line x1="${pL_cv}" y1="${y.toFixed(1)}" x2="${(pL_cv+cW_cv).toFixed(1)}" y2="${y.toFixed(1)}" stroke="#e5e7eb" stroke-width="0.5"/><text x="${(pL_cv-4).toFixed(1)}" y="${(y+3).toFixed(1)}" text-anchor="end" font-size="7" fill="#64748b" font-family="Arial,sans-serif">${v}</text>`;});
-  const svg_fig8=`<svg viewBox="0 0 ${pL_cv+cW_cv+15} ${pT_cv+cH_cv+pB_cv}" xmlns="http://www.w3.org/2000/svg">${cvYT.join('')}${cvLine_f?`<polyline points="${cvLine_f}" fill="none" stroke="#1e40af" stroke-width="1.5"/>${cvD_f.map((d,i)=>`<circle cx="${cvx_f(i).toFixed(1)}" cy="${cvy_f(d.MTOW).toFixed(1)}" r="2" fill="#f59e0b"/>`).join('')}`:'<text x="245" y="70" text-anchor="middle" font-size="9" fill="#64748b" font-family="Arial,sans-serif">History not available</text>'}<line x1="${pL_cv}" y1="${pT_cv}" x2="${pL_cv}" y2="${(pT_cv+cH_cv).toFixed(1)}" stroke="#374151" stroke-width="1"/><line x1="${pL_cv}" y1="${(pT_cv+cH_cv).toFixed(1)}" x2="${(pL_cv+cW_cv).toFixed(1)}" y2="${(pT_cv+cH_cv).toFixed(1)}" stroke="#374151" stroke-width="1"/><text x="${(pL_cv+cW_cv/2).toFixed(0)}" y="${(pT_cv+cH_cv+24).toFixed(0)}" text-anchor="middle" font-size="8" fill="#374151" font-family="Arial,sans-serif">Iteration Number</text><text x="12" y="${(pT_cv+cH_cv/2).toFixed(0)}" text-anchor="middle" font-size="8" fill="#374151" font-family="Arial,sans-serif" transform="rotate(-90,12,${(pT_cv+cH_cv/2).toFixed(0)})">MTOW (kg)</text></svg>`;
+  const svg_fig8=`<svg viewBox="0 0 490 167" width="490" height="167" xmlns="http://www.w3.org/2000/svg">${cvYT.join('')}${cvLine_f?`<polyline points="${cvLine_f}" fill="none" stroke="#1e40af" stroke-width="1.5"/>${cvD_f.map((d,i)=>`<circle cx="${cvx_f(i).toFixed(1)}" cy="${cvy_f(d.MTOW).toFixed(1)}" r="2" fill="#f59e0b"/>`).join('')}`:'<text x="245" y="70" text-anchor="middle" font-size="9" fill="#64748b" font-family="Arial,sans-serif">History not available</text>'}<line x1="${pL_cv}" y1="${pT_cv}" x2="${pL_cv}" y2="${(pT_cv+cH_cv).toFixed(1)}" stroke="#374151" stroke-width="1"/><line x1="${pL_cv}" y1="${(pT_cv+cH_cv).toFixed(1)}" x2="${(pL_cv+cW_cv).toFixed(1)}" y2="${(pT_cv+cH_cv).toFixed(1)}" stroke="#374151" stroke-width="1"/><text x="${(pL_cv+cW_cv/2).toFixed(0)}" y="${(pT_cv+cH_cv+24).toFixed(0)}" text-anchor="middle" font-size="8" fill="#374151" font-family="Arial,sans-serif">Iteration Number</text><text x="12" y="${(pT_cv+cH_cv/2).toFixed(0)}" text-anchor="middle" font-size="8" fill="#374151" font-family="Arial,sans-serif" transform="rotate(-90,12,${(pT_cv+cH_cv/2).toFixed(0)})">MTOW (kg)</text></svg>`;
 
   // ── Front matter ──────────────────────────────────────────────────────
   const tocRows=[
@@ -1772,14 +1772,14 @@ function generateReport(p, SR, branding={}) {
     ["A","D11: Direct Operating Cost Model","27"],["A","D12: BEM Rotor Analysis","29"],
   ];
   const lofRows=[
-    ["1","Mission power by phase — bar chart (kW)","§4"],
-    ["2","Weight breakdown — Payload / Empty / Battery","§3"],
-    ["3","Mission energy breakdown by phase (kWh)","§4"],
-    ["4","Wing drag polar — C\\u2097 vs C\\u209f with design point","§5"],
-    ["5","V-n envelope — CS-23 Amd 5 / FAR 23","§11"],
-    ["6","Noise propagation vs distance — ISO 9613-1","D10"],
-    ["7","Battery state-of-health degradation (NREL power-law)","D8"],
-    ["8","MTOW convergence history — Round 2 iterations","D2"],
+    ["1","MTOW convergence history — Round 2 iterative loop","D2"],
+    ["2","Weight breakdown — Payload / Empty Weight / Battery","§3"],
+    ["3","Mission power profile by phase — bar chart (kW)","§4"],
+    ["4","Mission energy breakdown by phase (kWh)","§4"],
+    ["5","Wing drag polar — C&#x2097; vs C&#x209F; with design point","§5"],
+    ["6","Battery state-of-health degradation — NREL power-law","D8"],
+    ["7","V-n envelope — CS-23 Amendment 5 / FAR Part 23","§11"],
+    ["8","Noise propagation vs distance — ISO 9613-1 + EASA limit","D10"],
   ];
   const lotRows=[
     ["1","Design Inputs & Mission Parameters","§1"],
@@ -1840,14 +1840,15 @@ function generateReport(p, SR, branding={}) {
 
   const toc_pg=`<div class="fm-page">
   <h1 class="fm-heading">Table of Contents</h1>
-  <table style="width:100%;border-collapse:collapse">
+  <table style="width:100%;border-collapse:collapse;table-layout:fixed">
   ${tocRows.map(([num,title,pg])=>`
-    <tr style="${num==='A'?'':''}">
-      <td style="padding:4px 0;font-size:9.5pt;color:${num===''?'#475569':'#0f172a'};${num==='A'?'padding-left:18px;font-size:9pt;color:#475569':''}">
-        ${num&&num!=='A'?`<strong>${num}.</strong>&nbsp;`:num==='A'?'App.&nbsp;':''}${title}
+    <tr>
+      <td style="padding:3px 0;font-size:9.5pt;white-space:nowrap;width:auto;padding-right:8px;
+        color:${num===''?'#475569':'#0f172a'};${num==='A'?'padding-left:16px;font-size:9pt;color:#475569':''}">
+        ${num&&num!=='A'?`<strong>${num}.</strong>&ensp;`:num==='A'?'App.&ensp;':'&ensp;&ensp;'}${title}
       </td>
-      <td style="border-bottom:1px dotted #cbd5e1;width:100%"></td>
-      <td style="padding:4px 0 4px 8px;font-size:9.5pt;color:#64748b;white-space:nowrap;font-family:monospace">${pg}</td>
+      <td style="border-bottom:1px dotted #cbd5e1"></td>
+      <td style="padding:3px 0 3px 10px;font-size:9.5pt;color:#374151;white-space:nowrap;text-align:right;width:32px">${pg}</td>
     </tr>`).join('')}
   </table>
 </div>`;
@@ -1911,6 +1912,11 @@ function generateReport(p, SR, branding={}) {
     <li>GAMA, <em>Statistical Databook and Industry Outlook</em>, 2023.</li>
   </ol>
 </section>`;
+
+  // Pre-compute values used in figure captions (can't use ${} inside "..." caption strings)
+  const _convExp  = String(p.convTolExp || -6);
+  const _mtowFmt  = fmt(SR.MTOW, 1);
+  const _resPct   = fmt(SR.Eres / SR.Etot * 100, 1);
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -1995,9 +2001,9 @@ p{color:#374151;margin-bottom:9px;font-size:9.5pt;text-align:justify}
 .check-table tr.ok{background:#f0fdf4}
 .check-table tr.fail{background:#fef2f2}
 /* ── Figures ──────────────────────────────────────────────────── */
-.report-figure{margin:14px 0 18px;text-align:center}
-.fig-inner{display:inline-block;background:#fafbff;border:0.75px solid #dde3ef;border-radius:5px;padding:10px 14px}
-.fig-inner svg{display:block;max-width:100%;height:auto}
+.report-figure{margin:14px 0 18px;text-align:center;page-break-inside:avoid}
+.fig-inner{display:block;width:100%;background:#fafbff;border:0.75px solid #dde3ef;border-radius:5px;padding:10px 14px;overflow:hidden}
+.fig-inner svg{display:block;width:100%;height:auto;max-height:220px}
 figcaption{font-size:8.5pt;color:#374151;margin-top:7px;font-style:italic;text-align:center}
 figcaption strong{font-style:normal;color:#0f172a}
 /* ── References ───────────────────────────────────────────────── */
@@ -2014,13 +2020,13 @@ ${abstract_pg}
 ${toc_pg}
 ${lof_pg}
 </div>
-${s1}${s2}${sd1}${sd2}${fig(8,"MTOW convergence history — Round 2 iterative loop. Each point is one full energy–weight evaluation. Convergence to ε=10<sup>${p.convTolExp||−6}</sup> kg.",svg_fig8)}
-${s3}${fig(2,"Weight breakdown showing Payload, Empty Weight, and Battery mass fractions at converged MTOW = ${fmt(SR.MTOW,1)} kg.",svg_fig2)}
-${sd3}${sd4}${s4}${fig(1,"Mission power profile for each flight phase. Bar width is proportional to phase duration; label shows power in kW.",svg_fig1)}${fig(3,"Mission energy breakdown by phase (kWh). Reserve constitutes ${fmt(SR.Eres/SR.Etot*100,1)}% of total mission energy.",svg_fig3)}
-${sd5}${s5}${fig(4,"Wing drag polar (C<sub>L</sub> vs C<sub>D</sub>) computed from Raymer component buildup. Amber circle = cruise design point.",svg_fig4)}
-${sd6}${s6}${sd7}${s7}${sd8}${fig(7,"Battery state-of-health degradation model (NREL 2023 power-law). Red dashed line = 80% SoH end-of-life replacement threshold.",svg_fig7)}
-${s8}${sd9}${s9}${s10}${s_vn}${fig(5,"V-n envelope diagram per CS-23 Amendment 5 / FAR Part 23. Blue = positive maneuver envelope; red dashed = negative limit.",svg_fig5)}
-${sd10}${fig(6,"Noise propagation vs distance — ISO 9613-1 spherical spreading + atmospheric absorption + ground reflection. Red dashed = EASA 65 dBA UAM target.",svg_fig6)}
+${s1}${s2}${sd1}${sd2}${fig(1,"MTOW convergence history — Round 2 iterative loop. Each point is one full energy-weight evaluation. Convergence to \u03b5=10<sup>"+_convExp+"</sup> kg.",svg_fig8)}
+${s3}${fig(2,"Weight breakdown showing Payload, Empty Weight and Battery mass fractions at converged MTOW = "+_mtowFmt+" kg.",svg_fig2)}
+${sd3}${sd4}${s4}${fig(3,"Mission power profile for each flight phase. Bar width proportional to phase duration; label shows power in kW.",svg_fig1)}${fig(4,"Mission energy breakdown by phase (kWh). Reserve constitutes "+_resPct+"% of total mission energy.",svg_fig3)}
+${sd5}${s5}${fig(5,"Wing drag polar (C<sub>L</sub> vs C<sub>D</sub>) computed from Raymer component buildup. Amber circle = cruise design point.",svg_fig4)}
+${sd6}${s6}${sd7}${s7}${sd8}${fig(6,"Battery state-of-health degradation model (NREL 2023 power-law). Red dashed line = 80% SoH end-of-life replacement threshold.",svg_fig7)}
+${s8}${sd9}${s9}${s10}${s_vn}${fig(7,"V-n envelope diagram per CS-23 Amendment 5 / FAR Part 23. Blue = positive maneuver envelope; red dashed = negative load limit.",svg_fig5)}
+${sd10}${fig(8,"Noise propagation vs distance — ISO 9613-1 spherical spreading + atmospheric absorption + ground reflection. Red dashed = EASA 65 dBA UAM target.",svg_fig6)}
 ${sd11}${sd12}
 ${benchmarks_sec}
 ${references_sec}
