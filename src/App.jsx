@@ -3155,6 +3155,11 @@ function DesignSpacePanel({ params, SC, TTP, runSizingFn, onApply }) {
             emptyFrac:+(R.Wempty/R.MTOW*100).toFixed(1),
             SEDpack:+R.SEDpack.toFixed(1),
             feasible:R.feasible, pareto:false,
+            // Full-precision params for exact replay — avoids rounding mismatch on click
+            _params:{
+              range:pS.range, payload:pS.payload, LD:pS.LD, sedCell:pS.sedCell,
+              ewf:pS.ewf, AR:pS.AR, etaHov:pS.etaHov, etaSys:pS.etaSys,
+            },
           });
         } catch {}
       }
@@ -3311,8 +3316,8 @@ function DesignSpacePanel({ params, SC, TTP, runSizingFn, onApply }) {
                       // Recharts Scatter onClick: actual point is in data.payload (not data directly)
                       const pt = data?.payload ?? data;
                       if(!pt||pt.range==null) return;
-                      onApply(pt);
-                      // Use a unique fingerprint of the point as applied key
+                      // Use _params (full precision) for exact MTOW replay, fall back to display values
+                      onApply(pt._params || pt);
                       setApplied(`${pt.range}_${pt.payload}_${pt.MTOW}`);
                     }:undefined}
                     shape={(props)=>{
@@ -3344,7 +3349,7 @@ function DesignSpacePanel({ params, SC, TTP, runSizingFn, onApply }) {
                 <thead><tr style={{background:SC.bg}}>{["Range km","Payload kg","MTOW kg","Energy kWh","L/D","Bat%"].map(h=><th key={h} style={{padding:"5px 8px",textAlign:"right",color:SC.muted,fontWeight:700,borderBottom:`1px solid ${SC.border}`}}>{h}</th>)}</tr></thead>
                 <tbody>{results.pts.filter(p=>p.pareto).sort((a,b)=>b.range-a.range).slice(0,10).map((pt,i)=>(
                   <tr key={i} onClick={onApply?()=>{
-                    onApply(pt);
+                    onApply(pt._params || pt);
                     setApplied(`${pt.range}_${pt.payload}_${pt.MTOW}`);
                   }:undefined}
                   style={{background:i%2===0?"#f59e0b08":"transparent",cursor:onApply?"pointer":"default"}}
@@ -8115,14 +8120,14 @@ export default function App(){
                 <DesignSpacePanel params={params} SC={SC} TTP={TTP} runSizingFn={runSizing}
                   onApply={pt=>setParams(prev=>({
                     ...prev,
-                    range:    +Number(pt.range).toFixed(1),
-                    payload:  Math.round(Number(pt.payload)),
-                    LD:       +Number(pt.LD).toFixed(2),
-                    sedCell:  Math.round(Number(pt.sedCell)),
-                    ewf:      +Number(pt.ewf).toFixed(3),
-                    AR:       +Number(pt.AR).toFixed(1),
-                    etaHov:   +Number(pt.etaHov).toFixed(3),
-                    etaSys:   +Number(pt.etaSys).toFixed(3),
+                    range:    pt.range,
+                    payload:  Math.round(pt.payload),   // must be integer
+                    LD:       pt.LD,
+                    sedCell:  Math.round(pt.sedCell),   // must be integer
+                    ewf:      pt.ewf,
+                    AR:       Math.round(pt.AR*10)/10,  // one decimal
+                    etaHov:   pt.etaHov,
+                    etaSys:   pt.etaSys,
                   }))}/>
               </div>
             </div>
