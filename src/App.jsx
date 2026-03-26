@@ -8101,9 +8101,10 @@ export default function App(){
               );
             })()}
 
-            {/* ──── TAB 19: DESIGN SPACE EXPLORER (Pareto Front) ──── */}
-            {tab===19&&SR&&(()=>{
-              return(
+            {/* ──── TAB 19: DESIGN SPACE EXPLORER (Pareto Front) ────
+                OUTSIDE SR&& so it NEVER unmounts when params change.
+                CSS display:none keeps it alive while hidden — same pattern as tab 17. ── */}
+            <div style={{display:tab===19?'block':'none'}}>
               <div style={{display:"flex",flexDirection:"column",gap:12}}>
                 <div style={{background:`linear-gradient(135deg,${SC.bg},#1a0a2e)`,border:`1px solid #8b5cf644`,borderRadius:10,padding:"16px 20px"}}>
                   <div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace",letterSpacing:"0.18em",marginBottom:4}}>LATIN HYPERCUBE SAMPLING — PARETO ANALYSIS</div>
@@ -8114,10 +8115,21 @@ export default function App(){
                     Simultaneously sweeps Range × Payload × MTOW design space using Latin Hypercube Sampling across 8 key design variables. Each point is a full sizing solution. Feasible (green) vs infeasible (red) boundary shows the true design frontier — what Joby and Archer compute with proprietary tools.
                   </div>
                 </div>
-                <DesignSpacePanel params={params} SC={SC} TTP={TTP} runSizingFn={runSizing} onApply={newP=>setParams(prev=>({...prev,...newP}))}/>
+                <DesignSpacePanel params={params} SC={SC} TTP={TTP} runSizingFn={runSizing}
+                  onApply={newP=>setParams(prev=>({
+                    ...prev,
+                    // Clamp types to match param expectations
+                    range:    +newP.range.toFixed(1),
+                    payload:  Math.round(newP.payload),   // integer kg
+                    LD:       +newP.LD.toFixed(2),
+                    sedCell:  Math.round(newP.sedCell),   // integer Wh/kg
+                    ewf:      +newP.ewf.toFixed(3),
+                    AR:       +newP.AR.toFixed(1),
+                    etaHov:   +newP.etaHov.toFixed(3),
+                    etaSys:   +newP.etaSys.toFixed(3),
+                  }))}/>
               </div>
-              );
-            })()}
+            </div>
 
             {/* ──── TAB 20: BEM ROTOR SOLVER ──── */}
             {tab===20&&(
