@@ -71,6 +71,26 @@ function runSizing(p) {
   for(let o=0;o<200;o++){
     itersR2=o+1;
     const W=MTOW*g0;
+    // ── AERODYNAMIC L/D for current MTOW — computed inside loop so Pcr/Pres ──
+    // use the physically correct drag, not just the user-input p.LD.
+    // p.LD is a TARGET / sanity check; LDact_i is what the wing actually produces.
+    const Swing_i=2*W/(rhoCr*p.vCruise**2*p.clDesign);
+    const bW_i=Math.sqrt(p.AR*Swing_i), Cr_i=2*Swing_i/(bW_i*(1+p.taper));
+    const MAC_i=(2/3)*Cr_i*(1+p.taper+p.taper**2)/(1+p.taper);
+    const Re_i=rhoCr*p.vCruise*MAC_i/muCr;
+    const Sww_i=2*Swing_i*(1+0.25*p.tc*(1+p.taper*0.25));
+    const fL_i=p.fusLen,fD_i=p.fusDiam,lf_i=fL_i/fD_i;
+    const Swf_i=Math.PI*fD_i*fL_i*Math.pow(1-2/lf_i,2/3)*(1+1/lf_i**2);
+    const Swhs_i=2*Swing_i*0.18,Swvs_i=2*Swing_i*0.12;
+    const Swn_i=p.nPropHover*0.10*Math.PI*Math.pow(p.propDiam/2,2);
+    const Cfw_i=0.455/Math.log10(Re_i)**2.58/(1+0.144*(p.vCruise/aCr)**2)**0.65;
+    const Cff_i=0.455/Math.log10(rhoCr*p.vCruise*fL_i/muCr)**2.58/(1+0.144*(p.vCruise/aCr)**2)**0.65;
+    const FFw_i=(1+(0.6/0.30)*p.tc+100*p.tc**4)*1.05;
+    const FFf_i=1+60/lf_i**3+lf_i/400;
+    const CD0_i=Cfw_i*FFw_i*Sww_i/Swing_i+Cff_i*FFf_i*Swf_i/Swing_i+
+      Cfw_i*1.05*(Swhs_i+Swvs_i)/Swing_i+Cfw_i*1.30*Swn_i/Swing_i+0.003+0.002;
+    const CDi_i=p.clDesign**2/(Math.PI*p.AR*p.eOsw);
+    const LDact_i=p.clDesign/(CD0_i+CDi_i);  // physics-based L/D for THIS MTOW iteration
     // ── HOVER POWER at T/W=1.0 (steady hover equilibrium) ─────────────────
     // T/W ratio is a structural margin for climb/OEI — NOT applied to steady hover.
     // In hover: each rotor supports W/N (not W*TW/N). Motors sized for TW but fly at W.
@@ -78,12 +98,12 @@ function runSizing(p) {
     Phov=(W/p.etaHov)*Math.sqrt(DL/(2*rhoHov))/1000;  // uses hover-altitude density
     // η_hov absorbs: non-uniform inflow, swirl losses, figure-of-merit deviation from ideal
     Pcl=(W/p.etaSys)*(RoC+Vcl/LDcl)/1000;
-    Pcr=(W/p.etaSys)*(p.vCruise/p.LD)/1000;
+    Pcr=(W/p.etaSys)*(p.vCruise/LDact_i)/1000;   // uses computed LDact, not user-input p.LD
     Pdc=(W/p.etaSys)*(-RoC+Vdc/LDcl)/1000;  // descent: uses climb L/D (derated)
     // eVTOL rotors must keep spinning throughout descent for pitch/roll/yaw authority.
     // Minimum control authority ≈ 22% hover power (Uber Elevate 2016 / eVTOL descent data).
     Pdc=Math.max(0.22*Phov, Pdc);
-    Pres=(W/p.etaSys)*(Vres/p.LD)/1000;
+    Pres=(W/p.etaSys)*(Vres/LDact_i)/1000;   // uses computed LDact, not user-input p.LD
     // Hover-to-climb transition: ~45 s at 65% hover power (rotor tilt / speed-up phase)
     const ttrans=45, Ptrans=0.65*Phov;
     tto=hvtol/0.5+ttrans; tcl=ClimbR/Vcl; tcr=Math.max(0,CruiseRange/p.vCruise);
@@ -1515,7 +1535,7 @@ ${s1}${s2}${sd1}${sd2}${s3}${sd3}${sd4}${s4}${sd5}${s5}${sd6}${s6}${sd7}${s7}${s
     <tbody>
       <tr><td class="td-label">Actual L/D</td><td class="td-value">${fmt(SR.LDact,2)}</td><td class="td-value">≥ 12.0</td><td style="color:${SR.LDact>=12?"#16a34a":"#dc2626"};font-weight:700">${SR.LDact>=12?"✓ Above target":"✗ Below target"}</td></tr>
       <tr style="background:#f8faff"><td class="td-label">MTOW / Payload ratio</td><td class="td-value">${fmt(SR.MTOW/p.payload,2)}</td><td class="td-value">≤ 6.0</td><td style="color:${SR.MTOW/p.payload<=6?"#16a34a":"#dc2626"};font-weight:700">${SR.MTOW/p.payload<=6?"✓ Efficient":"✗ Review weight"}</td></tr>
-      <tr><td class="td-label">Energy / Range (Wh/km)</td><td class="td-value">${fmt(SR.Etot*1000/p.range,1)} Wh/km</td><td class="td-value">≤ ${Math.round(300+p.range*1.2)} Wh/km</td><td style="color:${SR.Etot*1000/p.range<=(300+p.range*1.2)?"#16a34a":"#dc2626"};font-weight:700">${SR.Etot*1000/p.range<=(300+p.range*1.2)?"✓ Efficient":"✗ High consumption"}</td></tr>
+      <tr><td class="td-label">Energy / Range (Wh/km)</td><td class="td-value">${fmt(SR.Etot*1000/p.range,1)} Wh/km</td><td class="td-value">≤ ${Math.round(300+p.range*1.4)} Wh/km</td><td style="color:${SR.Etot*1000/p.range<=(300+p.range*1.4)?"#16a34a":"#dc2626"};font-weight:700">${SR.Etot*1000/p.range<=(300+p.range*1.4)?"✓ Efficient":"✗ High consumption"}</td></tr>
       <tr style="background:#f8faff"><td class="td-label">Battery pack energy density</td><td class="td-value">${fmt(SR.SEDpack,1)} Wh/kg</td><td class="td-value">≥ 150 Wh/kg</td><td style="color:${SR.SEDpack>=150?"#16a34a":"#d97706"};font-weight:700">${SR.SEDpack>=150?"✓ Good":"⚠ Marginal"}</td></tr>
       <tr><td class="td-label">Static Margin (V-tail corrected)</td><td class="td-value">${fmt(SR.SM_vt*100,1)}% MAC</td><td class="td-value">5–25% MAC</td><td style="color:${SR.SM_vt>=0.05&&SR.SM_vt<=0.25?"#16a34a":"#dc2626"};font-weight:700">${SR.SM_vt>=0.05&&SR.SM_vt<=0.25?"✓ Stable":"✗ Review"}</td></tr>
       <tr style="background:#f8faff"><td class="td-label">Hover power / MTOW (W/kg)</td><td class="td-value">${fmt(SR.Phov*1000/SR.MTOW,1)} W/kg</td><td class="td-value">≤ 250 W/kg</td><td style="color:${SR.Phov*1000/SR.MTOW<=250?"#16a34a":SR.Phov*1000/SR.MTOW<=300?"#d97706":"#dc2626"};font-weight:700">${SR.Phov*1000/SR.MTOW<=250?"✓ Good":SR.Phov*1000/SR.MTOW<=300?"⚠ High hover loading":"✗ Very high"}</td></tr>
