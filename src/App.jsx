@@ -3673,273 +3673,820 @@ const fmt2=(v,d=2)=>(typeof v==='number'&&isFinite(v))?v.toFixed(d):'—';
 /* ═══════════════════════════════════════════════════════════════════
    FLIGHT SIMULATOR — Pilot-in-the-loop
    ═══════════════════════════════════════════════════════════════════ */
+/* ═══════════════════════════════════════════════════════════════════
+   EVTOL FLIGHT SIMULATOR v2 — Full Canvas Renderer
+   Physics: SR-calibrated dynamics + gust/turbulence model
+   Rendering: Canvas 2D — sky, terrain, clouds, particles, HUD
+   ═══════════════════════════════════════════════════════════════════ */
 function FlightSimPanel({ SR, params, SC }) {
-  const g0=9.81, rhoMSL=1.225;
-  const stRef=useRef({ t:0,alt:0,vx:0,vz:0,soc:1,range:0,
-    throttle:0.5,pitch:0,phase:'ground',crashed:false,landed:false,power:0 });
-  const rafRef=useRef(null);
-  const lastTRef=useRef(null);
-  const throttleRef=useRef(0.5);
-  const pitchRef=useRef(0);
-  const keysRef=useRef({});
-  const dispCountRef=useRef(0);
-  const [disp,setDisp]=useState(null);
-  const [running,setRunning]=useState(false);
-  const [msg,setMsg]=useState('Ready to fly. Press ▶ Takeoff to begin.');
+  const canvasRef = useRef(null);
+  const g0 = 9.81, rhoMSL = 1.225;
 
-  const MTOW=SR?.MTOW||2000, Phov=SR?.Phov||500, Pcr=SR?.Pcr||130;
-  const Etot=SR?.Etot||160, vCr=params?.vCruise||67;
-  const LDact=SR?.LDact||15, Rang=params?.range||250;
-  const maxAlt=params?.cruiseAlt||1000, packKwh=SR?.PackkWh||200;
-  const Swing=SR?.Swing||18, AR=params?.AR||9, eOsw=params?.eOsw||0.85;
-  const CD0=SR?.CD0tot||0.024, CLmax=SR?.selAF?.CLmax||1.6;
-  const Tmax=MTOW*g0*1.3/1000;
+  // ── Aircraft constants from SR ────────────────────────────────────
+  const AC = {
+    MTOW: SR?.MTOW||2000, Phov: SR?.Phov||500, Pcr: SR?.Pcr||130,
+    Pdc: SR?.Pdc||115, packKwh: SR?.PackkWh||200,
+    Swing: SR?.Swing||18, AR: params?.AR||9, eOsw: params?.eOsw||0.85,
+    CD0: SR?.CD0tot||0.024, CLmax: SR?.selAF?.CLmax||1.6,
+    Vstall: SR?.Vstall||20, vCr: params?.vCruise||67,
+    range: params?.range||250, maxAlt: params?.cruiseAlt||1000,
+    N: params?.nPropHover||6, R: (params?.propDiam||3)/2,
+    LDact: SR?.LDact||15,
+  };
+  AC.Tmax = AC.MTOW * g0 * 1.35 / 1000; // kN
 
-  const calcPower=useCallback((vx,vz,thr,alt)=>{
-    const rho=rhoMSL*Math.exp(-alt/8500);
-    const speed=Math.sqrt(vx*vx+vz*vz);
-    const vFrac=Math.min(speed/Math.max(vCr,1),1);
-    const hP=Phov*(rho/rhoMSL), cP=Pcr*(rho/rhoMSL);
-    const blendP=hP*(1-vFrac)+cP*vFrac;
-    const climbPen=Math.max(0,vz)*MTOW*g0/1000/0.80;
-    return Math.min(thr*(blendP+climbPen), Phov*1.5);
-  },[Phov,Pcr,vCr,MTOW]);
+  // ── Full simulation state (ref = no React re-render overhead) ─────
+  const S = useRef({
+    // Position & velocity
+    x:0, y:0, vx:0, vy:0, pitch:0, rollVis:0,
+    throttle:0.3, pitchCmd:0,
+    // Status
+    soc:1.0, t:0, range:0, power:0,
+    phase:'PRE-FLIGHT', crashed:false, onGround:true,
+    engineRPM:0, rotorAngle:0,
+    // Environment
+    windX:3, windY:0, gustX:0, gustY:0, gustTimer:0, gustActive:false,
+    turbInt:0, turbX:0, turbY:0,
+    rain:false, rainIntensity:0, lightning:false, lightningTimer:0,
+    timeOfDay:0.35,
+    // Autopilot
+    apMode:'OFF', apAltTarget:500, apSpdTarget:50,
+    apPitchInt:0, apThrottleInt:0,
+    // Camera
+    camY:0, camYVel:0,
+    // Particles
+    particles:[],
+    // World
+    clouds: Array.from({length:20},(_,i)=>({
+      x: i*400-800, y: 80+Math.random()*300,
+      w: 80+Math.random()*160, h: 30+Math.random()*50,
+      layer: Math.floor(Math.random()*3),
+      alpha: 0.4+Math.random()*0.5,
+    })),
+    terrain: Array.from({length:120},(_,i)=>{
+      const h = 30+Math.sin(i*0.18)*20+Math.sin(i*0.07)*35+Math.cos(i*0.4)*8;
+      return {x:i*80-800, h};
+    }),
+    trees: Array.from({length:60},(_,i)=>({x:i*130-800+Math.random()*60})),
+    buildings: Array.from({length:12},(_,i)=>({x:i*600+300, h:20+Math.random()*60, w:30+Math.random()*40})),
+    crashParts:[],
+    warning:'', warningTimer:0,
+  });
+  const keys = useRef({});
+  const rafRef = useRef(null);
+  const lastT = useRef(null);
+  const dispTick = useRef(0);
+  const [disp, setDisp] = useState({phase:'PRE-FLIGHT',soc:1,throttle:0.3,vx:0,vy:0,alt:0,range:0,power:0,apMode:'OFF',warning:'',rain:false});
+  const [running, setRunning] = useState(false);
+  const [msg, setMsg] = useState('Press ▶ TAKEOFF to begin simulation');
 
-  const step=useCallback((dt)=>{
-    const st=stRef.current;
-    if(st.crashed||st.landed) return;
-    if(st.soc<=0){ st.crashed=true; setMsg('⚡ Battery depleted!'); return; }
+  // ── Physics step ─────────────────────────────────────────────────
+  const stepPhysics = useCallback((dt) => {
+    const s = S.current;
+    if (s.crashed) { renderCanvas(); return; }
 
-    const rho=rhoMSL*Math.exp(-st.alt/8500);
-    const speed=Math.sqrt(st.vx**2+st.vz**2);
+    // Engine RPM spinup
+    s.engineRPM += (s.throttle * 100 - s.engineRPM) * Math.min(dt * 2.5, 1);
+    s.rotorAngle += s.engineRPM * dt * 3;
 
-    if(keysRef.current['ArrowUp']||keysRef.current['w'])    throttleRef.current=Math.min(1,throttleRef.current+0.5*dt);
-    if(keysRef.current['ArrowDown']||keysRef.current['s'])  throttleRef.current=Math.max(0,throttleRef.current-0.5*dt);
-    if(keysRef.current['ArrowRight']||keysRef.current['d']) pitchRef.current=Math.min(15,pitchRef.current+20*dt);
-    if(keysRef.current['ArrowLeft']||keysRef.current['a'])  pitchRef.current=Math.max(-15,pitchRef.current-20*dt);
-    if(!keysRef.current['ArrowRight']&&!keysRef.current['d']&&!keysRef.current['ArrowLeft']&&!keysRef.current['a'])
-      pitchRef.current*=Math.pow(0.85,dt*60);
+    // Atmosphere
+    const alt = Math.max(0, s.y);
+    const rho = rhoMSL * Math.exp(-alt / 8500);
 
-    const thr=throttleRef.current, pitch=pitchRef.current*Math.PI/180;
-    const T_kN=thr*Tmax;
-    const ax=T_kN*Math.sin(pitch)*1000/MTOW;
-    const az=T_kN*Math.cos(pitch)*1000/MTOW;
-
-    let dragAcc=0;
-    if(speed>3){
-      const CL=MTOW*g0/(0.5*rho*speed**2*Math.max(Swing,1));
-      const CDi=Math.max(0,CL**2/(Math.PI*AR*eOsw));
-      const CDt=CD0+CDi;
-      dragAcc=0.5*rho*speed**2*CDt*Swing/MTOW;
+    // ── Keyboard / autopilot ──────────────────────────────────────
+    if (s.apMode === 'OFF') {
+      if (keys.current['ArrowUp']   || keys.current['w']) s.throttle = Math.min(1, s.throttle + 0.6*dt);
+      if (keys.current['ArrowDown'] || keys.current['s']) s.throttle = Math.max(0, s.throttle - 0.6*dt);
+      if (keys.current['ArrowRight']|| keys.current['d']) s.pitchCmd = Math.min(18, s.pitchCmd + 25*dt);
+      if (keys.current['ArrowLeft'] || keys.current['a']) s.pitchCmd = Math.max(-18, s.pitchCmd - 25*dt);
+      const noLR = !keys.current['ArrowRight']&&!keys.current['d']&&!keys.current['ArrowLeft']&&!keys.current['a'];
+      if (noLR) s.pitchCmd *= Math.pow(0.80, dt*60);
+    } else {
+      // Autopilot PID
+      if (s.apMode === 'ALT' || s.apMode === 'CRUISE') {
+        const altErr = s.apAltTarget - s.y;
+        const desVy = Math.max(-8, Math.min(8, altErr * 0.05));
+        const vyErr = desVy - s.vy;
+        s.apThrottleInt = Math.max(-0.3, Math.min(0.3, s.apThrottleInt + vyErr * 0.002 * dt));
+        s.throttle = Math.max(0.1, Math.min(1, 0.55 + vyErr * 0.04 + s.apThrottleInt));
+        const spdErr = (s.apMode==='CRUISE'?s.apSpdTarget:30) - s.vx;
+        s.apPitchInt = Math.max(-8, Math.min(8, s.apPitchInt + spdErr * 0.01 * dt));
+        s.pitchCmd = Math.max(-10, Math.min(15, spdErr * 0.15 + s.apPitchInt));
+      }
+      if (s.apMode === 'LND') {
+        // Auto-land: reduce throttle and pitch for approach
+        s.apAltTarget = Math.max(0, s.apAltTarget - 2*dt);
+        const altErr = s.apAltTarget - s.y;
+        s.throttle = Math.max(0.15, Math.min(0.9, 0.45 + altErr * 0.03));
+        s.pitchCmd = Math.max(-5, Math.min(5, -s.vx * 0.05));
+      }
     }
-    const dx=st.vx!==0?-dragAcc*Math.sign(st.vx):0;
-    const dz=st.vz!==0?-dragAcc*Math.sign(st.vz)*0.3:0;
 
-    const R=params?.propDiam/2||1.5;
-    const GEF=st.alt<2*R?1+0.12*(1-st.alt/(2*R)):1;
-
-    st.vx=Math.max(-vCr*1.2,Math.min(vCr*1.2, st.vx+(ax*GEF+dx)*dt));
-    st.vz+=((az*GEF-g0)+dz)*dt;
-    if(st.alt<=0&&st.vz<0){ st.vz=0; st.vx*=0.92; }
-
-    st.alt=Math.max(0,st.alt+st.vz*dt);
-    st.range+=Math.abs(st.vx)*dt/1000;
-
-    const Pkw=calcPower(st.vx,st.vz,thr,st.alt);
-    st.soc=Math.max(0,st.soc-Pkw*dt/(3600*packKwh));
-    st.power=Pkw; st.throttle=thr; st.pitch=pitchRef.current; st.t+=dt;
-
-    if(st.alt<50&&st.vz>0.2) st.phase='takeoff';
-    else if(st.alt>=50&&st.vz>1) st.phase='climb';
-    else if(st.alt>maxAlt*0.85&&Math.abs(st.vz)<2) st.phase='cruise';
-    else if(st.vz<-0.5&&st.alt>20) st.phase='descent';
-    else if(st.alt<50&&st.vz<-0.2) st.phase='approach';
-    else if(st.alt<=1&&Math.abs(st.vz)<1) st.phase='ground';
-
-    if(st.alt<=1&&Math.abs(st.vz)<2&&st.t>5&&st.range>0.3&&Math.abs(st.vx)<8){
-      st.landed=true; st.vx=0; st.vz=0;
-      setMsg(`✅ Landed! Range: ${st.range.toFixed(1)} km · Battery: ${(st.soc*100).toFixed(0)}% remaining`);
+    // ── Gusts & turbulence ────────────────────────────────────────
+    s.gustTimer -= dt;
+    if (s.gustTimer <= 0) {
+      s.gustTimer = 4 + Math.random() * 12;
+      s.gustActive = Math.random() < 0.45;
+      if (s.gustActive) {
+        s.gustX = (Math.random() - 0.5) * 14;
+        s.gustY = (Math.random() - 0.5) * 5;
+        if (s.apMode === 'OFF') s.warning = '⚡ GUST';
+        s.warningTimer = 2;
+      } else { s.gustX *= 0.3; s.gustY *= 0.3; }
     }
-    if(st.alt<=0&&st.vz<-5){ st.crashed=true; setMsg('💥 Hard landing! Descent rate exceeded 5 m/s.'); }
+    s.gustX *= Math.pow(0.5, dt); s.gustY *= Math.pow(0.5, dt);
+    // Turbulence (Dryden-inspired random)
+    s.turbX += (Math.random()-0.5)*6*dt - s.turbX*2.5*dt;
+    s.turbY += (Math.random()-0.5)*4*dt - s.turbY*2.5*dt;
+    // Scale turbulence by altitude: worse at 200-600m
+    const turbScale = alt > 20 ? Math.min(1, (alt-20)/180) * (1-Math.min(1,(alt-600)/400)) : 0;
+    const effWindX = s.windX + s.gustX + s.turbX * turbScale;
+    const effWindY = s.windY + s.gustY + s.turbY * turbScale;
 
-    dispCountRef.current++;
-    if(dispCountRef.current%4===0) setDisp({...st});
-  },[calcPower,packKwh,maxAlt,MTOW,Tmax,Swing,AR,eOsw,CD0,vCr,params?.propDiam]);
+    // ── Pitch dynamics ─────────────────────────────────────────────
+    s.pitch += (s.pitchCmd - s.pitch) * Math.min(dt * 3, 1);
+    s.rollVis += (s.pitchCmd * 0.4 - s.rollVis) * Math.min(dt * 2, 1);
 
-  const loop=useCallback((ts)=>{
-    if(!lastTRef.current) lastTRef.current=ts;
-    const dt=Math.min((ts-lastTRef.current)/1000,0.05);
-    lastTRef.current=ts;
-    step(dt);
-    rafRef.current=requestAnimationFrame(loop);
-  },[step]);
+    // ── Thrust ────────────────────────────────────────────────────
+    const pitchRad = s.pitch * Math.PI / 180;
+    const Tkn = s.throttle * AC.Tmax;
+    const Tx = Tkn * Math.sin(pitchRad) * 1000 / AC.MTOW;
+    const Tz = Tkn * Math.cos(pitchRad) * 1000 / AC.MTOW;
 
-  const startSim=useCallback(()=>{
-    stRef.current={t:0,alt:0.1,vx:0,vz:0.1,soc:1,range:0,throttle:0.7,pitch:0,phase:'takeoff',crashed:false,landed:false,power:0};
-    throttleRef.current=0.7; pitchRef.current=0; lastTRef.current=null;
-    setMsg('Flying! ↑↓ = throttle · ←→ = pitch/speed · or use WASD');
+    // ── Aerodynamic drag ──────────────────────────────────────────
+    const vxRel = s.vx - effWindX;
+    const speed = Math.sqrt(vxRel*vxRel + s.vy*s.vy) + 0.01;
+    const CL = Math.min(AC.CLmax, AC.MTOW*g0/(0.5*rho*speed*speed*Math.max(AC.Swing,1)));
+    const CDi = CL*CL/(Math.PI*AC.AR*AC.eOsw);
+    const CD = AC.CD0 + CDi;
+    const q = 0.5 * rho * speed * speed;
+    const Fdrag = q * CD * AC.Swing / AC.MTOW;
+    const Flift = q * CL * AC.Swing / AC.MTOW;
+
+    // Ground effect
+    const GEF = alt < 2*AC.R ? 1 + 0.18*(1-alt/(2*AC.R)) : 1;
+
+    // Net accelerations
+    let ax = Tx*GEF + effWindX*0.02 - Fdrag*(vxRel/speed);
+    let ay = Tz*GEF - g0 + Flift*0.15 + effWindY*0.02 - Fdrag*(s.vy/speed)*0.4;
+
+    // Integrate
+    s.vx = Math.max(-AC.vCr*0.3, Math.min(AC.vCr*1.3, s.vx + ax*dt));
+    s.vy += ay * dt;
+    if (s.y <= 0 && s.vy < 0) { s.vy = 0; s.vx *= 0.90; }
+
+    s.x += s.vx * dt;
+    s.y = Math.max(0, s.y + s.vy * dt);
+
+    // ── Energy ────────────────────────────────────────────────────
+    const vFrac = Math.min(Math.abs(s.vx)/AC.vCr, 1);
+    const hoverP = AC.Phov*(rho/rhoMSL), cruiseP = AC.Pcr*(rho/rhoMSL);
+    const blendP = hoverP*(1-vFrac) + cruiseP*vFrac;
+    const climbPen = Math.max(0, s.vy)*AC.MTOW*g0/1000/0.80;
+    const Pkw = Math.min(s.throttle*(blendP+climbPen), AC.Phov*1.6);
+    s.power = Pkw;
+    s.soc = Math.max(0, s.soc - Pkw*dt/(3600*AC.packKwh));
+    s.range += Math.abs(s.vx)*dt/1000;
+    s.t += dt;
+
+    if (s.soc <= 0) { s.warning = '⚡ BATTERY DEAD'; s.warningTimer = 99; }
+
+    // ── Phase ─────────────────────────────────────────────────────
+    if (s.y < 1 && Math.abs(s.vy) < 1) s.phase = 'GROUND';
+    else if (s.y < 60 && s.vy > 0.3) s.phase = 'TAKEOFF';
+    else if (s.vy > 1.5) s.phase = 'CLIMB';
+    else if (s.vy < -1.5) s.phase = 'DESCENT';
+    else if (s.y > AC.maxAlt*0.85) s.phase = 'CRUISE';
+    else if (s.y < 60 && s.vy < -0.3) s.phase = 'APPROACH';
+    else s.phase = 'LEVEL';
+
+    // ── Stall warning ──────────────────────────────────────────────
+    if (Math.abs(s.vx) < AC.Vstall && s.y > 20 && s.throttle < 0.7) {
+      s.warning = '⚠ STALL'; s.warningTimer = 1;
+    }
+    if (s.warningTimer > 0) s.warningTimer -= dt;
+    if (s.warningTimer <= 0) s.warning = '';
+
+    // ── Crash detection ───────────────────────────────────────────
+    if (s.y <= 0 && s.vy < -6) {
+      s.crashed = true;
+      for (let i = 0; i < 40; i++) {
+        s.crashParts.push({ x:0, y:0, vx:(Math.random()-0.5)*60, vy:10+Math.random()*40,
+          life:1, col:`hsl(${20+Math.random()*40},90%,50%)`, r:3+Math.random()*8 });
+      }
+      setMsg('💥 CRASH — Descent rate ' + Math.abs(s.vy).toFixed(1) + ' m/s exceeded 6 m/s limit!');
+      setRunning(false);
+    }
+
+    // Landing success
+    if (s.y <= 0 && Math.abs(s.vy) < 1.5 && s.t > 5 && s.range > 0.2 && Math.abs(s.vx) < 5 && s.phase!=='GROUND') {
+      s.phase = 'LANDED';
+      setMsg(`✅ Landed safely! ${s.range.toFixed(1)} km · ${((1-s.soc)*100).toFixed(0)}% battery used`);
+    }
+
+    // ── Rotor wash particles ──────────────────────────────────────
+    if (s.y < 15 && s.throttle > 0.3 && Math.random() < 0.5) {
+      for (let i = 0; i < 3; i++) {
+        s.particles.push({ x: (Math.random()-0.5)*80, y:-s.y,
+          vx:(Math.random()-0.5)*20+s.vx*0.2, vy:-2-Math.random()*4,
+          life:0.8+Math.random()*0.8, maxLife:1.0, type:'dust' });
+      }
+    }
+    // Smoke trail from crash
+    if (s.crashed) {
+      s.crashParts.forEach(p=>{ p.x+=p.vx*dt; p.y+=p.vy*dt; p.vy-=20*dt; p.life-=dt; });
+      s.crashParts = s.crashParts.filter(p=>p.life>0);
+    }
+    // Update particles
+    s.particles.forEach(p=>{ p.x+=p.vx*dt; p.y+=p.vy*dt; p.life-=dt*1.2; });
+    s.particles = s.particles.filter(p=>p.life>0).slice(-80);
+
+    // ── Scroll world ──────────────────────────────────────────────
+    const scrollSpeed = s.vx;
+    s.clouds.forEach(c=>{ c.x -= scrollSpeed*(0.2+c.layer*0.15)*dt; if(c.x<-1600)c.x+=3200; });
+    s.terrain.forEach(t=>{ t.x -= scrollSpeed*dt; if(t.x<-1200)t.x+=120*80; });
+    s.trees.forEach(t=>{ t.x -= scrollSpeed*dt; if(t.x<-1200)t.x+=60*130+1200; });
+    s.buildings.forEach(b=>{ b.x -= scrollSpeed*dt; if(b.x<-600)b.x+=12*600+1200; });
+
+    // Time of day advances slowly
+    s.timeOfDay += dt * 0.0005;
+    if (s.timeOfDay > 1) s.timeOfDay = 0;
+
+    // Rain logic
+    s.rainIntensity += ((s.rain?1:0) - s.rainIntensity)*dt*0.5;
+
+    // Camera smooth follow
+    const targetCamY = s.y;
+    s.camYVel += (targetCamY - s.camY)*3*dt;
+    s.camYVel *= Math.pow(0.92, dt*60);
+    s.camY += s.camYVel*dt;
+
+    // ── Update display at ~15Hz ─────────────────────────────────────
+    dispTick.current++;
+    if (dispTick.current % 4 === 0) {
+      setDisp({ phase:s.phase, soc:s.soc, throttle:s.throttle, vx:s.vx, vy:s.vy,
+        alt:s.y, range:s.range, power:s.power, apMode:s.apMode, warning:s.warning,
+        rain:s.rain, wind:Math.sqrt(s.windX**2+s.windY**2), gust:s.gustActive,
+        pitch:s.pitch, t:s.t });
+    }
+  }, [AC]);
+
+  // ── Canvas renderer ──────────────────────────────────────────────
+  const renderCanvas = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const W = canvas.width, H = canvas.height;
+    const s = S.current;
+    const alt = Math.max(0, s.y);
+
+    // ── Sky gradient ──────────────────────────────────────────────
+    const tod = s.timeOfDay;
+    const isDawn = tod > 0.2 && tod < 0.35;
+    const isDusk = tod > 0.65 && tod < 0.8;
+    const isNight = tod < 0.2 || tod > 0.8;
+    let skyTop, skyBot, horizCol;
+    if (isNight) { skyTop='#010408'; skyBot='#030810'; horizCol='#05101a'; }
+    else if (isDawn||isDusk) { skyTop='#0d1a3a'; skyBot='#c05010'; horizCol='#e07030'; }
+    else { // day — deeper blue at altitude
+      const d = Math.min(alt/AC.maxAlt, 1);
+      skyTop = `rgb(${8+d*10},${20+d*30},${80+d*80})`;
+      skyBot = `rgb(${80+d*30},${140+d*40},${220})`;
+      horizCol = '#aadcff';
+    }
+    const skyGrad = ctx.createLinearGradient(0,0,0,H*0.65);
+    skyGrad.addColorStop(0, skyTop); skyGrad.addColorStop(1, skyBot);
+    ctx.fillStyle = skyGrad; ctx.fillRect(0,0,W,H);
+
+    // Horizon glow
+    if (!isNight) {
+      const hg = ctx.createLinearGradient(0,H*0.5,0,H*0.7);
+      hg.addColorStop(0, horizCol+'88'); hg.addColorStop(1,'transparent');
+      ctx.fillStyle = hg; ctx.fillRect(0,H*0.5,W,H*0.2);
+    }
+
+    // ── Sun / Moon ────────────────────────────────────────────────
+    const sunX = W*(0.1+tod*0.8);
+    const sunY = H*0.5 - Math.sin(tod*Math.PI)*H*0.55;
+    if (!isNight) {
+      const sg = ctx.createRadialGradient(sunX,sunY,0,sunX,sunY,isDawn||isDusk?60:40);
+      sg.addColorStop(0,isDawn||isDusk?'#ffcc44':'#fffde0');
+      sg.addColorStop(0.3,isDawn||isDusk?'#ff8800aa':'#ffff8844');
+      sg.addColorStop(1,'transparent');
+      ctx.fillStyle=sg; ctx.fillRect(0,0,W,H);
+      ctx.beginPath(); ctx.arc(sunX,sunY,isDawn||isDusk?22:18,0,Math.PI*2);
+      ctx.fillStyle=isDawn||isDusk?'#ffbb33':'#fffff0'; ctx.fill();
+    } else {
+      // Moon
+      ctx.beginPath(); ctx.arc(W*0.75,H*0.12,14,0,Math.PI*2);
+      ctx.fillStyle='#e8e8cc'; ctx.fill();
+      // Stars
+      for(let i=0;i<80;i++){
+        const sx=((i*137+s.x*0.001)%W+W)%W, sy=(i*53)%(H*0.55);
+        ctx.beginPath(); ctx.arc(sx,sy,Math.random()<0.1?1.5:0.8,0,Math.PI*2);
+        ctx.fillStyle=`rgba(255,255,220,${0.3+Math.sin(i+s.t*2)*0.3})`; ctx.fill();
+      }
+    }
+
+    // ── Far mountains ─────────────────────────────────────────────
+    const horizY = H * (0.62 - Math.min(alt/AC.maxAlt,1)*0.28);
+    ctx.beginPath(); ctx.moveTo(0, horizY);
+    for(let i=0;i<=W;i+=20){
+      const mx=i+(s.x*0.08)%120;
+      const my=horizY-20-Math.sin(mx*0.018)*35-Math.cos(mx*0.007)*25;
+      ctx.lineTo(i,my);
+    }
+    ctx.lineTo(W,horizY); ctx.closePath();
+    ctx.fillStyle=isNight?'#0a111f':'#2a3e6a'; ctx.fill();
+
+    // ── Clouds ───────────────────────────────────────────────────
+    s.clouds.forEach(c=>{
+      const cy = horizY - (c.y*(H*0.5/600)) - alt*0.15;
+      if(cy<0||cy>H*0.8) return;
+      const cloudAlpha = Math.min(c.alpha, isNight?0.25:c.alpha);
+      ctx.save(); ctx.globalAlpha=cloudAlpha;
+      const cg=ctx.createRadialGradient(c.x+W/2,cy,0,c.x+W/2,cy,c.w*0.6);
+      cg.addColorStop(0,isNight?'#1a2030':'#e8f4ff');
+      cg.addColorStop(1,'transparent');
+      ctx.fillStyle=cg;
+      ctx.beginPath(); ctx.ellipse(c.x+W/2,cy,c.w*0.6,c.h*0.5,0,0,Math.PI*2);
+      ctx.fill();
+      ctx.restore();
+    });
+
+    // ── Ground plane ──────────────────────────────────────────────
+    // Ground fades in as altitude decreases
+    const groundVis = Math.min(1, (1-alt/Math.max(AC.maxAlt*0.5,1))*2);
+    if (groundVis > 0) {
+      ctx.save(); ctx.globalAlpha = groundVis;
+      // Ground gradient
+      const gg = ctx.createLinearGradient(0,horizY,0,H);
+      gg.addColorStop(0, isNight?'#0d1a0d':'#2d5a1b');
+      gg.addColorStop(0.3, isNight?'#111a0d':'#3d6b22');
+      gg.addColorStop(1, isNight?'#080e06':'#1a3a0e');
+      ctx.fillStyle = gg; ctx.fillRect(0,horizY,W,H-horizY);
+
+      // Runway / landing pad at x=0
+      const padScreenX = W/2 - s.x*0.4 + (alt*Math.sin(s.pitch*Math.PI/180))*0.4;
+      if (padScreenX > -200 && padScreenX < W+200) {
+        ctx.fillStyle='#555'; ctx.fillRect(padScreenX-60, horizY, 120, 8);
+        ctx.strokeStyle='#ffff00'; ctx.lineWidth=2; ctx.setLineDash([8,8]);
+        ctx.beginPath(); ctx.moveTo(padScreenX,horizY); ctx.lineTo(padScreenX,horizY+8);
+        ctx.stroke(); ctx.setLineDash([]);
+        // H marker
+        ctx.fillStyle='#fff'; ctx.font='bold 12px monospace';
+        ctx.textAlign='center'; ctx.fillText('H',padScreenX,horizY+20);
+      }
+
+      // Terrain undulation
+      ctx.beginPath(); ctx.moveTo(0, horizY);
+      s.terrain.forEach(t=>{ ctx.lineTo(t.x+W/2, horizY - t.h*(1-alt/AC.maxAlt)*0.4); });
+      ctx.lineTo(W, horizY); ctx.fillStyle='#2a4f18'; ctx.fill();
+
+      // Trees
+      s.trees.forEach(t=>{
+        const tx=t.x+W/2, ty=horizY;
+        if(tx<-20||tx>W+20) return;
+        const tScale = Math.max(0.2, 1-alt/AC.maxAlt*2);
+        ctx.fillStyle=isNight?'#0a120a':'#1a3a0e';
+        ctx.beginPath(); ctx.moveTo(tx,ty); ctx.lineTo(tx-8*tScale,ty-18*tScale); ctx.lineTo(tx+8*tScale,ty-18*tScale); ctx.closePath(); ctx.fill();
+        ctx.fillRect(tx-2*tScale, ty-4*tScale, 4*tScale, 4*tScale);
+      });
+
+      // Buildings
+      s.buildings.forEach(b=>{
+        const bx=b.x+W/2;
+        if(bx<-60||bx>W+60) return;
+        const bScale = Math.max(0.1, 1-alt/AC.maxAlt*1.5);
+        ctx.fillStyle=isNight?'#1a1a2a':'#556677';
+        ctx.fillRect(bx-b.w/2*bScale, horizY-b.h*bScale, b.w*bScale, b.h*bScale);
+        if(isNight){ // windows
+          ctx.fillStyle='#ffee88';
+          for(let wr=0;wr<3;wr++) for(let wc=0;wc<2;wc++){
+            if(Math.random()>0.3) ctx.fillRect(bx-b.w/2*bScale+(wc+0.2)*b.w*bScale/2.5, horizY-b.h*bScale+(wr+0.15)*b.h*bScale/3.5, 4*bScale,5*bScale);
+          }
+        }
+      });
+      ctx.restore();
+    }
+
+    // ── Rotor wash particles ──────────────────────────────────────
+    s.particles.forEach(p=>{
+      const px=W/2+p.x, py=horizY+p.y;
+      ctx.save(); ctx.globalAlpha=p.life*0.6;
+      ctx.beginPath(); ctx.arc(px,py,3+p.life*4,0,Math.PI*2);
+      ctx.fillStyle='#c8a060'; ctx.fill();
+      ctx.restore();
+    });
+
+    // ── Crash parts ───────────────────────────────────────────────
+    if(s.crashed){
+      s.crashParts.forEach(p=>{
+        const px=W/2+p.x, py=horizY-p.y;
+        ctx.save(); ctx.globalAlpha=p.life;
+        ctx.beginPath(); ctx.arc(px,py,p.r,0,Math.PI*2);
+        ctx.fillStyle=p.col; ctx.fill();
+        ctx.restore();
+      });
+      // Smoke
+      ctx.save(); ctx.globalAlpha=0.4;
+      const smg=ctx.createRadialGradient(W/2,horizY,0,W/2,horizY,60+s.t*5);
+      smg.addColorStop(0,'#333'); smg.addColorStop(1,'transparent');
+      ctx.fillStyle=smg; ctx.fillRect(W/2-80,horizY-80,160,80); ctx.restore();
+    }
+
+    // ── Aircraft ─────────────────────────────────────────────────
+    const acX = W / 2;
+    const acY = horizY - Math.min(alt * (H*0.55/AC.maxAlt), H*0.52) - 10;
+    const pitchRad = s.pitch * Math.PI / 180;
+    const bankRad = s.rollVis * Math.PI / 180 * 0.3;
+
+    ctx.save();
+    ctx.translate(acX, acY);
+    ctx.rotate(-pitchRad * 0.5 + bankRad);
+
+    // Rotor glow
+    const rpmAlpha = Math.min(1, s.engineRPM/80);
+    if(rpmAlpha > 0.05){
+      const rg=ctx.createRadialGradient(0,-4,0,0,-4,40);
+      rg.addColorStop(0,`rgba(100,180,255,${rpmAlpha*0.35})`);
+      rg.addColorStop(1,'transparent');
+      ctx.fillStyle=rg; ctx.fillRect(-50,-44,100,40);
+    }
+
+    // Rotor disks (spinning blur)
+    const rPositions=[[-28,-6],[-10,-6],[10,-6],[28,-6]];
+    rPositions.forEach(([rx,ry])=>{
+      ctx.save(); ctx.translate(rx,ry);
+      ctx.beginPath(); ctx.arc(0,0,10,0,Math.PI*2);
+      ctx.fillStyle=`rgba(180,210,255,${rpmAlpha*0.25})`; ctx.fill();
+      // Blades
+      if(rpmAlpha>0.1){
+        for(let b=0;b<3;b++){
+          ctx.save(); ctx.rotate(s.rotorAngle+b*2.09);
+          ctx.fillStyle=`rgba(120,140,160,${rpmAlpha*0.7})`;
+          ctx.fillRect(-7,-1.5,14,3); ctx.restore();
+        }
+      }
+      ctx.restore();
+    });
+
+    // Fuselage
+    ctx.fillStyle=isNight?'#1a2030':'#2a3a50';
+    ctx.beginPath(); ctx.roundRect(-22,-5,44,12,5); ctx.fill();
+    ctx.strokeStyle='#3a5070'; ctx.lineWidth=0.8; ctx.stroke();
+
+    // Cockpit
+    ctx.fillStyle=isNight?'#0a1020':'#1a2a40';
+    ctx.beginPath(); ctx.roundRect(-10,-5,14,7,3); ctx.fill();
+    ctx.fillStyle=`rgba(100,200,255,${0.3+rpmAlpha*0.2})`;
+    ctx.fillRect(-8,-4,10,5);
+
+    // Wing
+    ctx.fillStyle='#243444';
+    ctx.beginPath(); ctx.moveTo(-22,0); ctx.lineTo(-44,2); ctx.lineTo(-40,5); ctx.lineTo(-20,5); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(22,0);  ctx.lineTo(44,2);  ctx.lineTo(40,5);  ctx.lineTo(20,5); ctx.closePath(); ctx.fill();
+
+    // V-tail
+    ctx.fillStyle='#1e2c3c';
+    ctx.beginPath(); ctx.moveTo(18,-3); ctx.lineTo(26,-14); ctx.lineTo(26,-12); ctx.lineTo(20,3); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(18,5);  ctx.lineTo(26,15);  ctx.lineTo(26,13);  ctx.lineTo(20,3); ctx.closePath(); ctx.fill();
+
+    // Nav lights
+    ctx.beginPath(); ctx.arc(-44,3,2,0,Math.PI*2);
+    ctx.fillStyle=`rgba(255,50,50,${0.5+Math.sin(s.t*4)*0.5})`; ctx.fill();
+    ctx.beginPath(); ctx.arc(44,3,2,0,Math.PI*2);
+    ctx.fillStyle=`rgba(50,255,50,${0.5+Math.sin(s.t*4)*0.5})`; ctx.fill();
+    // Strobe
+    if(Math.sin(s.t*8)>0.9){
+      ctx.beginPath(); ctx.arc(0,-5,3,0,Math.PI*2);
+      ctx.fillStyle='#ffffff'; ctx.fill();
+    }
+
+    ctx.restore();
+
+    // ── Rain ─────────────────────────────────────────────────────
+    if(s.rainIntensity > 0.05){
+      ctx.save(); ctx.globalAlpha=s.rainIntensity*0.35;
+      for(let r=0;r<Math.floor(s.rainIntensity*120);r++){
+        const rx=(r*173+s.t*100)%W, ry=(s.t*400+r*97)%H;
+        ctx.strokeStyle='#aaddff'; ctx.lineWidth=0.5;
+        ctx.beginPath(); ctx.moveTo(rx,ry); ctx.lineTo(rx-2,ry+12); ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    // Lightning
+    if(s.lightning){
+      ctx.save(); ctx.globalAlpha=0.8;
+      ctx.strokeStyle='#aaaaff'; ctx.lineWidth=2;
+      ctx.beginPath(); let lx=W*0.3+Math.random()*W*0.4, ly=0;
+      ctx.moveTo(lx,ly);
+      for(let seg=0;seg<8;seg++){ lx+=(Math.random()-0.5)*40; ly+=H*0.08; ctx.lineTo(lx,ly); }
+      ctx.stroke(); ctx.restore();
+    }
+
+    // ── HUD Overlay ───────────────────────────────────────────────
+    const hudAlpha = 0.92;
+    ctx.save(); ctx.globalAlpha = hudAlpha;
+
+    // Pitch ladder (attitude lines)
+    ctx.save();
+    ctx.translate(W/2, acY);
+    const pitchDeg = s.pitch;
+    for(let pd=-20;pd<=20;pd+=5){
+      if(pd===0) continue;
+      const py2 = -(pd-pitchDeg)*3;
+      const len = pd%10===0 ? 28 : 16;
+      ctx.strokeStyle='rgba(0,255,100,0.45)'; ctx.lineWidth=1;
+      ctx.beginPath(); ctx.moveTo(-len,py2); ctx.lineTo(len,py2); ctx.stroke();
+      if(pd%10===0){
+        ctx.fillStyle='rgba(0,255,100,0.7)'; ctx.font='9px monospace';
+        ctx.textAlign='right'; ctx.fillText(pd+'°',-len-3,py2+3);
+        ctx.textAlign='left';  ctx.fillText(pd+'°',len+3,py2+3);
+      }
+    }
+    ctx.restore();
+
+    // Altitude tape (right side)
+    const tapeX=W-58, tapeY=H/2;
+    ctx.fillStyle='rgba(0,0,0,0.55)'; ctx.fillRect(tapeX,tapeY-80,54,160);
+    ctx.strokeStyle='rgba(0,255,100,0.3)'; ctx.lineWidth=0.5;
+    ctx.strokeRect(tapeX,tapeY-80,54,160);
+    for(let da=-4;da<=4;da++){
+      const altVal=Math.round((alt+da*25)/25)*25;
+      const ty=tapeY-da*15;
+      ctx.strokeStyle='rgba(0,255,100,0.2)'; ctx.lineWidth=0.5;
+      ctx.beginPath(); ctx.moveTo(tapeX,ty); ctx.lineTo(tapeX+8,ty); ctx.stroke();
+      ctx.fillStyle='rgba(0,255,100,0.7)'; ctx.font='9px monospace';
+      ctx.textAlign='left'; ctx.fillText(altVal.toFixed(0),tapeX+11,ty+3);
+    }
+    // Alt current box
+    ctx.fillStyle='#00ff64'; ctx.fillRect(tapeX-2,tapeY-10,56,20);
+    ctx.fillStyle='#000'; ctx.font='bold 11px monospace';
+    ctx.textAlign='center'; ctx.fillText(alt.toFixed(0)+'m',tapeX+27,tapeY+4);
+
+    // Speed tape (left side)
+    const stapeX=4;
+    ctx.fillStyle='rgba(0,0,0,0.55)'; ctx.fillRect(stapeX,tapeY-80,54,160);
+    for(let ds=-4;ds<=4;ds++){
+      const sVal=Math.round((Math.abs(s.vx)+ds*5)/5)*5;
+      const ty=tapeY-ds*15;
+      ctx.strokeStyle='rgba(0,255,100,0.2)'; ctx.lineWidth=0.5;
+      ctx.beginPath(); ctx.moveTo(stapeX+46,ty); ctx.lineTo(stapeX+54,ty); ctx.stroke();
+      ctx.fillStyle='rgba(0,255,100,0.7)'; ctx.font='9px monospace';
+      ctx.textAlign='right'; ctx.fillText(Math.max(0,sVal).toFixed(0),stapeX+44,ty+3);
+    }
+    ctx.fillStyle='#00ff64'; ctx.fillRect(stapeX,tapeY-10,56,20);
+    ctx.fillStyle='#000'; ctx.font='bold 11px monospace';
+    ctx.textAlign='center'; ctx.fillText(Math.abs(s.vx).toFixed(1)+'m/s',stapeX+27,tapeY+4);
+
+    // Heading tape (top center)
+    ctx.fillStyle='rgba(0,0,0,0.55)'; ctx.fillRect(W/2-80,6,160,22);
+    const hdg = ((s.x/5)%360+360)%360;
+    for(let dh=-4;dh<=4;dh++){
+      const hx=W/2+dh*18;
+      const hv=((Math.round(hdg/10+dh)*10)%360+360)%360;
+      ctx.fillStyle=dh===0?'#00ff64':'rgba(0,255,100,0.5)';
+      ctx.font=dh===0?'bold 10px monospace':'9px monospace';
+      ctx.textAlign='center'; ctx.fillText(hv.toFixed(0)+'°',hx,21);
+    }
+    ctx.fillStyle='#00ff64'; ctx.fillRect(W/2-1,28,2,6);
+
+    // VSI (vertical speed) indicator
+    const vsiY=H*0.18;
+    ctx.fillStyle='rgba(0,0,0,0.5)'; ctx.fillRect(W-60,vsiY,52,80);
+    ctx.strokeStyle='rgba(0,200,80,0.4)'; ctx.strokeRect(W-60,vsiY,52,80);
+    ctx.fillStyle='rgba(0,255,100,0.7)'; ctx.font='8px monospace';
+    ctx.textAlign='center'; ctx.fillText('V/S',W-34,vsiY+12);
+    const vsiColor=s.vy>0?'#00ff64':s.vy<-2?'#ff4444':'#ffaa00';
+    ctx.fillStyle=vsiColor; ctx.font='bold 11px monospace';
+    ctx.fillText((s.vy>=0?'+':'')+s.vy.toFixed(1),W-34,vsiY+32);
+    ctx.fillStyle='rgba(0,255,100,0.5)'; ctx.font='8px monospace';
+    ctx.fillText('m/s',W-34,vsiY+44);
+    // VSI bar
+    const vsiBar=Math.min(1,Math.max(-1,s.vy/10));
+    ctx.fillStyle=vsiColor; ctx.fillRect(W-48,vsiY+52,28*Math.abs(vsiBar),6);
+
+    // SoC bar (bottom HUD)
+    const socW=(W-120)*s.soc;
+    ctx.fillStyle='rgba(0,0,0,0.5)'; ctx.fillRect(60,H-24,W-120,14);
+    const scol=s.soc>0.30?'#00c853':s.soc>0.15?'#ffab00':'#ff1744';
+    ctx.fillStyle=scol; ctx.fillRect(60,H-24,socW,14);
+    ctx.fillStyle='rgba(255,255,255,0.8)'; ctx.font='9px monospace';
+    ctx.textAlign='left'; ctx.fillText('BAT '+( s.soc*100).toFixed(0)+'%',65,H-13);
+    ctx.textAlign='right'; ctx.fillText(((1-s.soc)*AC.packKwh).toFixed(1)+' kWh used',W-65,H-13);
+
+    // Phase badge
+    const phaseColor={GROUND:'#aaa',TAKEOFF:'#ffdd00',CLIMB:'#00ff64',CRUISE:'#00ccff',DESCENT:'#ff8800',APPROACH:'#ffdd00',LEVEL:'#88ddff',LANDED:'#00ff64','PRE-FLIGHT':'#888'}[s.phase]||'#aaa';
+    ctx.fillStyle='rgba(0,0,0,0.65)'; ctx.fillRect(W/2-55,H-44,110,18);
+    ctx.fillStyle=phaseColor; ctx.font='bold 10px monospace';
+    ctx.textAlign='center'; ctx.fillText(s.phase,W/2,H-30);
+
+    // AP annunciator
+    if(s.apMode!=='OFF'){
+      ctx.fillStyle='rgba(0,80,200,0.8)'; ctx.fillRect(W/2-40,H-66,80,18);
+      ctx.fillStyle='#ffffff'; ctx.font='bold 9px monospace';
+      ctx.textAlign='center'; ctx.fillText('AP '+s.apMode,W/2,H-52);
+    }
+
+    // Wind indicator
+    ctx.fillStyle='rgba(0,0,0,0.5)'; ctx.fillRect(4,H-44,90,38);
+    ctx.fillStyle='rgba(0,255,100,0.7)'; ctx.font='8px monospace';
+    ctx.textAlign='left';
+    ctx.fillText('WND '+Math.sqrt(s.windX**2+s.windY**2).toFixed(1)+'m/s',8,H-30);
+    ctx.fillStyle=s.gustActive?'#ff6600':'rgba(0,255,100,0.4)';
+    ctx.fillText(s.gustActive?'GUST ⚡':'calm',8,H-16);
+
+    // Warning
+    if(s.warning && s.warningTimer>0){
+      ctx.save(); ctx.globalAlpha=0.6+Math.sin(s.t*8)*0.4;
+      ctx.fillStyle='rgba(200,0,0,0.75)'; ctx.fillRect(W/2-70,H/2-20,140,36);
+      ctx.fillStyle='#ffffff'; ctx.font='bold 14px monospace';
+      ctx.textAlign='center'; ctx.fillText(s.warning,W/2,H/2+3);
+      ctx.restore();
+    }
+
+    // Range
+    ctx.fillStyle='rgba(0,0,0,0.5)'; ctx.fillRect(4,4,90,30);
+    ctx.fillStyle='rgba(0,255,100,0.8)'; ctx.font='9px monospace';
+    ctx.textAlign='left';
+    ctx.fillText('RNG '+s.range.toFixed(1)+' km',8,16);
+    ctx.fillText('T '+Math.floor(s.t/60)+':'+(s.t%60<10?'0':'')+Math.floor(s.t%60),8,30);
+
+    ctx.restore();
+  }, [AC, isNight]);
+
+  // Main loop
+  const loop = useCallback((ts) => {
+    if (!lastT.current) lastT.current = ts;
+    const dt = Math.min((ts - lastT.current)/1000, 0.05);
+    lastT.current = ts;
+    stepPhysics(dt);
+    renderCanvas();
+    rafRef.current = requestAnimationFrame(loop);
+  }, [stepPhysics, renderCanvas]);
+
+  const startSim = useCallback(() => {
+    const s = S.current;
+    Object.assign(s, {x:0,y:0.1,vx:0,vy:0.1,soc:1,range:0,t:0,
+      throttle:0.5,pitchCmd:0,pitch:0,rollVis:0,power:0,
+      phase:'TAKEOFF',crashed:false,onGround:false,engineRPM:30,
+      apMode:'OFF',apPitchInt:0,apThrottleInt:0,camY:0,camYVel:0,
+      particles:[],crashParts:[],warning:'',warningTimer:0,rain:false,rainIntensity:0,lightning:false});
+    lastT.current = null;
     setRunning(true);
-    rafRef.current=requestAnimationFrame(loop);
-  },[loop]);
+    setMsg('Flying! ↑↓ Throttle · ←→ Pitch · [A] Autopilot · [R] Rain');
+    rafRef.current = requestAnimationFrame(loop);
+  }, [loop]);
 
-  const stopSim=useCallback(()=>{
-    if(rafRef.current) cancelAnimationFrame(rafRef.current);
+  const stopSim = useCallback(() => {
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
     setRunning(false); setMsg('Simulation stopped.');
-  },[]);
+  }, []);
 
-  useEffect(()=>{
-    const kd=(e)=>{ keysRef.current[e.key]=true; e.preventDefault?.(); };
-    const ku=(e)=>{ keysRef.current[e.key]=false; };
-    window.addEventListener('keydown',kd);
-    window.addEventListener('keyup',ku);
-    return()=>{ window.removeEventListener('keydown',kd); window.removeEventListener('keyup',ku);
-      if(rafRef.current) cancelAnimationFrame(rafRef.current); };
-  },[]);
+  // AP toggle
+  const cycleAP = useCallback(() => {
+    const s = S.current;
+    const modes = ['OFF','ALT','CRUISE','LND'];
+    const next = modes[(modes.indexOf(s.apMode)+1)%modes.length];
+    s.apMode = next;
+    if(next==='ALT') s.apAltTarget = Math.max(50, s.y);
+    if(next==='CRUISE') { s.apAltTarget = AC.maxAlt*0.9; s.apSpdTarget = AC.vCr*0.85; }
+    if(next==='LND') s.apAltTarget = s.y;
+    setDisp(d=>({...d, apMode:next}));
+  }, [AC]);
 
-  const st=disp||{alt:0,vx:0,vz:0,soc:1,range:0,t:0,throttle:0.5,pitch:0,phase:'ground',power:0};
-  const socColor=st.soc>0.30?SC.green:st.soc>0.15?SC.amber:SC.red;
-  const altFrac=Math.min(st.alt/Math.max(maxAlt,1),1);
-  const Vstall=SR?.Vstall||20;
+  useEffect(() => {
+    const kd = (e) => {
+      keysRef.current[e.key] = true;
+      if(e.key==='a'||e.key==='A') cycleAP();
+      if((e.key==='r'||e.key==='R') && running){ const s=S.current; s.rain=!s.rain; if(s.rain){s.lightning=false;} }
+      if((e.key==='l'||e.key==='L') && running){ const s=S.current; s.lightning=!s.lightning; }
+      e.preventDefault?.();
+    };
+    const ku = (e) => { delete keysRef.current[e.key]; };
+    window.addEventListener('keydown', kd);
+    window.addEventListener('keyup', ku);
+    return () => {
+      window.removeEventListener('keydown', kd);
+      window.removeEventListener('keyup', ku);
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
+  }, [cycleAP, running]);
 
-  return(
-  <div style={{display:'flex',flexDirection:'column',gap:14}}>
-    <div style={{background:`linear-gradient(135deg,${SC.bg},#0a1628)`,border:`1px solid #3b82f644`,borderRadius:10,padding:'16px 20px'}}>
-      <div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace",letterSpacing:'0.18em',marginBottom:4}}>PILOT-IN-THE-LOOP — EVTOL FLIGHT SIMULATOR</div>
-      <div style={{fontSize:18,fontWeight:800,color:SC.text,marginBottom:6}}><span style={{color:SC.blue}}>Flight</span> Simulator</div>
-      <div style={{fontSize:11,color:SC.muted,lineHeight:1.7}}>
-        Physics-based simulation using your converged eVTOL design. All drag, stall speed, power, and battery depletion derived directly from your SR sizing outputs.
-        <span style={{color:SC.amber,marginLeft:8,fontWeight:700}}>↑↓ = throttle · ←→ = pitch (or WASD)</span>
+  // Canvas size
+  useEffect(() => {
+    const canvas = canvasRef.current; if(!canvas) return;
+    const ro = new ResizeObserver(()=>{canvas.width=canvas.offsetWidth; canvas.height=canvas.offsetHeight||460;});
+    ro.observe(canvas); canvas.width=canvas.offsetWidth||800; canvas.height=460;
+    return()=>ro.disconnect();
+  }, []);
+
+  const st = disp;
+  const socColor = (st.soc||1)>0.30?SC.green:(st.soc||1)>0.15?SC.amber:SC.red;
+
+  return (
+  <div style={{display:'flex',flexDirection:'column',gap:10}}>
+    {/* Header */}
+    <div style={{background:`linear-gradient(135deg,${SC.bg},#071828)`,border:`1px solid #3b82f644`,borderRadius:10,padding:'12px 18px',display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:8}}>
+      <div>
+        <div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace",letterSpacing:'0.18em'}}>PILOT-IN-THE-LOOP — EVTOL FLIGHT SIMULATOR v2</div>
+        <div style={{fontSize:16,fontWeight:800,color:SC.text}}><span style={{color:SC.blue}}>Flight</span> Simulator — {AC.MTOW.toFixed(0)}kg · {AC.Phov.toFixed(0)}kW hover</div>
+      </div>
+      <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
+        <button type="button" onClick={running?stopSim:startSim}
+          style={{padding:'7px 20px',background:running?`${SC.red}22`:`${SC.green}22`,
+            border:`1px solid ${running?SC.red:SC.green}`,borderRadius:6,
+            color:running?SC.red:SC.green,fontSize:11,fontWeight:700,cursor:'pointer',fontFamily:"'DM Mono',monospace"}}>
+          {running?'⏹ Stop':'▶ Takeoff'}
+        </button>
+        {running&&(<>
+          <button type="button" onClick={cycleAP}
+            style={{padding:'7px 14px',background:(st.apMode&&st.apMode!=='OFF')?'#1e40af':'transparent',
+              border:`1px solid ${(st.apMode&&st.apMode!=='OFF')?'#3b82f6':SC.border}`,borderRadius:6,
+              color:(st.apMode&&st.apMode!=='OFF')?'#93c5fd':SC.muted,fontSize:11,cursor:'pointer',fontFamily:"'DM Mono',monospace"}}>
+            AP: {st.apMode||'OFF'}
+          </button>
+          <button type="button" onClick={()=>{const s=S.current;s.rain=!s.rain;}}
+            style={{padding:'7px 12px',background:(st.rain)?'#1e3a5c':'transparent',
+              border:`1px solid ${(st.rain)?'#60a5fa':SC.border}`,borderRadius:6,
+              color:(st.rain)?'#93c5fd':SC.muted,fontSize:11,cursor:'pointer',fontFamily:"'DM Mono',monospace"}}>
+            🌧 Rain
+          </button>
+          <button type="button" onClick={()=>{const s=S.current;s.gustActive=!s.gustActive;s.gustX=s.gustActive?12:0;s.gustY=s.gustActive?-3:0;s.gustTimer=3;}}
+            style={{padding:'7px 12px',background:st.gust?'#451a00':'transparent',
+              border:`1px solid ${st.gust?SC.amber:SC.border}`,borderRadius:6,
+              color:st.gust?SC.amber:SC.muted,fontSize:11,cursor:'pointer',fontFamily:"'DM Mono',monospace"}}>
+            ⚡ Gust
+          </button>
+        </>)}
+        <div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace",marginLeft:4}}>
+          {msg}
+        </div>
       </div>
     </div>
 
-    <div style={{display:'flex',gap:10,alignItems:'center',flexWrap:'wrap'}}>
-      <button type="button" onClick={running?stopSim:startSim}
-        style={{padding:'8px 24px',background:running?`${SC.red}22`:`${SC.green}22`,
-          border:`1px solid ${running?SC.red:SC.green}`,borderRadius:6,
-          color:running?SC.red:SC.green,fontSize:12,fontWeight:700,cursor:'pointer',
-          fontFamily:"'DM Mono',monospace"}}>
-        {running?'⏹ Stop':'▶ Takeoff'}
-      </button>
-      {running&&(<>
-        <div style={{display:'flex',alignItems:'center',gap:8,fontSize:11,color:SC.muted,fontFamily:"'DM Mono',monospace"}}>
-          <span>Throttle</span>
-          <input type="range" min="0" max="1" step="0.01" defaultValue="0.7"
-            onChange={e=>{ throttleRef.current=+e.target.value; }} style={{width:120}}/>
-          <span style={{color:SC.amber,minWidth:32}}>{(st.throttle*100).toFixed(0)}%</span>
-        </div>
-        <div style={{display:'flex',alignItems:'center',gap:8,fontSize:11,color:SC.muted,fontFamily:"'DM Mono',monospace"}}>
-          <span>Pitch</span>
-          <input type="range" min="-15" max="15" step="0.5" defaultValue="0"
-            onChange={e=>{ pitchRef.current=+e.target.value; }} style={{width:100}}/>
-          <span style={{color:SC.teal,minWidth:36}}>{st.pitch.toFixed(1)}°</span>
-        </div>
-      </>)}
-      <div style={{marginLeft:'auto',fontSize:10,
-        color:disp?.crashed?SC.red:disp?.landed?SC.green:SC.muted,
-        fontFamily:"'DM Mono',monospace",background:SC.bg,
-        padding:'6px 12px',borderRadius:6,border:`1px solid ${SC.border}`}}>
-        {msg}
-      </div>
+    {/* Canvas viewport */}
+    <div style={{position:'relative',borderRadius:8,overflow:'hidden',border:`1px solid ${SC.border}`,background:'#010408'}}>
+      <canvas ref={canvasRef} style={{display:'block',width:'100%',height:460}} height={460}/>
     </div>
 
-    <div style={{display:'grid',gridTemplateColumns:'100px 1fr 100px',gap:12}}>
-      <div style={{background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:8,padding:12,display:'flex',flexDirection:'column',gap:6,alignItems:'center'}}>
-        <div style={{fontSize:8,color:SC.muted,fontFamily:"'DM Mono',monospace",textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:2}}>Power</div>
-        <SimGauge label="Power kW" val={st.power} max={Phov*1.5} unit="kW" col={SC.amber} SC={SC}/>
-        <SimGauge label="Throttle" val={st.throttle*100} max={100} unit="%" col={SC.teal} SC={SC}/>
-        <SimGauge label="Pitch °" val={Math.abs(st.pitch)} max={15} unit="deg" col={SC.blue} SC={SC}/>
-      </div>
-
-      <div style={{background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:8,padding:14}}>
-        <div style={{display:'grid',gridTemplateColumns:'52px 1fr 52px',gap:8,height:260}}>
-          <div style={{display:'flex',flexDirection:'column',justifyContent:'space-between',alignItems:'flex-end',fontSize:8,color:SC.muted,fontFamily:"'DM Mono',monospace",borderRight:`1px solid ${SC.border}`,paddingRight:6}}>
-            {[maxAlt,maxAlt*0.75,maxAlt*0.5,maxAlt*0.25,0].map(v=>(
-              <div key={v} style={{color:Math.abs(st.alt-v)<maxAlt*0.06?SC.green:SC.muted}}>{v.toFixed(0)}</div>
-            ))}
-            <div style={{fontSize:7,color:SC.muted,marginTop:2}}>ALT m</div>
-          </div>
-
-          <div style={{position:'relative',overflow:'hidden',borderRadius:6,border:`1px solid ${SC.border}`,background:'#07090f'}}>
-            <div style={{position:'absolute',top:0,left:0,right:0,height:`${Math.max(5,50-altFrac*45)}%`,background:'linear-gradient(180deg,#0d2040,#1e3a5c44)',transition:'height 0.08s'}}/>
-            <div style={{position:'absolute',bottom:0,left:0,right:0,height:`${Math.max(5,50+altFrac*45)}%`,background:'linear-gradient(0deg,#1a0800,#2a1000)',transition:'height 0.08s'}}/>
-            <div style={{position:'absolute',top:`${Math.max(5,50-altFrac*45)}%`,left:0,right:0,height:1,background:SC.amber,transition:'top 0.08s'}}/>
-            <div style={{position:'absolute',left:'50%',top:'50%',transform:`translate(-50%,-50%) rotate(${-st.pitch}deg)`,width:56,height:1,background:`${SC.green}99`}}/>
-            <div style={{position:'absolute',left:'50%',top:'50%',transform:'translate(-50%,-50%)'}}>
-              <svg width="36" height="18" viewBox="0 0 36 18">
-                <line x1="0" y1="9" x2="12" y2="9" stroke={SC.amber} strokeWidth="2"/>
-                <line x1="24" y1="9" x2="36" y2="9" stroke={SC.amber} strokeWidth="2"/>
-                <circle cx="18" cy="9" r="3" fill="none" stroke={SC.amber} strokeWidth="1.5"/>
-              </svg>
-            </div>
-            <div style={{position:'absolute',top:6,left:'50%',transform:'translateX(-50%)',fontSize:9,fontWeight:700,color:SC.text,fontFamily:"'DM Mono',monospace",background:SC.panel+'cc',padding:'2px 8px',borderRadius:10,border:`1px solid ${SC.border}`}}>
-              {st.phase?.toUpperCase()}
-            </div>
-            <div style={{position:'absolute',bottom:6,left:'50%',transform:'translateX(-50%)',fontSize:11,fontWeight:700,color:SC.teal,fontFamily:"'DM Mono',monospace"}}>
-              {Math.abs(st.vx).toFixed(1)} m/s
-            </div>
-            <div style={{position:'absolute',bottom:6,right:8,fontSize:11,fontWeight:700,color:SC.green,fontFamily:"'DM Mono',monospace"}}>
-              {st.alt.toFixed(0)}m
-            </div>
-            <div style={{position:'absolute',bottom:6,left:8,fontSize:11,fontWeight:700,color:st.vz>=0?SC.green:SC.red,fontFamily:"'DM Mono',monospace"}}>
-              {st.vz>=0?'+':''}{st.vz.toFixed(1)}
-            </div>
-            {Math.abs(st.vx)<Vstall&&st.alt>15&&<div style={{position:'absolute',top:30,left:'50%',transform:'translateX(-50%)',fontSize:9,fontWeight:700,color:SC.red,fontFamily:"'DM Mono',monospace",background:'#dc262622',padding:'1px 6px',borderRadius:4,border:`1px solid ${SC.red}`}}>STALL WARN</div>}
-          </div>
-
-          <div style={{display:'flex',flexDirection:'column',justifyContent:'space-between',alignItems:'flex-start',fontSize:8,color:SC.muted,fontFamily:"'DM Mono',monospace",borderLeft:`1px solid ${SC.border}`,paddingLeft:6}}>
-            {[vCr*1.1,vCr*0.8,vCr*0.5,vCr*0.25,0].map(v=>(
-              <div key={v} style={{color:Math.abs(Math.abs(st.vx)-v)<vCr*0.09?SC.teal:SC.muted}}>{v.toFixed(0)}</div>
-            ))}
-            <div style={{fontSize:7,color:SC.muted,marginTop:2}}>SPD m/s</div>
-          </div>
+    {/* Throttle & Pitch sliders */}
+    {running&&(
+    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+      <div style={{background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:6,padding:'10px 14px'}}>
+        <div style={{display:'flex',justifyContent:'space-between',fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace",marginBottom:6}}>
+          <span>THROTTLE (↑↓ / W S)</span>
+          <span style={{color:SC.amber,fontWeight:700}}>{((st.throttle||0)*100).toFixed(0)}%</span>
         </div>
-
-        <div style={{marginTop:10,display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-          <div>
-            <div style={{fontSize:8,color:SC.muted,fontFamily:"'DM Mono',monospace",marginBottom:3}}>BATTERY SoC — {(st.soc*100).toFixed(1)}%</div>
-            <div style={{height:8,background:SC.border,borderRadius:4,overflow:'hidden'}}>
-              <div style={{height:'100%',width:`${st.soc*100}%`,background:socColor,borderRadius:4,transition:'width 0.08s'}}/>
-            </div>
-          </div>
-          <div>
-            <div style={{fontSize:8,color:SC.muted,fontFamily:"'DM Mono',monospace",marginBottom:3}}>RANGE — {st.range.toFixed(1)} / {Rang} km</div>
-            <div style={{height:8,background:SC.border,borderRadius:4,overflow:'hidden'}}>
-              <div style={{height:'100%',width:`${Math.min(st.range/Math.max(Rang,1)*100,100)}%`,background:SC.blue,borderRadius:4,transition:'width 0.08s'}}/>
-            </div>
-          </div>
+        <input type="range" min="0" max="1" step="0.01" value={st.throttle||0}
+          onChange={e=>{ S.current.throttle=+e.target.value; S.current.apMode='OFF'; }}
+          style={{width:'100%'}}/>
+        <div style={{display:'flex',justifyContent:'space-between',marginTop:4,fontSize:8,color:SC.muted,fontFamily:"'DM Mono',monospace"}}>
+          <span>0%</span><span style={{color:SC.amber}}>Hover≈{(AC.Phov*(st.throttle||0)).toFixed(0)}kW</span><span>100%</span>
         </div>
       </div>
-
-      <div style={{background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:8,padding:12,display:'flex',flexDirection:'column',gap:6,alignItems:'center'}}>
-        <div style={{fontSize:8,color:SC.muted,fontFamily:"'DM Mono',monospace",textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:2}}>State</div>
-        <SimGauge label="SoC %" val={st.soc*100} max={100} unit="%" col={socColor} SC={SC}/>
-        <SimGauge label="Range km" val={st.range} max={Rang} unit="km" col={SC.blue} SC={SC}/>
-        <SimGauge label="Altitude" val={st.alt} max={maxAlt} unit="m" col={SC.green} SC={SC}/>
+      <div style={{background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:6,padding:'10px 14px'}}>
+        <div style={{display:'flex',justifyContent:'space-between',fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace",marginBottom:6}}>
+          <span>PITCH (←→ / A D)</span>
+          <span style={{color:SC.teal,fontWeight:700}}>{(st.pitch||0).toFixed(1)}°</span>
+        </div>
+        <input type="range" min="-18" max="18" step="0.1" value={st.pitch||0}
+          onChange={e=>{ S.current.pitchCmd=+e.target.value; S.current.apMode='OFF'; }}
+          style={{width:'100%'}}/>
+        <div style={{display:'flex',justifyContent:'space-between',marginTop:4,fontSize:8,color:SC.muted,fontFamily:"'DM Mono',monospace"}}>
+          <span>-18° back</span><span style={{color:SC.teal}}>{Math.abs(st.vx||0).toFixed(1)} m/s → {(st.alt||0).toFixed(0)}m</span><span>+18° fwd</span>
+        </div>
       </div>
     </div>
+    )}
 
-    <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8}}>
+    {/* Instrument strip */}
+    <div style={{display:'grid',gridTemplateColumns:'repeat(6,1fr)',gap:8}}>
       {[
-        ['Mission Time',`${Math.floor(st.t/60)}:${String(Math.floor(st.t%60)).padStart(2,'0')}`,SC.muted],
-        ['Stall Speed',`${Vstall.toFixed(1)} m/s`,Math.abs(st.vx)<Vstall&&st.alt>15?SC.red:SC.green],
-        ['Energy Used',`${((1-st.soc)*packKwh).toFixed(1)} kWh`,SC.amber],
-        ['Efficiency',st.range>0.05?`${((1-st.soc)*packKwh*1000/st.range).toFixed(0)} Wh/km`:'—',SC.teal],
-      ].map(([l,v,c])=>(
-        <div key={l} style={{background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:6,padding:'8px 12px',textAlign:'center'}}>
-          <div style={{fontSize:8,color:SC.muted,fontFamily:"'DM Mono',monospace",marginBottom:2}}>{l}</div>
-          <div style={{fontSize:15,fontWeight:700,color:c,fontFamily:"'DM Mono',monospace"}}>{v}</div>
+        ['Altitude',(st.alt||0).toFixed(0),'m',SC.green],
+        ['Airspeed',Math.abs(st.vx||0).toFixed(1),'m/s',SC.teal],
+        ['V/S',(st.vy||0)>=0?'+'+(st.vy||0).toFixed(1):(st.vy||0).toFixed(1),'m/s',(st.vy||0)>=0?SC.green:SC.red],
+        ['Power',(st.power||0).toFixed(0),'kW',SC.amber],
+        ['Battery',((st.soc||1)*100).toFixed(0),'%',socColor],
+        ['Range',(st.range||0).toFixed(1),'km',SC.blue],
+      ].map(([l,v,u,c])=>(
+        <div key={l} style={{background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:6,padding:'8px 10px',textAlign:'center'}}>
+          <div style={{fontSize:7.5,color:SC.muted,fontFamily:"'DM Mono',monospace",textTransform:'uppercase',marginBottom:2}}>{l}</div>
+          <div style={{fontSize:17,fontWeight:700,color:c,fontFamily:"'DM Mono',monospace",lineHeight:1}}>{v}</div>
+          <div style={{fontSize:8,color:SC.muted,fontFamily:"'DM Mono',monospace",marginTop:2}}>{u}</div>
         </div>
       ))}
     </div>
-    <div style={{background:SC.bg,border:`1px solid ${SC.border}`,borderRadius:6,padding:'7px 12px',fontSize:8,color:SC.muted,fontFamily:"'DM Mono',monospace"}}>
-      Aircraft: MTOW={fmt2(MTOW,0)}kg · P_hov={fmt2(Phov,0)}kW · P_cr={fmt2(Pcr,0)}kW · L/D={fmt2(LDact,2)} · Pack={fmt2(packKwh,2)}kWh · V_stall={fmt2(Vstall,1)}m/s · Range={Rang}km
+
+    <div style={{fontSize:8.5,color:SC.muted,fontFamily:"'DM Mono',monospace",padding:'6px 10px',background:SC.bg,borderRadius:5,border:`1px solid ${SC.border}`}}>
+      Controls: <span style={{color:SC.amber}}>↑↓ / WS</span> Throttle · <span style={{color:SC.teal}}>←→ / AD</span> Pitch · <span style={{color:'#3b82f6'}}>A key</span> Autopilot cycle (OFF→ALT HOLD→CRUISE→AUTO-LAND) · <span style={{color:'#60a5fa'}}>R</span> Rain · <span style={{color:'#f59e0b'}}>G</span> Gust
+      &nbsp;|&nbsp; Physics: SR-calibrated actuator disk · Dryden turbulence · Ground effect · Stall detection
     </div>
   </div>);
 }
 
-/* ═══════════════════════════════════════════════════════════════════
-   FLEET OPTIMIZER — Multi-vehicle vertiport network
-   ═══════════════════════════════════════════════════════════════════ */
 function FleetOptimizerPanel({ SR, params, SC, TTP }) {
   const [routes,setRoutes]=useState([
     {id:1,from:'Hub A',to:'Hub B',dist:45, demand:180,active:true},
