@@ -4133,12 +4133,24 @@ function FlightSimPanel({ SR, params, SC }) {
 
     // Fuselage
     ctx.fillStyle=isNight?'#1a2030':'#2a3a50';
-    ctx.beginPath(); ctx.roundRect(-22,-5,44,12,5); ctx.fill();
+    ctx.beginPath();
+    const fr=5,fx=-22,fy=-5,fw=44,fh=12;
+    ctx.moveTo(fx+fr,fy); ctx.lineTo(fx+fw-fr,fy); ctx.arcTo(fx+fw,fy,fx+fw,fy+fr,fr);
+    ctx.lineTo(fx+fw,fy+fh-fr); ctx.arcTo(fx+fw,fy+fh,fx+fw-fr,fy+fh,fr);
+    ctx.lineTo(fx+fr,fy+fh); ctx.arcTo(fx,fy+fh,fx,fy+fh-fr,fr);
+    ctx.lineTo(fx,fy+fr); ctx.arcTo(fx,fy,fx+fr,fy,fr); ctx.closePath();
+    ctx.fill();
     ctx.strokeStyle='#3a5070'; ctx.lineWidth=0.8; ctx.stroke();
 
     // Cockpit
     ctx.fillStyle=isNight?'#0a1020':'#1a2a40';
-    ctx.beginPath(); ctx.roundRect(-10,-5,14,7,3); ctx.fill();
+    ctx.beginPath();
+    const cr=3,cx2=-10,cy2=-5,cw=14,ch=7;
+    ctx.moveTo(cx2+cr,cy2); ctx.lineTo(cx2+cw-cr,cy2); ctx.arcTo(cx2+cw,cy2,cx2+cw,cy2+cr,cr);
+    ctx.lineTo(cx2+cw,cy2+ch-cr); ctx.arcTo(cx2+cw,cy2+ch,cx2+cw-cr,cy2+ch,cr);
+    ctx.lineTo(cx2+cr,cy2+ch); ctx.arcTo(cx2,cy2+ch,cx2,cy2+ch-cr,cr);
+    ctx.lineTo(cx2,cy2+cr); ctx.arcTo(cx2,cy2,cx2+cr,cy2,cr); ctx.closePath();
+    ctx.fill();
     ctx.fillStyle=`rgba(100,200,255,${0.3+rpmAlpha*0.2})`;
     ctx.fillRect(-8,-4,10,5);
 
@@ -4315,7 +4327,7 @@ function FlightSimPanel({ SR, params, SC }) {
     ctx.fillText('T '+Math.floor(s.t/60)+':'+(s.t%60<10?'0':'')+Math.floor(s.t%60),8,30);
 
     ctx.restore();
-  }, [AC, isNight]);
+  }, [AC]);
 
   // Main loop
   const loop = useCallback((ts) => {
