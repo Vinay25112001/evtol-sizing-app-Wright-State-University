@@ -3637,201 +3637,6 @@ function DesignSpacePanel({ params, SC, TTP, runSizingFn, onApply }) {
   );
 }
 
-/* ═══════════════════════════════════════════════════════════════════════
-   MATLAB THESIS ALGORITHM — exact port of eVTOL_Full_Analysis_v2.m
-   Produces results that match the Trail 1 thesis report output directly.
-   Only activated when user clicks 🎓 MY PROJECT.
-   ═══════════════════════════════════════════════════════════════════════ */
-function runMatlabSizing(p) {
-  const g0=9.81, rhoMSL=1.225;
-
-  // ── Parameters from MATLAB code ─────────────────────────────────────
-  const Payload   = p.payload   || 455;
-  const ewf       = p.ewf       || 0.52;
-  const SED       = p.sedCell   || 275;     // Wh/kg
-  const Range     = p.range     || 250;     // km
-  const Vcr       = p.vCruise   || 67;      // m/s
-  const LD        = p.LD        || 15;
-  const etaHov    = p.etaHov    || 0.63;
-  const etaSys    = p.etaSys    || 0.765;
-  const etaBat    = p.etaBat    || 0.90;
-  const CruiseAlt = p.cruiseAlt || 1000;    // m
-  const ResRange  = p.reserveRange || 60;   // km
-  const SoCmin    = p.socMin    || 0.20;
-  const N         = p.nPropHover|| 6;
-  const D         = p.propDiam  || 3.0;     // m
-  const RoC       = p.rateOfClimb || 5.08; // m/s
-  const ClimbAng  = p.climbAngle || 5;      // deg
-  const hvtol     = p.hoverHeight || 15.24; // m
-
-  const ClimbAngRad = ClimbAng * Math.PI / 180;
-  const LDcl      = LD * (1 - 0.13);                     // climb L/D with 13% penalty
-  const Vcl       = RoC / Math.sin(ClimbAngRad);          // climb horizontal velocity
-  const DesAngRad = Math.atan(1 / LD);                    // descent angle = atand(1/LD)
-  const Vdc       = RoC / Math.sin(DesAngRad);            // descent horizontal velocity
-  const Vres      = 0.70 * Vcr;                           // reserve = 0.7×cruise (MATLAB line 22)
-
-  // ── Ranges (m) ──────────────────────────────────────────────────────
-  const ClimbRange   = (CruiseAlt - hvtol) / Math.tan(ClimbAngRad);
-  const DescentRange = (CruiseAlt - hvtol) / Math.tan(DesAngRad);
-  const CruiseRange  = Math.max(0, Range*1000 - ClimbRange - DescentRange - ResRange*1000);
-
-  // ── Times (s) ───────────────────────────────────────────────────────
-  const tto  = hvtol / 0.5;
-  const tcl  = ClimbRange / Vcl;
-  const tcr  = CruiseRange / Vcr;
-  const tdc  = DescentRange / Vdc;
-  const tld  = hvtol / 0.5;
-  const tres = ResRange * 1000 / Vres;
-  const Tend = tto + tcl + tcr + tdc + tld + tres;
-
-  // ── Round 1: simple fraction-based MTOW (same as MATLAB first loop) ─
-  const batFrac1 = (g0 * Range * 1000) / (LD * etaSys * SED * 3600);
-  let MTOW = Payload / (1 - ewf - batFrac1);
-  // Iterate to convergence
-  for(let i=0;i<5000;i++){
-    const Wempty = ewf * MTOW;
-    const Wbat1  = batFrac1 * MTOW;
-    const MTOW_new = Payload + Wempty + Wbat1;
-    if(Math.abs(MTOW_new - MTOW) < 1e-6){ MTOW = MTOW_new; break; }
-    MTOW = MTOW_new;
-    if(MTOW > 5700) break;
-  }
-
-  // ── Round 2: coupled MTOW + energy iteration ─────────────────────────
-  let Phov,Pcl,Pcr2,Pdc2,Pres2;
-  let Eto,Ecl,Ecr,Edc,Eld,Eres,Etot,Wbat,Wempty;
-  let EtotPrev=0;
-
-  for(let outer=0;outer<200;outer++){
-    const W   = MTOW;
-    const DL  = W*g0 / (Math.PI*(D/2)**2 * N);
-
-    Phov  = (W*g0/etaHov) * Math.sqrt(DL/(2*rhoMSL)) / 1000;
-    Pcl   = (W*g0/etaSys) * (RoC + Vcl/LDcl) / 1000;
-    Pcr2  = W*g0/etaSys * (Vcr/LD) / 1000;
-    // Descent: Rate_of_Decent = -RoC, Decent_Velocity = Vdc (positive magnitude)
-    // MATLAB: Decent_Power = (W*g0/etaSys*(Rate_of_Decent + Vdc/LDcl))/1000
-    //       = (W*g0/etaSys*(-RoC + Vdc/LDcl))/1000
-    Pdc2  = (W*g0/etaSys) * (-RoC + Vdc/LDcl) / 1000;
-    Pres2 = W*g0/etaSys * (Vres/LD) / 1000;
-
-    Eto  = Phov  * tto  / 3600;
-    Ecl  = Pcl   * tcl  / 3600;
-    Ecr  = Pcr2  * tcr  / 3600;
-    Edc  = Pdc2  * tdc  / 3600;
-    Eld  = Phov  * tld  / 3600;
-    Eres = Pres2 * tres / 3600;
-    Etot = Eto + Ecl + Ecr + Edc + Eld + Eres;
-
-    Wempty = ewf * MTOW;
-    Wbat   = Etot * 1000 * (1 + SoCmin) / (SED * etaBat);
-
-    const MTOW_new = Payload + Wempty + Wbat;
-
-    if(Math.abs(MTOW_new - MTOW) < 1e-6 && Math.abs(Etot - EtotPrev) < 1e-6){
-      MTOW = MTOW_new; break;
-    }
-    MTOW = MTOW_new;
-    EtotPrev = Etot;
-  }
-
-  // ── Battery total capacity ───────────────────────────────────────────
-  const PackkWh   = Etot / (1 - SoCmin);   // Battery_Total_kWh = TotalEnergy/(1-SoCmin)
-  const SEDpack   = PackkWh * 1000 / Math.max(1, Wbat);
-  const DL_final  = MTOW*g0 / (Math.PI*(D/2)**2 * N);
-
-  // ── Rotor/Motor sizing (pass-through for display) ───────────────────
-  const Omega     = (Phov*1000*etaHov / (MTOW*g0)) / Math.sqrt(DL_final/(2*rhoMSL)) * 0;
-  const TipSpd    = 0.58 * Math.sqrt(1.4*287*288.15);   // same as main algo
-  const RPM       = TipSpd/(D/2)*60/(2*Math.PI);
-  const BPF       = 3 * RPM / 60;
-  const TipMach   = TipSpd / Math.sqrt(1.4*287*288.15);
-  const PmotKW    = Phov / N * 1.0;
-  const PpeakKW   = PmotKW * 1.5;
-  const Torque    = PmotKW*1000 / (RPM*Math.PI/30);
-  const MotMass   = PmotKW / 5.0;
-  const CrateHov  = 3.0; // approximate
-  const Trotor    = MTOW*g0/N;
-  const PLrotor   = N/Phov/1000;
-
-  // ── Wing sizing (rough — for display compatibility) ──────────────────
-  const T0=288.15,L=0.0065,Rgas=287,GAM=1.4;
-  const Tcr2=T0-L*CruiseAlt, rhoCr=rhoMSL*Math.pow(Tcr2/T0,(-g0/(-L*Rgas))-1);
-  const clDes = p.clDesign || 0.55;
-  const Swing  = 2*MTOW*g0/(rhoCr*Vcr*Vcr*clDes);
-  const bWing  = Math.sqrt((p.AR||9)*Swing);
-  const WL     = MTOW*g0/Swing;
-  const CLmax  = 1.60;
-  const Vstall = Math.sqrt(2*WL/(rhoCr*CLmax));
-  const VA     = Vstall*Math.sqrt(3.5);
-  const VD     = Vcr*1.25;
-
-  // ── Noise (simplified for display) ───────────────────────────────────
-  const dBA_150m = 74.0; // approx — full model needs LDact etc.
-
-  // ── Feasibility checks ────────────────────────────────────────────────
-  const checks=[
-    {label:"MTOW converged",ok:MTOW<5700&&MTOW>500,val:`${MTOW.toFixed(1)} kg`},
-    {label:"Battery fraction",ok:Wbat/MTOW<0.45,val:`${(Wbat/MTOW*100).toFixed(1)}%`},
-    {label:"Pack ≥ Mission E",ok:PackkWh>=Etot,val:`${PackkWh.toFixed(2)} ≥ ${Etot.toFixed(2)} kWh`},
-    {label:"Tip Mach ≤ 0.70",ok:TipMach<0.70,val:`${TipMach.toFixed(4)}`},
-    {label:"Cruise range > 0",ok:CruiseRange>0,val:`${(CruiseRange/1000).toFixed(1)} km`},
-    {label:"SoC floor = SoCmin",ok:true,val:`${(SoCmin*100).toFixed(0)}%`},
-  ];
-
-  // Build convData for convergence panel
-  const convData=[{iter:0,MTOW:MTOW,Energy:Etot,residual:0,logResidual:-6}];
-
-  return {
-    // Weights
-    MTOW,Wempty,Wbat,
-    // Power
-    Phov,Pcl,Pcr:Pcr2,Pdc:Pdc2,Pres:Pres2,
-    // Energy
-    Eto,Ecl,Ecr,Edc,Eld,Eres,Etot,
-    // Times
-    tto,tcl,tcr,tdc,tld,tres,Tend,
-    // Ranges (m)
-    ClimbR:ClimbRange,DescR:DescentRange,CruiseRange,
-    // Battery
-    PackkWh,SEDpack,CrateHov,
-    // Wing
-    Swing,bWing,WL,Vstall,VA,VD,MAC:bWing/Math.sqrt(p.AR||9)*0.6,
-    LDact:LD, CD0tot:0.024, CDi:0.013, CDtot:0.037,
-    // Rotor
-    DLrotor:DL_final,TipSpd,TipMach,RPM,BPF,Nbld:3,
-    PmotKW,PpeakKW,Torque,MotMass,Trotor,PLrotor,
-    // Stability (pass-through defaults)
-    SM:0.12,SM_vt:0.152,xCGtotal:3.02,xNP:3.38,
-    // Noise
-    dBA_1m:95,dBA_25m:82,dBA_50m:77,dBA_100m:71,dBA_150m,
-    dBA_300m:65,dBA_500m:61,
-    dist_65dBA:310,dist_55dBA:980,dist_70dBA:180,dist_75dBA:100,
-    bpfHarmonics:[],noise_validity:{},noise_sensitivity:{},OASPL_total_1m:95,
-    // Convergence
-    itersR1:62,itersR2:112,tol:1e-6,r2Converged:true,
-    convData,
-    // Misc display
-    selAF:{name:"NACA 23015",tc:0.15,CLmax:1.60,CLd:0.60,CDmin:0.006,CM:-0.01,source:"Abbott & VD 1959"},
-    afScored:[],
-    // Arrays for charts
-    polarData:[],powerSteps:[],socSteps:[],velSteps:[],energySteps:[],
-    vnData:[],rpData:[],weightBreak:[],dragComp:[],tPhases:[0,tto,tto+tcl,tto+tcl+tcr,tto+tcl+tcr+tdc,tto+tcl+tcr+tdc+tld,Tend],
-    convData:convData,twSweepData:[],tolSweepData:[],
-    checks,feasible:checks.every(c=>c.ok),
-    // V-tail defaults
-    vtGamma_opt:45,Svt_total:0.5,Svt_panel:0.25,governs_pitch:true,ruddervator_combined_auth:0.85,
-    delta_yaw_rv_deg:8,Sh_req:0.45,Sv_req:0.12,Sh_eff:0.48,Sv_eff:0.14,
-    pitch_ratio:0.95,yaw_ratio:0.88,bvt_panel:1.2,Cr_vt:0.55,Ct_vt:0.25,MAC_vt:0.42,
-    sweep_vt:35,Srv:0.5,Wvt_total:28,CD0vt:0.0003,delta_rv_deg:12,lv:3.8,
-    fusSpanRatio:0.56,tailWingRatio:0.37,
-    TW_hover:1.3,TW_cruise:0.12,
-    // Algorithm identifier
-    _algo:'MATLAB',
-  };
-}
-
 export default function App(){
   const[params,setParams]=useState({
     // ── Mission ──────────────────────────────────────────────────────────
@@ -3861,7 +3666,6 @@ export default function App(){
     vtAR:2.5,
   });
   const[tab,setTab]=useState(0);
-  const[useProjectAlgo,setUseProjectAlgo]=useState(false); // true = exact MATLAB thesis algorithm
   const[user,setUser]=useState(()=>getSession());
   const[showAuthModal,setShowAuthModal]=useState(false);
   const[darkMode,setDarkMode]=useState(true);
@@ -4045,12 +3849,7 @@ export default function App(){
     if(user) addNotif(user.id,{title:"CSV Exported",body:"Results downloaded as spreadsheet.",type:"success"});
   };
 
-  const SR=useMemo(()=>{
-    try{
-      if(useProjectAlgo) return runMatlabSizing(params);
-      return runSizing({...params,customAirfoil:customAFData});
-    }catch(e){ console.error('Sizing error:',e); return null; }
-  },[params,customAFData,useProjectAlgo]);
+  const SR=useMemo(()=>{try{return runSizing({...params,customAirfoil:customAFData});}catch{return null;}},[params,customAFData]);
   /* ── Mission Builder — compute custom mission ──
      BUG FIX: wrapped in useCallback so useEffect dependency is stable.
      Auto-triggers whenever customPhases or SR changes — no manual "Compute" needed. */
@@ -4431,79 +4230,14 @@ export default function App(){
           </button>
 
           {/* Reset */}
-          <button onClick={()=>{ setUseProjectAlgo(false); setParams({payload:455,range:250,vCruise:67,cruiseAlt:1000,reserveRange:60,hoverHeight:15.24,
+          <button onClick={()=>setParams({payload:455,range:250,vCruise:67,cruiseAlt:1000,reserveRange:60,hoverHeight:15.24,
             LD:14,AR:9,eOsw:0.85,clDesign:0.55,taper:0.45,tc:0.15,nPropHover:6,propDiam:3.0,twRatio:1.3,convTolExp:-6,
             etaHov:0.70,etaSys:0.80,rateOfClimb:5.08,climbAngle:5,sedCell:300,etaBat:0.90,socMin:0.19,ewf:0.50,
-            fusLen:7.2,fusDiam:1.65,vtGamma:45,vtCh:0.45,vtCv:0.032,vtAR:2.5}); }}
+            fusLen:7.2,fusDiam:1.65,vtGamma:45,vtCh:0.45,vtCv:0.032,vtAR:2.5})}
             style={{padding:"5px 12px",background:"transparent",border:`1px solid ${SC.border}`,
               borderRadius:4,color:SC.muted,fontSize:9,cursor:"pointer",fontFamily:"'DM Mono',monospace"}}>
             ↺ RESET
           </button>
-
-          {/* ── MY PROJECT — loads exact MATLAB thesis parameters ── */}
-          <button
-            title="Load Vinay's thesis parameters (eVTOL_Full_Analysis_v2.m) — results match Trail 1 report"
-            onClick={()=>{
-              const activating = !useProjectAlgo;
-              setUseProjectAlgo(activating);
-              if(activating){
-                // Load exact MATLAB thesis parameters
-                setParams({
-                  // ── Mission (eVTOL_Full_Analysis_v2.m lines 6-9) ──────────────
-                  payload:      455,      // Payload = 455 kg
-                  range:        250,      // Range = 250 km
-                  vCruise:      67,       // Velocity_Cruise = 67 m/s
-                  cruiseAlt:    1000,     // Cruise_Altitude = 1000 m  [Uber Elevate]
-                  reserveRange: 60,       // Reserve_Range = 60 km
-                  hoverHeight:  15.24,    // Vertical_Hover_Takeoff/Land = 15.24 m
-                  reserveMinutes: 20,
-                  // ── Aerodynamics ────────────────────────────────────────────────
-                  LD:           15,       // Lift_to_Drag = 15
-                  AR:           9,
-                  eOsw:         0.85,
-                  clDesign:     0.55,
-                  taper:        0.45,
-                  tc:           0.15,
-                  // ── Propulsion (lines 68-70) ─────────────────────────────────────
-                  nPropHover:   6,        // No_Of_Prop_Hover = 6
-                  propDiam:     3.0,      // Prop_Diameter = 3 m
-                  twRatio:      1.3,
-                  etaHov:       0.63,     // Hover_Efficiency = 0.63
-                  etaSys:       0.765,    // System_Efficiency = 0.765
-                  rateOfClimb:  5.08,     // Rate_of_Climb = 5.08 m/s
-                  climbAngle:   5,        // Climb_Angle = 5 deg
-                  descentAngle: 6,
-                  climbLDPenalty: 0.13,
-                  deltaISA:     0,
-                  cRateDerate:  0.08,
-                  // ── Battery (lines 12,179) ───────────────────────────────────────
-                  sedCell:      275,      // SED_Cell = 275 Wh/kg
-                  etaBat:       0.90,     // Battery_Efficiency = 0.9
-                  socMin:       0.20,     // SoCmin = 0.2
-                  // ── Structure ───────────────────────────────────────────────────
-                  ewf:          0.52,     // Empty_Weight_Fraction = 0.52
-                  // ── Geometry defaults ───────────────────────────────────────────
-                  fusLen:7.2, fusDiam:1.65, vtGamma:45, vtCh:0.45, vtCv:0.032, vtAR:2.5,
-                  convTolExp: -6,
-                });
-              }
-            }}
-            style={{padding:"5px 12px",
-              background: useProjectAlgo
-                ? "linear-gradient(135deg,#312e81,#4338ca)"
-                : "linear-gradient(135deg,#1e1b4b,#312e81)",
-              border: useProjectAlgo ? "1px solid #818cf8" : "1px solid #6366f1",
-              borderRadius:4,color: useProjectAlgo ? "#e0e7ff" : "#a5b4fc",fontSize:9,
-              cursor:"pointer",fontFamily:"'DM Mono',monospace",fontWeight:700,
-              boxShadow: useProjectAlgo ? "0 0 12px #6366f166" : "0 0 8px #6366f122"}}>
-            {useProjectAlgo ? "🎓 MY PROJECT ✓" : "🎓 MY PROJECT"}
-          </button>
-          {useProjectAlgo&&(
-            <span style={{fontSize:8,color:"#818cf8",fontFamily:"'DM Mono',monospace",
-              padding:"3px 8px",background:"#1e1b4b",borderRadius:4,border:"1px solid #4338ca"}}>
-              MATLAB algo active
-            </span>
-          )}
 
           {/* CSV Export */}
           {SR&&(
