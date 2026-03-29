@@ -4239,6 +4239,58 @@ export default function App(){
             ↺ RESET
           </button>
 
+          {/* ── MY PROJECT — loads exact MATLAB thesis parameters ── */}
+          <button
+            title="Load Vinay's thesis parameters (eVTOL_Full_Analysis_v2.m) — results match Trail 1 report"
+            onClick={()=>{
+              setParams({
+                // ── Mission (eVTOL_Full_Analysis_v2.m lines 6-9) ──────────────
+                payload:      455,      // Payload = 455 kg
+                range:        250,      // Range = 250 km
+                vCruise:      67,       // Velocity_Cruise = 67 m/s
+                cruiseAlt:    1000,     // Cruise_Altitude = 1000 m  [Uber Elevate]
+                reserveRange: 60,       // Reserve_Range = 60 km
+                hoverHeight:  15.24,    // Vertical_Hover_Takeoff/Land = 15.24 m
+                reserveMinutes: 20,
+                // ── Aerodynamics ────────────────────────────────────────────────
+                LD:           15,       // Lift_to_Drag = 15
+                AR:           9,
+                eOsw:         0.85,
+                clDesign:     0.55,
+                taper:        0.45,
+                tc:           0.15,
+                // ── Propulsion (lines 68-70) ─────────────────────────────────────
+                nPropHover:   6,        // No_Of_Prop_Hover = 6
+                propDiam:     3.0,      // Prop_Diameter = 3 m
+                twRatio:      1.3,
+                etaHov:       0.63,     // Hover_Efficiency = 0.63
+                etaSys:       0.765,    // System_Efficiency = 0.765
+                rateOfClimb:  5.08,     // Rate_of_Climb = 5.08 m/s
+                climbAngle:   5,        // Climb_Angle = 5 deg
+                descentAngle: 6,
+                climbLDPenalty: 0.13,
+                deltaISA:     0,
+                cRateDerate:  0.08,
+                // ── Battery (lines 12,179) ───────────────────────────────────────
+                sedCell:      275,      // SED_Cell = 275 Wh/kg
+                etaBat:       0.90,     // Battery_Efficiency = 0.9
+                socMin:       0.20,     // SoCmin = 0.2
+                // ── Structure ───────────────────────────────────────────────────
+                ewf:          0.52,     // Empty_Weight_Fraction = 0.52
+                // ── Geometry defaults ───────────────────────────────────────────
+                fusLen:7.2, fusDiam:1.65, vtGamma:45, vtCh:0.45, vtCv:0.032, vtAR:2.5,
+                convTolExp: -6,
+              });
+            }}
+            style={{padding:"5px 12px",
+              background:"linear-gradient(135deg,#1e1b4b,#312e81)",
+              border:"1px solid #6366f1",
+              borderRadius:4,color:"#a5b4fc",fontSize:9,
+              cursor:"pointer",fontFamily:"'DM Mono',monospace",fontWeight:700,
+              boxShadow:"0 0 8px #6366f122"}}>
+            🎓 MY PROJECT
+          </button>
+
           {/* CSV Export */}
           {SR&&(
             <button onClick={exportCSV} type="button"
