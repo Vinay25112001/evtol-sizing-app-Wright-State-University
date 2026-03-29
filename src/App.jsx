@@ -2129,7 +2129,7 @@ function Acc({title,icon,children}){
   );
 }
 
-const TABS=["Overview","Mission","Wing & Aero","Propulsion","Battery","Performance","Stability","V-Tail","Convergence","Monte Carlo","Certification","Noise","Cost","Mission Builder","Weather & Atmos","OpenVSP","Community","Collaboration","V-n Diagram","Design Space","BEM Rotor","Reg Tracker","AI Assistant"];
+const TABS=["Overview","Mission","Wing & Aero","Propulsion","Battery","Performance","Stability","V-Tail","Convergence","Monte Carlo","Certification","Noise","Cost","Mission Builder","Weather & Atmos","OpenVSP","Community","Collaboration","V-n Diagram","Design Space","BEM Rotor","Reg Tracker","AI Assistant","Flight Simulator","Fleet Optimizer"];
 const TABI=["⬛","🛫","✈️","🔧","🔋","📈","⚖️","🦋","🔄","🎲","📋","🔊","💰","🗺️","🌤️","🛩️","🌐","👥","📐","🎯","🔬","📜","🤖"];
 /* TTP is defined inside App() so it reads the current C theme */
 
@@ -3635,6 +3635,642 @@ function DesignSpacePanel({ params, SC, TTP, runSizingFn, onApply }) {
       </>)}
     </div>
   );
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   FLIGHT SIMULATOR — Pilot-in-the-loop eVTOL mission simulator
+   Physics: simplified but SR-calibrated 6-DOF-lite model
+   ═══════════════════════════════════════════════════════════════════ */
+function FlightSimPanel({ SR, params, SC }) {
+  const g0=9.81;
+  // ── Sim state refs (not React state — updated 60Hz without re-render) ──
+  const stRef=React.useRef({
+    t:0, alt:0, vx:0, vz:0, soc:1.0, range:0,
+    throttle:0.5, pitch:0, phase:'ground',
+    crashed:false, landed:false, power:0,
+    agl:0, heading:0,
+  });
+  const rafRef=React.useRef(null);
+  const lastTRef=React.useRef(null);
+  // ── React state for display (updated ~15Hz via throttling) ──
+  const [disp,setDisp]=React.useState(null);
+  const [running,setRunning]=React.useState(false);
+  const [msg,setMsg]=React.useState('Ready to fly. Press ▶ Takeoff to begin.');
+  // ── Control refs (keyboard + sliders) ──
+  const throttleRef=React.useRef(0.5);
+  const pitchRef=React.useRef(0);
+  const keysRef=React.useRef({});
+  const dispCountRef=React.useRef(0);
+
+  // ── Aircraft physics constants from SR ──
+  const MTOW = SR?.MTOW||2000;
+  const Phov = SR?.Phov||500;       // kW at hover
+  const Pcr  = SR?.Pcr||130;        // kW cruise
+  const Etot = SR?.Etot||160;       // kWh total mission
+  const vCr  = params?.vCruise||67; // m/s
+  const LDact= SR?.LDact||15;
+  const Rang  = params?.range||250;  // km
+  const maxAlt= params?.cruiseAlt||1000; // m
+
+  // Derived
+  const Wkg  = MTOW;                      // kg
+  const Tmax = MTOW*g0*1.3/1000;          // kN max thrust (T/W=1.3)
+  const Thov = MTOW*g0/1000;              // kN hover thrust
+  const packKwh = SR?.PackkWh||Etot*1.25;
+  const CLmax= SR?.selAF?.CLmax||1.6;
+  const rhoMSL=1.225;
+
+  // ── Power model: interpolate between hover, climb, cruise ──
+  const calcPower=(vx,vz,throttle,alt)=>{
+    const rho=rhoMSL*Math.exp(-alt/8500);
+    const speed=Math.sqrt(vx*vx+vz*vz);
+    if(speed<2&&Math.abs(vz)<1){
+      // Hover: actuator disk
+      return throttle*Phov*(rho/rhoMSL);
+    }
+    // Transition + cruise: weighted blend
+    const vFrac=Math.min(Math.abs(vx)/vCr,1);
+    const hoverP=Phov*(rho/rhoMSL);
+    const cruiseP=Pcr*(rho/rhoMSL);
+    const blendP=hoverP*(1-vFrac)+cruiseP*vFrac;
+    // Add climb power penalty
+    const climbPen=Math.max(0,vz)*MTOW*g0/1000/0.80;
+    return Math.min(throttle*(blendP+climbPen), Phov*1.5);
+  };
+
+  // ── Physics step ──
+  const step=(dt)=>{
+    const st=stRef.current;
+    if(st.crashed||st.landed) return;
+    if(st.soc<=0){ st.crashed=true; setMsg('⚡ Battery depleted — emergency landing required!'); return; }
+
+    const rho=rhoMSL*Math.exp(-st.alt/8500);
+    const speed=Math.sqrt(st.vx**2+st.vz**2);
+
+    // Keyboard controls
+    if(keysRef.current['ArrowUp']||keysRef.current['w'])    throttleRef.current=Math.min(1,throttleRef.current+0.5*dt);
+    if(keysRef.current['ArrowDown']||keysRef.current['s'])  throttleRef.current=Math.max(0,throttleRef.current-0.5*dt);
+    if(keysRef.current['ArrowRight']||keysRef.current['d']) pitchRef.current=Math.min(15,pitchRef.current+20*dt);
+    if(keysRef.current['ArrowLeft']||keysRef.current['a'])  pitchRef.current=Math.max(-15,pitchRef.current-20*dt);
+    // Pitch returns to zero
+    if(!keysRef.current['ArrowRight']&&!keysRef.current['d']&&
+       !keysRef.current['ArrowLeft']&&!keysRef.current['a']){
+      pitchRef.current*=Math.pow(0.85,dt*60);
+    }
+
+    const thr=throttleRef.current;
+    const pitch=pitchRef.current*Math.PI/180; // rad
+
+    // Thrust components
+    const T_kN=thr*Tmax;  // total thrust kN
+    const Tx=T_kN*Math.sin(pitch)*1000/MTOW;   // m/s²
+    const Tz=T_kN*Math.cos(pitch)*1000/MTOW;   // m/s²
+
+    // Aerodynamic drag (lift+cruise flight)
+    let dragAcc=0;
+    if(speed>5){
+      const CL=MTOW*g0/(0.5*rho*speed**2*Math.max(SR?.Swing||18,1));
+      const CDi=Math.max(0,CL**2/(Math.PI*(params?.AR||9)*(params?.eOsw||0.85)));
+      const CD0=(SR?.CD0tot||0.024);
+      const CD=CD0+CDi;
+      const Fdrag=0.5*rho*speed**2*(CD*(SR?.Swing||18));
+      dragAcc=Fdrag/MTOW;
+    }
+    const dragX=st.vx>0?-dragAcc*Math.abs(st.vx)/Math.max(speed,0.01)*0.7:dragAcc*Math.abs(st.vx)/Math.max(speed,0.01)*0.7;
+    const dragZ=st.vz>0?-dragAcc*Math.abs(st.vz)/Math.max(speed,0.01)*0.3:dragAcc*Math.abs(st.vz)/Math.max(speed,0.01)*0.3;
+
+    // Ground effect (within 1 rotor diameter)
+    const R=params?.propDiam/2||1.5;
+    const GEF=st.alt<2*R ? 1+0.15*(1-st.alt/(2*R)) : 1.0;
+
+    // Net accelerations
+    const ax=Tx*GEF+dragX;
+    const az=Tz*GEF-g0+dragZ;
+
+    // Integrate velocity
+    st.vx+=ax*dt;
+    st.vz+=az*dt;
+    // Vertical floor (ground)
+    if(st.alt<=0&&st.vz<0){ st.vz=0; st.vx*=0.92; }
+    // Speed limits
+    const Vstall=SR?.Vstall||Math.sqrt(2*MTOW*g0/(rho*CLmax*(SR?.Swing||18)));
+    if(Math.abs(st.vx)>vCr*1.25){ st.vx*=0.95; }
+
+    // Integrate position
+    st.alt=Math.max(0,st.alt+st.vz*dt);
+    st.range+=Math.abs(st.vx)*dt/1000; // km
+
+    // Power & energy
+    const Pnow=calcPower(st.vx,st.vz,thr,st.alt)/1000; // MW→ use kW
+    const Pkw=calcPower(st.vx,st.vz,thr,st.alt);
+    const dE=Pkw*dt/3600; // kWh
+    st.soc=Math.max(0,st.soc-dE/packKwh);
+    st.power=Pkw;
+    st.t+=dt;
+
+    // Phase logic
+    if(st.alt<=0&&Math.abs(st.vz)<0.5&&st.t>2) st.phase='ground';
+    else if(st.alt<50&&st.vz>0.5) st.phase='takeoff';
+    else if(st.alt>=50&&st.vz>1) st.phase='climb';
+    else if(st.alt>maxAlt*0.9&&Math.abs(st.vz)<2) st.phase='cruise';
+    else if(st.vz<-0.5&&st.alt>10) st.phase='descent';
+    else if(st.alt<50&&st.vz<-0.3) st.phase='approach';
+
+    // Landing detection
+    if(st.alt<=0.5&&Math.abs(st.vz)<1.5&&st.t>5&&st.range>0.5){
+      if(Math.abs(st.vx)<5){ st.landed=true; st.vx=0; st.vz=0; setMsg(`✅ Landed! Range: ${st.range.toFixed(1)} km · Used: ${((1-st.soc)*100).toFixed(0)}% battery`); }
+    }
+    if(st.alt<=0&&st.vz<-4){ st.crashed=true; setMsg('💥 Hard landing! Descent rate exceeded 4 m/s.'); }
+
+    // Throttle ref (may be overridden by slider)
+    st.throttle=thr;
+    st.pitch=pitchRef.current;
+
+    // Update display ~15Hz
+    dispCountRef.current++;
+    if(dispCountRef.current%4===0){
+      setDisp({...st, Vstall, vCr, maxAlt, packKwh, Rang});
+    }
+  };
+
+  const loop=(ts)=>{
+    if(!lastTRef.current) lastTRef.current=ts;
+    const dt=Math.min((ts-lastTRef.current)/1000,0.05); // cap at 50ms
+    lastTRef.current=ts;
+    step(dt);
+    rafRef.current=requestAnimationFrame(loop);
+  };
+
+  const startSim=()=>{
+    stRef.current={t:0,alt:0.1,vx:0,vz:0.1,soc:1.0,range:0,
+      throttle:0.5,pitch:0,phase:'takeoff',crashed:false,landed:false,power:0};
+    throttleRef.current=0.7;
+    pitchRef.current=0;
+    lastTRef.current=null;
+    setMsg('Flying! ↑↓ = throttle · ←→ = pitch/speed');
+    setRunning(true);
+    rafRef.current=requestAnimationFrame(loop);
+  };
+
+  const stopSim=()=>{
+    if(rafRef.current) cancelAnimationFrame(rafRef.current);
+    setRunning(false);
+    setMsg('Simulation stopped.');
+  };
+
+  React.useEffect(()=>{
+    const kd=(e)=>{ keysRef.current[e.key]=true; };
+    const ku=(e)=>{ keysRef.current[e.key]=false; };
+    window.addEventListener('keydown',kd);
+    window.addEventListener('keyup',ku);
+    return()=>{ window.removeEventListener('keydown',kd); window.removeEventListener('keyup',ku); if(rafRef.current) cancelAnimationFrame(rafRef.current); };
+  },[]);
+
+  const st=disp||{alt:0,vx:0,vz:0,soc:1,range:0,t:0,throttle:0.5,pitch:0,phase:'ground',power:0};
+  const socColor=st.soc>0.30?SC.green:st.soc>0.15?SC.amber:SC.red;
+  const altFrac=Math.min(st.alt/(maxAlt||1000),1);
+  const speedFrac=Math.min(Math.abs(st.vx)/vCr,1);
+  const powFrac=Math.min(st.power/Math.max(Phov,1),1);
+
+  // ── HUD SVG helper ──
+  const Gauge=({label,val,max,unit,col,w=90,h=90})=>{
+    const pct=Math.min(Math.max(val/Math.max(max,0.001),0),1);
+    const r=34,cx=w/2,cy=h/2-4;
+    const startA=-220*Math.PI/180, sweepA=260*Math.PI/180;
+    const endA=startA+sweepA*pct;
+    const arc=(angle)=>({x:cx+r*Math.cos(angle),y:cy+r*Math.sin(angle)});
+    const s=arc(startA),e=arc(endA),ef=arc(startA+sweepA);
+    const lg=pct>0.5;
+    return(<svg width={w} height={h} style={{display:'block'}}>
+      <path d={`M${s.x},${s.y} A${r},${r} 0 1,1 ${ef.x},${ef.y}`} fill="none" stroke={SC.border} strokeWidth="5" strokeLinecap="round"/>
+      {pct>0.01&&<path d={`M${s.x},${s.y} A${r},${r} 0 ${lg?1:0},1 ${e.x},${e.y}`} fill="none" stroke={col} strokeWidth="5" strokeLinecap="round"/>}
+      <text x={cx} y={cy+4} textAnchor="middle" fontSize="12" fill={col} fontWeight="700" fontFamily="'DM Mono',monospace">{typeof val==='number'?val.toFixed(val>99?0:1):val}</text>
+      <text x={cx} y={cy+16} textAnchor="middle" fontSize="7" fill={SC.muted} fontFamily="'DM Mono',monospace">{unit}</text>
+      <text x={cx} y={h-6} textAnchor="middle" fontSize="7.5" fill={SC.muted} fontFamily="'DM Mono',monospace">{label}</text>
+    </svg>);
+  };
+
+  return(<div style={{display:'flex',flexDirection:'column',gap:14}}>
+    {/* Header */}
+    <div style={{background:`linear-gradient(135deg,${SC.bg},#0a1628)`,border:`1px solid #3b82f644`,borderRadius:10,padding:'16px 20px'}}>
+      <div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace",letterSpacing:'0.18em',marginBottom:4}}>PILOT-IN-THE-LOOP — EVTOL FLIGHT SIMULATOR</div>
+      <div style={{fontSize:18,fontWeight:800,color:SC.text,marginBottom:6}}><span style={{color:SC.blue}}>Flight</span> Simulator</div>
+      <div style={{fontSize:11,color:SC.muted,lineHeight:1.7}}>
+        Physics-based simulation using your converged eVTOL design. Controls: <strong style={{color:SC.amber}}>↑↓ throttle · ←→ pitch</strong> (or WASD). Energy depletion, stall speed, and drag all derived from your actual SR outputs.
+      </div>
+    </div>
+
+    {/* Controls row */}
+    <div style={{display:'flex',gap:10,alignItems:'center',flexWrap:'wrap'}}>
+      <button type="button" onClick={running?stopSim:startSim}
+        style={{padding:'8px 24px',background:running?`${SC.red}22`:`${SC.green}22`,
+          border:`1px solid ${running?SC.red:SC.green}`,borderRadius:6,color:running?SC.red:SC.green,
+          fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:"'DM Mono',monospace"}}>
+        {running?'⏹ Stop':'▶ Takeoff'}
+      </button>
+      {running&&<>
+        <div style={{display:'flex',alignItems:'center',gap:8,fontSize:11,color:SC.muted,fontFamily:"'DM Mono',monospace"}}>
+          <span>Throttle</span>
+          <input type="range" min="0" max="1" step="0.01" value={throttleRef.current}
+            onChange={e=>{throttleRef.current=+e.target.value;}} style={{width:120}}/>
+          <span style={{color:SC.amber,minWidth:32}}>{(throttleRef.current*100).toFixed(0)}%</span>
+        </div>
+        <div style={{display:'flex',alignItems:'center',gap:8,fontSize:11,color:SC.muted,fontFamily:"'DM Mono',monospace"}}>
+          <span>Pitch</span>
+          <input type="range" min="-15" max="15" step="0.5" value={pitchRef.current}
+            onChange={e=>{pitchRef.current=+e.target.value;}} style={{width:100}}/>
+          <span style={{color:SC.teal,minWidth:36}}>{pitchRef.current.toFixed(1)}°</span>
+        </div>
+      </>}
+      <div style={{marginLeft:'auto',fontSize:10,color:disp?.crashed?SC.red:disp?.landed?SC.green:SC.muted,
+        fontFamily:"'DM Mono',monospace",background:SC.bg,padding:'6px 12px',borderRadius:6,border:`1px solid ${SC.border}`}}>
+        {msg}
+      </div>
+    </div>
+
+    {/* Main HUD */}
+    <div style={{display:'grid',gridTemplateColumns:'1fr 2fr 1fr',gap:12}}>
+      {/* Left gauges */}
+      <div style={{background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:8,padding:14,display:'flex',flexDirection:'column',gap:8,alignItems:'center'}}>
+        <div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace",textTransform:'uppercase',letterSpacing:'0.12em',marginBottom:4}}>Power</div>
+        <Gauge label="Power" val={st.power} max={Phov*1.5} unit="kW" col={SC.amber}/>
+        <Gauge label="Throttle" val={st.throttle*100} max={100} unit="%" col={SC.teal}/>
+        <Gauge label="Pitch" val={Math.abs(st.pitch)} max={15} unit="deg" col={SC.blue}/>
+      </div>
+
+      {/* Center: altitude tape + speed tape + artificial horizon */}
+      <div style={{background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:8,padding:14}}>
+        <div style={{display:'grid',gridTemplateColumns:'48px 1fr 48px',gap:8,height:260}}>
+          {/* Altitude tape */}
+          <div style={{display:'flex',flexDirection:'column',justifyContent:'space-between',alignItems:'flex-end',fontSize:8,color:SC.muted,fontFamily:"'DM Mono',monospace",borderRight:`1px solid ${SC.border}`,paddingRight:6}}>
+            {[maxAlt,maxAlt*0.75,maxAlt*0.5,maxAlt*0.25,0].map(v=>(
+              <div key={v} style={{color:Math.abs(st.alt-v)<maxAlt*0.05?SC.green:SC.muted}}>{v.toFixed(0)}</div>
+            ))}
+            <div style={{fontSize:7,color:SC.muted,marginTop:2}}>ALT m</div>
+          </div>
+
+          {/* Artificial horizon */}
+          <div style={{position:'relative',overflow:'hidden',borderRadius:6,border:`1px solid ${SC.border}`,background:'#0a1628'}}>
+            {/* Sky */}
+            <div style={{position:'absolute',top:0,left:0,right:0,height:`${50-altFrac*30}%`,background:'linear-gradient(180deg,#1e3a5c,#2563eb22)',transition:'height 0.1s'}}/>
+            {/* Ground */}
+            <div style={{position:'absolute',bottom:0,left:0,right:0,height:`${50+altFrac*30}%`,background:'linear-gradient(0deg,#1a0a00,#3d1f00)',transition:'height 0.1s'}}/>
+            {/* Horizon line */}
+            <div style={{position:'absolute',left:0,right:0,top:`${50-altFrac*30}%`,height:1,background:SC.amber,transition:'top 0.1s'}}/>
+            {/* Pitch indicator */}
+            <div style={{position:'absolute',left:'50%',top:'50%',transform:`translate(-50%,-50%) rotate(${-st.pitch}deg)`,width:60,height:1,background:`${SC.green}88`}}/>
+            {/* Center crosshair */}
+            <div style={{position:'absolute',left:'50%',top:'50%',transform:'translate(-50%,-50%)'}}>
+              <svg width="40" height="20" viewBox="0 0 40 20">
+                <line x1="0" y1="10" x2="14" y2="10" stroke={SC.amber} strokeWidth="2"/>
+                <line x1="26" y1="10" x2="40" y2="10" stroke={SC.amber} strokeWidth="2"/>
+                <circle cx="20" cy="10" r="3" fill="none" stroke={SC.amber} strokeWidth="1.5"/>
+              </svg>
+            </div>
+            {/* Phase badge */}
+            <div style={{position:'absolute',top:6,left:'50%',transform:'translateX(-50%)',
+              fontSize:9,fontWeight:700,color:SC.text,fontFamily:"'DM Mono',monospace",
+              background:SC.panel+'cc',padding:'2px 8px',borderRadius:10,border:`1px solid ${SC.border}`}}>
+              {st.phase?.toUpperCase()}
+            </div>
+            {/* Speed indicator */}
+            <div style={{position:'absolute',bottom:6,left:'50%',transform:'translateX(-50%)',
+              fontSize:10,fontWeight:700,color:SC.teal,fontFamily:"'DM Mono',monospace"}}>
+              {Math.abs(st.vx).toFixed(1)} m/s
+            </div>
+            {/* Altitude indicator */}
+            <div style={{position:'absolute',bottom:6,right:8,fontSize:10,fontWeight:700,color:SC.green,fontFamily:"'DM Mono',monospace"}}>
+              {st.alt.toFixed(0)}m
+            </div>
+            {/* Climb rate */}
+            <div style={{position:'absolute',bottom:6,left:8,fontSize:10,fontWeight:700,
+              color:st.vz>0?SC.green:SC.red,fontFamily:"'DM Mono',monospace"}}>
+              {st.vz>0?'+':''}{st.vz.toFixed(1)}m/s
+            </div>
+          </div>
+
+          {/* Speed tape */}
+          <div style={{display:'flex',flexDirection:'column',justifyContent:'space-between',alignItems:'flex-start',fontSize:8,color:SC.muted,fontFamily:"'DM Mono',monospace",borderLeft:`1px solid ${SC.border}`,paddingLeft:6}}>
+            {[vCr*1.1,vCr*0.8,vCr*0.5,vCr*0.25,0].map(v=>(
+              <div key={v} style={{color:Math.abs(Math.abs(st.vx)-v)<vCr*0.08?SC.teal:SC.muted}}>{v.toFixed(0)}</div>
+            ))}
+            <div style={{fontSize:7,color:SC.muted,marginTop:2}}>SPD m/s</div>
+          </div>
+        </div>
+
+        {/* Progress bars below horizon */}
+        <div style={{marginTop:10,display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+          <div>
+            <div style={{fontSize:8,color:SC.muted,fontFamily:"'DM Mono',monospace",marginBottom:3}}>BATTERY SoC — {(st.soc*100).toFixed(1)}%</div>
+            <div style={{height:8,background:SC.border,borderRadius:4,overflow:'hidden'}}>
+              <div style={{height:'100%',width:`${st.soc*100}%`,background:socColor,borderRadius:4,transition:'width 0.1s'}}/>
+            </div>
+          </div>
+          <div>
+            <div style={{fontSize:8,color:SC.muted,fontFamily:"'DM Mono',monospace",marginBottom:3}}>RANGE — {st.range.toFixed(1)} / {Rang} km</div>
+            <div style={{height:8,background:SC.border,borderRadius:4,overflow:'hidden'}}>
+              <div style={{height:'100%',width:`${Math.min(st.range/Rang*100,100)}%`,background:SC.blue,borderRadius:4,transition:'width 0.1s'}}/>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Right gauges */}
+      <div style={{background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:8,padding:14,display:'flex',flexDirection:'column',gap:8,alignItems:'center'}}>
+        <div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace",textTransform:'uppercase',letterSpacing:'0.12em',marginBottom:4}}>State</div>
+        <Gauge label="SoC" val={st.soc*100} max={100} unit="%" col={socColor}/>
+        <Gauge label="Range" val={st.range} max={Rang} unit="km" col={SC.blue}/>
+        <Gauge label="Altitude" val={st.alt} max={maxAlt} unit="m" col={SC.green}/>
+      </div>
+    </div>
+
+    {/* Info footer */}
+    <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8}}>
+      {[
+        ['Mission Time',`${Math.floor(st.t/60)}:${(st.t%60).toFixed(0).padStart(2,'0')}`,SC.muted],
+        ['Stall Speed',`${(disp?.Vstall||SR?.Vstall||20).toFixed(1)} m/s`,Math.abs(st.vx)<(SR?.Vstall||20)&&st.alt>10?SC.red:SC.green],
+        ['Energy Used',`${((1-st.soc)*packKwh).toFixed(1)} kWh`,SC.amber],
+        ['Efficiency',st.range>0.1?`${((1-st.soc)*packKwh*1000/st.range).toFixed(0)} Wh/km`:'—',SC.teal],
+      ].map(([l,v,c])=>(
+        <div key={l} style={{background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:6,padding:'8px 12px',textAlign:'center'}}>
+          <div style={{fontSize:8,color:SC.muted,fontFamily:"'DM Mono',monospace",marginBottom:2}}>{l}</div>
+          <div style={{fontSize:15,fontWeight:700,color:c,fontFamily:"'DM Mono',monospace"}}>{v}</div>
+        </div>
+      ))}
+    </div>
+
+    {/* Design reference */}
+    <div style={{background:SC.bg,border:`1px solid ${SC.border}`,borderRadius:6,padding:'8px 14px',fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace",lineHeight:1.8}}>
+      Aircraft: MTOW={fmt2(MTOW,0)}kg · P_hov={fmt2(Phov,0)}kW · P_cr={fmt2(Pcr,0)}kW · L/D={fmt2(LDact,2)} · Pack={fmt2(packKwh,2)}kWh · V_stall={fmt2(SR?.Vstall||20,1)}m/s · V_cr={vCr}m/s &nbsp;|&nbsp;
+      All physics derived from converged sizing run.
+    </div>
+  </div>);
+}
+const fmt2=(v,d=2)=>(typeof v==='number'&&isFinite(v))?v.toFixed(d):'—';
+
+/* ═══════════════════════════════════════════════════════════════════
+   FLEET OPTIMIZER — Multi-vehicle vertiport network optimizer
+   ═══════════════════════════════════════════════════════════════════ */
+function FleetOptimizerPanel({ SR, params, SC, TTP }) {
+  const [routes,setRoutes]=React.useState([
+    {id:1,from:'Hub A',to:'Hub B',dist:45, demand:180,active:true},
+    {id:2,from:'Hub A',to:'Hub C',dist:120,demand:95, active:true},
+    {id:3,from:'Hub B',to:'Hub D',dist:80, demand:140,active:true},
+    {id:4,from:'Hub C',to:'Hub D',dist:60, demand:60, active:false},
+    {id:5,from:'Hub A',to:'Hub D',dist:200,demand:50, active:false},
+  ]);
+  const [editRoute,setEditRoute]=React.useState(null);
+  const [flightsPerDay,setFlightsPerDay]=React.useState(10);
+  const [farePerKm,setFarePerKm]=React.useState(4.50);
+  const [targetLF,setTargetLF]=React.useState(0.78);
+  const [daysPerYear,setDaysPerYear]=React.useState(300);
+  const [opMode,setOpMode]=React.useState('piloted'); // piloted|remote|auto
+  const [result,setResult]=React.useState(null);
+
+  const activeRoutes=routes.filter(r=>r.active);
+
+  // ── Fleet optimization engine ──
+  const runOptimize=React.useCallback(()=>{
+    if(!SR||activeRoutes.length===0) return;
+    const g0=9.81;
+
+    // Per-route calculations
+    const routeResults=activeRoutes.map(r=>{
+      // Energy for this route (scale by distance vs design range)
+      const distFrac=r.dist/Math.max(params?.range||250,1);
+      // Hover + reserve energy is fixed cost, cruise scales with distance
+      const Efix=(SR.Eto+SR.Eld+SR.Eres)||30; // kWh fixed phases
+      const Ecr_perKm=SR.Ecr/Math.max(params?.range||250,1); // kWh/km cruise
+      const Etot_r=Math.max(Efix+Ecr_perKm*r.dist, Efix*0.8); // kWh
+
+      const flightTime_hr=r.dist/Math.max(params?.vCruise||67,1)/3600+
+        ((SR.tto||75)+(SR.tld||30)+(SR.tres||1200))/3600; // hr
+      const nSeats=Math.max(1,Math.round((params?.payload||455)/90));
+
+      // Turnaround time = 15min
+      const cycleTime_hr=flightTime_hr+0.25;
+      // Flights per aircraft per day = min(flightsPerDay, 8hr÷cycleTime)
+      const maxFlightsAC=Math.floor(8/cycleTime_hr);
+      const flightsAC=Math.min(flightsPerDay,maxFlightsAC);
+
+      // Demand → aircraft needed
+      const paxPerFlight=nSeats*targetLF;
+      const flightsNeeded=Math.ceil(r.demand/paxPerFlight);
+      const acNeeded=Math.ceil(flightsNeeded/Math.max(flightsAC,1));
+
+      // DOC per flight (simplified from cost model)
+      const CrateHov=SR.CrateHov||3;
+      const eta_d=Math.max(0.80,0.97-0.025*CrateHov);
+      const eta_ch=Math.max(0.85,0.97-0.030*CrateHov);
+      const eGrid=Etot_r/(eta_d*eta_ch);
+      const eCost=eGrid*0.16;
+      const battCostKwh=(149*Math.pow(300/Math.max(100,params?.sedCell||300),0.3)+55)*2.0;
+      const effCyc=Math.floor(Math.min(2000,900*Math.pow(0.5/Math.min(0.85,Etot_r/(SR.PackkWh||200)),0.6)*0.83));
+      const battCost=(SR.PackkWh||200)*battCostKwh/Math.max(1,effCyc);
+      const maintCost=45000/(flightsPerDay*daysPerYear)+(2.4*75+75)*flightTime_hr+1.48;
+      const insCost=(SR.MTOW*800*0.10)/(flightsPerDay*daysPerYear);
+      const rpicMult=opMode==='piloted'?1:opMode==='remote'?0.33:0.04;
+      const opCost=(82000/(4*daysPerYear*8))*rpicMult*(flightTime_hr+0.25);
+      const docFlight=eCost+battCost+maintCost+insCost+35+opCost+1000000/(flightsPerDay*daysPerYear*10);
+
+      // Revenue per flight
+      const rev=farePerKm*r.dist*nSeats*targetLF;
+      const profit=rev-docFlight;
+      const breakEvenLF=Math.min(1,docFlight/(nSeats*farePerKm*r.dist));
+
+      return{
+        ...r,nSeats,flightTime_hr,flightsAC,flightsNeeded,acNeeded,
+        Etot_r,docFlight,rev,profit,breakEvenLF,
+        annualFlights:flightsNeeded*daysPerYear,
+        annualRevenue:rev*flightsNeeded*daysPerYear,
+        annualProfit:profit*flightsNeeded*daysPerYear,
+        wh_km:Etot_r*1000/r.dist,
+      };
+    });
+
+    const totalAC=routeResults.reduce((s,r)=>s+r.acNeeded,0);
+    const totalAnnualRev=routeResults.reduce((s,r)=>s+r.annualRevenue,0);
+    const totalAnnualProfit=routeResults.reduce((s,r)=>s+r.annualProfit,0);
+    const totalAnnualFlights=routeResults.reduce((s,r)=>s+r.annualFlights,0);
+    const fleetAcquisition=totalAC*SR.MTOW*800;
+    const payback=totalAnnualProfit>0?fleetAcquisition/totalAnnualProfit:Infinity;
+
+    // Profit vs load factor curve (fleet-level)
+    const profitVsLF=Array.from({length:11},(_,i)=>{
+      const lf=i/10;
+      const obj={lf:+(lf*100).toFixed(0)};
+      [1.86,4.50,6.00].forEach((fare,fi)=>{
+        const names=['Joby $1.86','NASA $4.50','Blade $6.00'];
+        const p=routeResults.reduce((s,r)=>s+(fare*r.dist*r.nSeats*lf-r.docFlight)*r.flightsNeeded*daysPerYear,0);
+        obj[names[fi]]=+p.toFixed(0);
+      });
+      return obj;
+    });
+
+    setResult({routeResults,totalAC,totalAnnualRev,totalAnnualProfit,totalAnnualFlights,
+      fleetAcquisition,payback,profitVsLF});
+  },[SR,params,activeRoutes,flightsPerDay,farePerKm,targetLF,daysPerYear,opMode]);
+
+  React.useEffect(()=>{ if(SR) runOptimize(); },[runOptimize]);
+
+  const col={feasible:SC.green,marginal:SC.amber,infeasible:SC.red};
+  const fmtM=(v)=>v>=1e9?`$${(v/1e9).toFixed(2)}B`:v>=1e6?`$${(v/1e6).toFixed(2)}M`:`$${(v/1000).toFixed(0)}k`;
+
+  return(<div style={{display:'flex',flexDirection:'column',gap:14}}>
+    {/* Header */}
+    <div style={{background:`linear-gradient(135deg,${SC.bg},#1a0a2e)`,border:`1px solid #8b5cf644`,borderRadius:10,padding:'16px 20px'}}>
+      <div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace",letterSpacing:'0.18em',marginBottom:4}}>VERTIPORT NETWORK — FLEET ECONOMICS OPTIMIZER</div>
+      <div style={{fontSize:18,fontWeight:800,color:SC.text,marginBottom:6}}><span style={{color:'#a78bfa'}}>Fleet</span> Optimizer</div>
+      <div style={{fontSize:11,color:SC.muted,lineHeight:1.7}}>
+        Model a multi-vertiport network. Each route gets demand, distance, and economics computed from your actual sizing. Fleet size, DOC, and break-even load factor computed simultaneously across all routes.
+      </div>
+    </div>
+
+    <div style={{display:'grid',gridTemplateColumns:'1.4fr 1fr',gap:14}}>
+      {/* Route editor */}
+      <div style={{background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:8,padding:14}}>
+        <div style={{fontSize:10,fontWeight:700,color:SC.text,fontFamily:"'DM Mono',monospace",marginBottom:10,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+          Route Network
+          <button type="button" onClick={()=>{
+            const id=Math.max(...routes.map(r=>r.id))+1;
+            setRoutes(prev=>[...prev,{id,from:'Hub X',to:'Hub Y',dist:100,demand:80,active:true}]);
+          }} style={{fontSize:9,padding:'3px 10px',background:`${SC.teal}22`,border:`1px solid ${SC.teal}44`,
+            borderRadius:4,color:SC.teal,cursor:'pointer',fontFamily:"'DM Mono',monospace"}}>+ Add Route</button>
+        </div>
+        <table style={{width:'100%',borderCollapse:'collapse',fontSize:9,fontFamily:"'DM Mono',monospace"}}>
+          <thead><tr style={{background:SC.bg}}>
+            {['On','Route','Dist km','Demand/day','Edit'].map(h=><th key={h} style={{padding:'5px 6px',textAlign:'left',color:SC.muted,fontWeight:700,borderBottom:`1px solid ${SC.border}`}}>{h}</th>)}
+          </tr></thead>
+          <tbody>{routes.map(r=>(
+            <tr key={r.id} style={{background:r.active?'transparent':SC.bg+'88',opacity:r.active?1:0.5}}>
+              <td style={{padding:'5px 6px'}}>
+                <input type="checkbox" checked={r.active} onChange={()=>setRoutes(prev=>prev.map(x=>x.id===r.id?{...x,active:!x.active}:x))}/>
+              </td>
+              <td style={{padding:'5px 6px',color:r.active?SC.text:SC.muted,fontWeight:r.active?700:400}}>{r.from}→{r.to}</td>
+              <td style={{padding:'5px 6px',color:SC.amber}}>{r.dist}</td>
+              <td style={{padding:'5px 6px',color:SC.teal}}>{r.demand}</td>
+              <td style={{padding:'5px 6px'}}>
+                <button type="button" onClick={()=>setEditRoute(r.id===editRoute?null:r.id)}
+                  style={{fontSize:8,padding:'2px 6px',background:`${SC.blue}22`,border:`1px solid ${SC.blue}44`,borderRadius:3,color:SC.blue,cursor:'pointer'}}>
+                  {r.id===editRoute?'✓':'✎'}
+                </button>
+              </td>
+            </tr>
+          ))}</tbody>
+        </table>
+        {editRoute&&(()=>{const r=routes.find(x=>x.id===editRoute);return r?(<div style={{marginTop:10,padding:'10px 12px',background:SC.bg,borderRadius:6,border:`1px solid ${SC.border}`,display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+          {[['From',r.from,'from'],['To',r.to,'to']].map(([lbl,val,k])=>(
+            <div key={k}><div style={{fontSize:8,color:SC.muted,fontFamily:"'DM Mono',monospace",marginBottom:3}}>{lbl}</div>
+            <input value={val} onChange={e=>setRoutes(prev=>prev.map(x=>x.id===editRoute?{...x,[k]:e.target.value}:x))}
+              style={{width:'100%',background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:4,color:SC.text,padding:'4px 8px',fontSize:10,fontFamily:"'DM Mono',monospace"}}/></div>
+          ))}
+          {[['Distance (km)',r.dist,'dist'],['Daily demand (pax)',r.demand,'demand']].map(([lbl,val,k])=>(
+            <div key={k}><div style={{fontSize:8,color:SC.muted,fontFamily:"'DM Mono',monospace",marginBottom:3}}>{lbl}</div>
+            <input type="number" value={val} onChange={e=>setRoutes(prev=>prev.map(x=>x.id===editRoute?{...x,[k]:+e.target.value}:x))}
+              style={{width:'100%',background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:4,color:SC.text,padding:'4px 8px',fontSize:10,fontFamily:"'DM Mono',monospace"}}/></div>
+          ))}
+        </div>):null;})()}
+      </div>
+
+      {/* Fleet params */}
+      <div style={{background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:8,padding:14,display:'flex',flexDirection:'column',gap:10}}>
+        <div style={{fontSize:10,fontWeight:700,color:SC.text,fontFamily:"'DM Mono',monospace",marginBottom:4}}>Fleet Parameters</div>
+        {[
+          {label:'Flights/aircraft/day',val:flightsPerDay,set:setFlightsPerDay,min:2,max:20,step:1},
+          {label:'Fare ($/km)',val:farePerKm,set:setFarePerKm,min:1,max:12,step:0.1},
+          {label:'Target load factor',val:targetLF,set:setTargetLF,min:0.3,max:1,step:0.01},
+          {label:'Operating days/year',val:daysPerYear,set:setDaysPerYear,min:200,max:365,step:5},
+        ].map(({label,val,set,min,max,step})=>(
+          <div key={label} style={{display:'flex',alignItems:'center',gap:8}}>
+            <span style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace",minWidth:160}}>{label}</span>
+            <input type="range" min={min} max={max} step={step} value={val} onChange={e=>set(+e.target.value)} style={{flex:1}}/>
+            <span style={{fontSize:10,color:SC.amber,fontFamily:"'DM Mono',monospace",minWidth:44,textAlign:'right'}}>{typeof val==='number'?val.toFixed(step<1?2:0):val}</span>
+          </div>
+        ))}
+        <div>
+          <div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace",marginBottom:6}}>Operator mode</div>
+          <div style={{display:'flex',gap:6}}>
+            {[['piloted','Piloted'],['remote','Remote'],['auto','Autonomous']].map(([m,lbl])=>(
+              <button type="button" key={m} onClick={()=>setOpMode(m)}
+                style={{flex:1,padding:'5px 0',background:opMode===m?`${SC.purple}33`:'transparent',
+                  border:`1px solid ${opMode===m?SC.purple:SC.border}`,borderRadius:5,
+                  color:opMode===m?'#a78bfa':SC.muted,fontSize:9,cursor:'pointer',fontFamily:"'DM Mono',monospace"}}>
+                {lbl}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {/* Results */}
+    {result&&(<>
+      {/* KPI row */}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:10}}>
+        {[
+          ['Fleet Size',result.totalAC+' aircraft',SC.amber],
+          ['Annual Revenue',fmtM(result.totalAnnualRev),SC.green],
+          ['Annual Profit',fmtM(result.totalAnnualProfit),result.totalAnnualProfit>0?SC.green:SC.red],
+          ['Fleet Acquisition',fmtM(result.fleetAcquisition),SC.blue],
+          ['Payback Period',result.payback===Infinity?'Not viable':`${Math.min(99,result.payback).toFixed(1)} yr`,result.payback<5?SC.green:result.payback<15?SC.amber:SC.red],
+        ].map(([l,v,c])=>(
+          <div key={l} style={{background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:8,padding:'10px 12px',textAlign:'center'}}>
+            <div style={{fontSize:8,color:SC.muted,fontFamily:"'DM Mono',monospace",textTransform:'uppercase',marginBottom:3}}>{l}</div>
+            <div style={{fontSize:16,fontWeight:700,color:c,fontFamily:"'DM Mono',monospace"}}>{v}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Route breakdown table */}
+      <div style={{background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:8,padding:14}}>
+        <div style={{fontSize:10,fontWeight:700,color:SC.text,fontFamily:"'DM Mono',monospace",marginBottom:10}}>Route Economics Breakdown</div>
+        <div style={{overflowX:'auto'}}>
+          <table style={{width:'100%',borderCollapse:'collapse',fontSize:9,fontFamily:"'DM Mono',monospace"}}>
+            <thead><tr style={{background:SC.bg}}>
+              {['Route','Dist','AC needed','Flights/yr','DOC/flight','Revenue/flight','Profit/flight','Break-even LF','Wh/km','Status'].map(h=>(
+                <th key={h} style={{padding:'6px 8px',textAlign:'right',color:SC.muted,fontWeight:700,borderBottom:`1px solid ${SC.border}`,whiteSpace:'nowrap',':first-child':{textAlign:'left'}}}>{h}</th>
+              ))}
+            </tr></thead>
+            <tbody>{result.routeResults.map((r,i)=>{
+              const status=r.profit>0?'Profitable':r.breakEvenLF<0.9?'Marginal':'Loss-making';
+              const sc=r.profit>0?SC.green:r.breakEvenLF<0.9?SC.amber:SC.red;
+              return(<tr key={r.id} style={{background:i%2===0?SC.bg+'44':'transparent'}}>
+                <td style={{padding:'6px 8px',textAlign:'left',color:SC.text,fontWeight:700}}>{r.from}→{r.to}</td>
+                <td style={{padding:'6px 8px',textAlign:'right',color:SC.muted}}>{r.dist} km</td>
+                <td style={{padding:'6px 8px',textAlign:'right',color:SC.amber}}>{r.acNeeded}</td>
+                <td style={{padding:'6px 8px',textAlign:'right',color:SC.muted}}>{r.annualFlights.toLocaleString()}</td>
+                <td style={{padding:'6px 8px',textAlign:'right',color:SC.red}}>${r.docFlight.toFixed(0)}</td>
+                <td style={{padding:'6px 8px',textAlign:'right',color:SC.green}}>${r.rev.toFixed(0)}</td>
+                <td style={{padding:'6px 8px',textAlign:'right',color:r.profit>0?SC.green:SC.red,fontWeight:700}}>{r.profit>0?'+':''}{r.profit.toFixed(0)}</td>
+                <td style={{padding:'6px 8px',textAlign:'right',color:r.breakEvenLF<0.7?SC.green:r.breakEvenLF<0.9?SC.amber:SC.red}}>{(r.breakEvenLF*100).toFixed(1)}%</td>
+                <td style={{padding:'6px 8px',textAlign:'right',color:SC.muted}}>{r.wh_km.toFixed(0)}</td>
+                <td style={{padding:'6px 8px',textAlign:'right',color:sc,fontWeight:700}}>{status}</td>
+              </tr>);
+            })}</tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Profit vs LF chart */}
+      <div style={{background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:8,padding:14}}>
+        <div style={{fontSize:10,fontWeight:700,color:SC.text,fontFamily:"'DM Mono',monospace",marginBottom:8}}>Fleet Annual Profit vs Network Load Factor — Fare Sensitivity</div>
+        <ResponsiveContainer width="100%" height={220}>
+          <LineChart data={result.profitVsLF} margin={{top:5,right:20,left:10,bottom:20}}>
+            <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
+            <XAxis dataKey="lf" tick={{fontSize:9,fill:SC.muted}} label={{value:'Load Factor (%)',position:'insideBottom',offset:-8,fontSize:10,fill:SC.muted}}/>
+            <YAxis tick={{fontSize:9,fill:SC.muted}} tickFormatter={v=>fmtM(v)} label={{value:'Annual Profit',angle:-90,position:'insideLeft',fontSize:10,fill:SC.muted}}/>
+            <Tooltip {...TTP} formatter={(v,n)=>[fmtM(v),n]}/>
+            <Legend iconSize={9} wrapperStyle={{fontSize:10,color:SC.muted}}/>
+            <ReferenceLine y={0} stroke={SC.muted} strokeWidth={1.5} strokeDasharray="4 2" label={{value:'Break-even',fill:SC.muted,fontSize:9,position:'right'}}/>
+            <Line type="monotone" dataKey="Joby $1.86" stroke={SC.green} strokeWidth={2} dot={false}/>
+            <Line type="monotone" dataKey="NASA $4.50" stroke={SC.amber} strokeWidth={2} dot={false}/>
+            <Line type="monotone" dataKey="Blade $6.00" stroke={SC.purple} strokeWidth={2} dot={false}/>
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+    </>)}
+    {!SR&&<div style={{padding:32,textAlign:'center',color:SC.muted,fontFamily:"'DM Mono',monospace",fontSize:11}}>Run sizing first to compute fleet economics.</div>}
+  </div>);
 }
 
 export default function App(){
@@ -8414,6 +9050,16 @@ export default function App(){
             {/* ──── TAB 22: AI DESIGN ASSISTANT ──── */}
             {tab===22&&(
               <AIAssistantPanel params={params} SR={SR} SC={SC} onParamChange={set} user={user}/>
+            )}
+
+            {/* ──── TAB 23: FLIGHT SIMULATOR ──── */}
+            {tab===23&&SR&&(
+              <FlightSimPanel SR={SR} params={params} SC={SC}/>
+            )}
+
+            {/* ──── TAB 24: FLEET OPTIMIZER ──── */}
+            {tab===24&&(
+              <FleetOptimizerPanel SR={SR} params={params} SC={SC} TTP={TTP}/>
             )}
 
             {/* ──── TAB 17: REAL-TIME COLLABORATION ────
