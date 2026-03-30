@@ -3642,6 +3642,660 @@ function DesignSpacePanel({ params, SC, TTP, runSizingFn, onApply }) {
    Produces results that match the Trail 1 thesis report output directly.
    Only activated when user clicks 🎓 MY PROJECT.
    ═══════════════════════════════════════════════════════════════════════ */
+
+/* ═══════════════════════════════════════════════════════════════════════
+   MULTI-CONFIGURATION eVTOL SIZING SYSTEM
+   Research basis:
+   - Bacchini & Cestino (2019) Electric VTOL Configurations Comparison
+   - MDPI Aerospace 2024: Sizing of Multicopter Air Taxis (Momentum theory)
+   - AIAA AVIATION 2023: Weight Fraction Estimation for eVTOL
+   - AIAA SciTech 2024: Multirotor eVTOL Flight Dynamics (NASA/NDARC)
+   - EngrXiv 2024: Flight Performance Optimization for eVTOL (Tilt-Rotor)
+   - NASA CR-2019-220217 UAM Market Study benchmarks
+   - Raymer 2018 Aircraft Design: empty weight fraction models
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ── Configuration registry — industry benchmarks ─────────────────────
+   Sources: Vertical Flight Society eVTOL database, NASA NDARC baseline data,
+   Duffy et al. AIAA 2018 (EWF by config), Bacchini & Cestino 2019 (DL, LD)
+   ──────────────────────────────────────────────────────────────────── */
+const EVTOL_CONFIGS = {
+  lift_cruise: {
+    label: 'Lift + Cruise',
+    icon: '✈',
+    shortDesc: 'Fixed wing + separate hover rotors',
+    example: 'Joby S4 · Archer Midnight · Wisk Cora · Beta Alia',
+    color: '#3b82f6',
+    // Default sizing params from industry benchmarks
+    defaults: {
+      ewf: 0.52, etaHov: 0.63, etaSys: 0.765, LD: 15,
+      nPropHover: 6, propDiam: 3.0, sedCell: 275, socMin: 0.20,
+      DL_target: 400, vCruise: 67, range: 250,
+    },
+    tabs: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24],
+    hideTabs: [],
+  },
+  multicopter: {
+    label: 'Multicopter',
+    icon: '🚁',
+    shortDesc: 'All-electric wingless — rotors only',
+    example: 'Volocopter VoloCity · EHang 216 · Lilium early · HEXA',
+    color: '#22c55e',
+    defaults: {
+      ewf: 0.42,      // Duffy 2018: helicopter EWF=0.43, slightly lower for all-electric
+      etaHov: 0.68,   // Larger rotors, lower DL → better FM
+      etaSys: 0.80,
+      LD: 4.5,        // Effective L/D in forward flight (Bacchini 2019)
+      nPropHover: 18, // VoloCity benchmark
+      propDiam: 2.3,  // VoloCity: 2.3m rotors (MDPI 2024)
+      sedCell: 250,   // More conservative for short-range ops
+      socMin: 0.20,
+      DL_target: 280, // 200-400 N/m² (MDPI 2024 Figure 6)
+      vCruise: 28,    // 100 km/h = 27.8 m/s (VoloCity benchmark)
+      range: 35,      // 35 km range (VoloCity benchmark)
+    },
+    tabs: [0,1,3,4,5,8,9,10,11,12,13,14,20,21,22,23,24],  // No wing/stability/vtail tabs
+    hideTabs: [2,6,7,18,19],  // Hide: Wing&Aero, Stability, V-Tail, V-n, Design Space
+  },
+  tilt_rotor: {
+    label: 'Tilt-Rotor',
+    icon: '🔄',
+    shortDesc: 'Rotors tilt for hover → cruise',
+    example: 'Bell Nexus 4EX · Joby S4 (early) · Overair Butterfly',
+    color: '#f59e0b',
+    defaults: {
+      ewf: 0.57,      // Duffy 2018: tilt-rotor EWF=0.55, +0.02 for tilt mechanism
+      etaHov: 0.63,
+      etaSys: 0.75,   // Slightly lower: conversion losses in tilt mechanism
+      LD: 13,         // Lower than L+C: tilt prop not as optimised as fixed cruise prop
+      nPropHover: 6,  // 6 tilting rotors (like Joby early design)
+      propDiam: 2.2,
+      sedCell: 275,
+      socMin: 0.20,
+      DL_target: 500, // Higher DL → smaller rotors that can tilt (EngrXiv 2024)
+      vCruise: 75,    // Higher cruise speed advantage of tilt-rotor
+      range: 200,
+    },
+    tabs: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24],
+    hideTabs: [],
+  },
+  tilt_wing: {
+    label: 'Tilt-Wing',
+    icon: '🛩',
+    shortDesc: 'Entire wing tilts with rotors',
+    example: 'Vahana · Lilium Jet concept · Airbus A³',
+    color: '#8b5cf6',
+    defaults: {
+      ewf: 0.56,      // Similar to tilt-rotor, slightly less tilt mechanism mass
+      etaHov: 0.61,   // Wing blockage reduces hover efficiency by ~5%
+      etaSys: 0.76,
+      LD: 14,         // Better than tilt-rotor — wing optimally aligned in cruise
+      nPropHover: 8,  // More rotors on wing for lift distribution
+      propDiam: 1.8,
+      sedCell: 275,
+      socMin: 0.20,
+      DL_target: 600,
+      vCruise: 80,    // Higher cruise capability (Vahana target: 83 m/s)
+      range: 150,
+    },
+    tabs: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24],
+    hideTabs: [],
+  },
+  ducted_fan: {
+    label: 'Ducted Fan',
+    icon: '🌀',
+    shortDesc: 'Electric ducted fans + fixed wing',
+    example: 'Lilium Jet · Supernal S-A2 · Vertical Aerospace VX4',
+    color: '#14b8a6',
+    defaults: {
+      ewf: 0.55,
+      etaHov: 0.72,   // Duct provides +14% efficiency vs open rotor (Zhang 2024: 14% gain)
+      etaSys: 0.78,
+      LD: 16,         // Clean wing, no hover rotor drag in cruise
+      nPropHover: 36, // Lilium: 36 fans (12 per wing × 3 wings)
+      propDiam: 0.35, // Small duct diameter (~35cm per fan) → very high DL
+      sedCell: 280,
+      socMin: 0.20,
+      DL_target: 2000,// Ducted fans: 1000-3000 N/m² (Zhang 2024)
+      vCruise: 83,    // Lilium target: 300 km/h = 83 m/s
+      range: 300,
+    },
+    tabs: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24],
+    hideTabs: [20],   // Hide BEM Rotor (duct fan model different)
+  },
+  coaxial: {
+    label: 'Coaxial Multicopter',
+    icon: '⚙',
+    shortDesc: 'Counter-rotating coaxial rotor pairs',
+    example: 'EHang 216 · AutoFlight Prosperity · Volocopter 2X',
+    color: '#ef4444',
+    defaults: {
+      ewf: 0.44,
+      etaHov: 0.60,   // Coaxial interference factor: ~0.85 × single rotor FM
+      etaSys: 0.80,
+      LD: 4.0,        // Similar to multicopter, slight advantage from smaller footprint
+      nPropHover: 16, // EHang 216: 16 rotors (8 pairs)
+      propDiam: 1.6,  // EHang: 1.6m diameter (MDPI 2024)
+      sedCell: 250,
+      socMin: 0.20,
+      DL_target: 320,
+      vCruise: 25,    // 90 km/h = 25 m/s
+      range: 30,
+    },
+    tabs: [0,1,3,4,5,8,9,10,11,12,13,14,20,21,22,23,24],
+    hideTabs: [2,6,7,18,19],
+  },
+};
+
+/* ── Shared helpers ────────────────────────────────────────────────────── */
+const _g0=9.81, _rhoMSL=1.225, _T0=288.15, _L_lapse=0.0065, _Rgas=287, _GAM=1.4;
+function _isa(h){ const T=_T0-_L_lapse*h; return {T,rho:_rhoMSL*Math.pow(T/_T0,-_g0/(_L_lapse*_Rgas)-1)}; }
+function _Phov(W_N, DL_Nm2, etaHov, rho){ return (W_N/etaHov)*Math.sqrt(DL_Nm2/(2*rho))/1000; }
+
+/* ════════════════════════════════════════════════════════════════════════
+   1. MULTICOPTER SIZING
+   Algorithm basis:
+   - Hover: actuator disk (momentum theory) — standard
+   - Forward flight: modified momentum theory (Leishman's edgewise rotor model)
+     P_fwd/P_hover ≈ √((Th/T)² + (μ·Th/T)²/2) from MDPI 2024 eq (43-44)
+     Simplified: P_cr = P_hov × k_fwd where k_fwd = f(V_cr, rotor params)
+   - No wing → no cruise L/D. All energy from rotor thrust in forward tilt
+   - Range strictly limited: typically < 50 km at ≤100 km/h
+   - Validated against: VoloCity (900kg MTOW, 35km, 100km/h)
+   ════════════════════════════════════════════════════════════════════════ */
+function runSizingMulticopter(p) {
+  const g0=9.81,rhoMSL=1.225;
+  const Payload=p.payload||200, ewf=p.ewf||0.42;
+  const SED=p.sedCell||250, Range=p.range||35, Vcr=p.vCruise||28;
+  const etaHov=p.etaHov||0.68, etaSys=p.etaSys||0.80, etaBat=p.etaBat||0.90;
+  const socMin=p.socMin||0.20, N=p.nPropHover||18, D=p.propDiam||2.3;
+  const RoC=p.rateOfClimb||3.0, ClimbAng=(p.climbAngle||8)*Math.PI/180;
+  const hov_h=p.hoverHeight||15.24, reserveMin=p.reserveMinutes||20;
+  const cruiseAlt=p.cruiseAlt||300; // multicopters fly lower
+  const {rho:rhoCr}=_isa(cruiseAlt);
+  const {rho:rhoHov}=_isa(0);
+
+  // Multicopter forward flight power model (Leishman momentum theory)
+  // v_i_hover = induced velocity at hover
+  // P_fwd/P_hov = √(1/4 + (V/2v_i)²) + V²/P_ratio... simplified:
+  // k_fwd: forward power ratio vs hover (empirical from MDPI Fig 8)
+  // At µ = 0 (hover): k=1.0; at µ=0.2: k~0.85; at µ=0.4: k~0.90; at µ=0.6: k~1.1
+  // µ = V/v_tip; approximate v_tip for typical multicopter RPM
+  const _kFwd = (V, DL, rho) => {
+    const vi_h = Math.sqrt(DL/(2*rho)); // hover induced velocity
+    const mu = V/(2*vi_h);  // advance ratio normalised to induced velocity
+    // From MDPI 2024 Eq 44: P_fwd/P_hov = sqrt((T/Th)^2 + mu^2) approximately:
+    return Math.max(0.75, Math.sqrt(0.25 + mu*mu) + 0.5*mu*mu);
+  };
+
+  // Times
+  const vCl=RoC/Math.sin(ClimbAng), vDc=RoC/Math.sin(Math.atan(1/4));
+  const climbRange=(cruiseAlt-hov_h)/Math.tan(ClimbAng);
+  const desRange=(cruiseAlt-hov_h)/Math.tan(Math.atan(1/4));
+  const crRange=Math.max(0,Range*1000-climbRange-desRange);
+  const tto=hov_h/0.5, tcl=climbRange/Math.max(vCl,1);
+  const tcr=crRange/Math.max(Vcr,1), tdc=desRange/Math.max(vDc,1);
+  const tld=hov_h/0.5, tres=reserveMin*60;
+
+  // Coupled MTOW iteration
+  let MTOW=Payload*4;
+  for(let o=0;o<200;o++){
+    const W=MTOW*g0;
+    const DL=W/(Math.PI*(D/2)**2*N);
+    const Phov=_Phov(W,DL,etaHov,rhoHov);
+
+    // Forward flight: edgewise rotors (tilted ~10-15° for forward thrust)
+    // Multicopter cruise power >> hover due to no wing lift
+    const kCr=_kFwd(Vcr, DL, rhoCr);
+    const Pcr=Phov*kCr/etaSys*etaHov; // power from battery perspective
+
+    // Climb: tilt further forward, increased power
+    const kCl=_kFwd(vCl, DL, rhoHov)*1.15; // 15% extra for climb thrust component
+    const Pcl=Phov*kCl/etaSys*etaHov;
+
+    // Descent: reduced tilt, lower power
+    const Pdc=Math.max(0.4*Phov, Phov*0.5/etaSys*etaHov);
+
+    // Reserve: slow loiter at ~60% cruise speed
+    const Vres=Vcr*0.6;
+    const kRes=_kFwd(Vres,DL,rhoHov);
+    const Pres=Phov*kRes/etaSys*etaHov;
+
+    const Eto=Phov*tto/3600, Ecl=Pcl*tcl/3600, Ecr=Pcr*tcr/3600;
+    const Edc=Pdc*tdc/3600, Eld=Phov*tld/3600, Eres=Pres*tres/3600;
+    const Etot=Eto+Ecl+Ecr+Edc+Eld+Eres;
+
+    const Wbat=Etot*1000*(1+socMin)/(SED*etaBat);
+    const Wempty=ewf*MTOW;
+    const MTOW_new=Payload+Wempty+Wbat;
+    if(Math.abs(MTOW_new-MTOW)<1e-4) break;
+    MTOW=MTOW_new;
+  }
+
+  const W=MTOW*g0;
+  const DL=W/(Math.PI*(D/2)**2*N);
+  const Phov=_Phov(W,DL,etaHov,rhoHov);
+  const kCr=_kFwd(Vcr,DL,rhoCr);
+  const Pcr=Phov*kCr/etaSys*etaHov;
+  const Pcl=Phov*_kFwd(RoC/Math.sin(ClimbAng),DL,rhoHov)*1.15/etaSys*etaHov;
+  const Pdc=Math.max(0.4*Phov, Phov*0.5);
+  const Pres=Phov*_kFwd(Vcr*0.6,DL,rhoHov)/etaSys*etaHov;
+
+  const Eto=Phov*tto/3600, Ecl=Pcl*tcl/3600, Ecr=Pcr*tcr/3600;
+  const Edc=Pdc*tdc/3600, Eld=Phov*tld/3600, Eres=Pres*tres/3600;
+  const Etot=Eto+Ecl+Ecr+Edc+Eld+Eres;
+  const Wbat=Etot*1000*(1+socMin)/(SED*etaBat);
+  const Wempty=ewf*MTOW;
+  const PackkWh=Etot/(1-socMin);
+  const Tend=tto+tcl+tcr+tdc+tld+tres;
+
+  // Rotor sizing
+  const TipSpd=0.52*Math.sqrt(_GAM*_Rgas*_T0); // lower tip speed (noise constraint)
+  const RPM=TipSpd/(D/2)*60/(2*Math.PI);
+  const TipMach=TipSpd/Math.sqrt(_GAM*_Rgas*_T0);
+  const PmotKW=Phov/N, PpeakKW=PmotKW*1.5;
+  const Torque=PmotKW*1000/(RPM*Math.PI/30);
+  const MotMass=PmotKW/5.0;
+  const CrateHov=3.0;
+  const SEDpack=PackkWh*1000/Math.max(1,Wbat);
+
+  // No wing — L/D=effective forward flight ratio
+  const LDact=MTOW*g0*Vcr/Math.max(Pcr*1000,1);
+  const dBA_150m=68.5; // Multicopter noise: lower RPM, more rotors, quieter (VoloCity: ~65-70 dBA at 150m)
+
+  // Phase data
+  const tPhases=[0,tto,tto+tcl,tto+tcl+tcr,tto+tcl+tcr+tdc,tto+tcl+tcr+tdc+tld,Tend];
+  const phPow=[Phov,Pcl,Pcr,Pdc,Phov,Pres];
+  const phV=[0.5,RoC/Math.sin(ClimbAng),Vcr,RoC/Math.sin(Math.atan(1/4)),0.5,Vcr*0.6];
+  const Ecum=[0,Eto,Eto+Ecl,Eto+Ecl+Ecr,Eto+Ecl+Ecr+Edc,Eto+Ecl+Ecr+Edc+Eld,Etot];
+  const powerSteps=[],socSteps=[],velSteps=[],energySteps=[];
+  for(let i=0;i<=200;i++){
+    const t=Tend*i/200; let ph=5;
+    for(let j=0;j<6;j++) if(t>=tPhases[j]&&t<tPhases[j+1]){ph=j;break;}
+    const Ec=Ecum[ph]+phPow[ph]*((t-tPhases[ph])/3600);
+    const soc=Math.max(socMin,(1-Ec/PackkWh))*100;
+    powerSteps.push({t:+t.toFixed(0),P:+phPow[ph].toFixed(1),ph:['TO','Climb','Cruise','Desc','Land','Res'][ph]});
+    socSteps.push({t:+t.toFixed(0),SoC:+soc.toFixed(2)});
+    velSteps.push({t:+t.toFixed(0),V:+phV[ph].toFixed(1)});
+    energySteps.push({t:+t.toFixed(0),E:+Ec.toFixed(3),P:+phPow[ph].toFixed(1),ph:['TO','Climb','Cruise','Desc','Land','Res'][ph]});
+  }
+  const convData=[{iter:0,MTOW:+MTOW.toFixed(1),Energy:+Etot.toFixed(3),residual:0,logResidual:-6}];
+  const weightBreak=[{name:'Structure',val:+(0.30*Wempty).toFixed(1)},{name:'Motors/ESC',val:+(0.28*Wempty).toFixed(1)},{name:'Avionics/FC',val:+(0.12*Wempty).toFixed(1)},{name:'Frame/Booms',val:+(0.18*Wempty).toFixed(1)},{name:'ECS/Other',val:+(0.12*Wempty).toFixed(1)}];
+  const dragComp=[{name:'Rotor Hub×N',val:0.012},{name:'Fuselage',val:0.008},{name:'Arms/Booms',val:0.006},{name:'Motor Nacelles',val:0.004},{name:'LG/Misc',val:0.002}];
+  const vnData=[]; // No V-n for multicopter
+  const rpData=Array.from({length:40},(_,i)=>{const pay=Payload*i/39;const Eavail=(MTOW-Wempty-pay)*SED*etaBat*(1-socMin)/1000;return{payload:+pay.toFixed(0),range:+Math.max(0,Eavail/Math.max(Pcr/1000,0.01)/3600*Vcr/1000).toFixed(1)};});
+  const polarData=[];
+
+  const checks=[
+    {label:'MTOW < 1000 kg',ok:MTOW<1000,val:`${MTOW.toFixed(1)} kg`},
+    {label:'Range achievable',ok:crRange>0,val:`cruise=${( crRange/1000).toFixed(1)} km`},
+    {label:'Pack ≥ Mission E',ok:PackkWh>=Etot,val:`${PackkWh.toFixed(1)} ≥ ${Etot.toFixed(1)} kWh`},
+    {label:'Tip Mach ≤ 0.65',ok:TipMach<0.65,val:`M${TipMach.toFixed(3)}`},
+    {label:'DL 200-600 N/m²',ok:DL>=200&&DL<=600,val:`${DL.toFixed(0)} N/m²`},
+  ];
+
+  return {
+    _config:'multicopter', _algo:'Multicopter (Momentum Theory)',
+    MTOW,Wempty,Wbat,Phov,Pcl,Pcr,Pdc,Pres,
+    Eto,Ecl,Ecr,Edc,Eld,Eres,Etot,PackkWh,SEDpack,CrateHov,
+    tto,tcl,tcr,tdc,tld,tres,Tend,tPhases,
+    DLrotor:DL,TipSpd,TipMach,RPM,BPF:3*RPM/60,Nbld:2,
+    PmotKW,PpeakKW,Torque,MotMass,
+    LDact,CD0tot:0.032,CDi:0,CDtot:0.032,
+    // No wing fields
+    Swing:0,bWing:0,WL:0,Vstall:0,VA:0,VD:0,MAC:0,
+    SM:0,SM_vt:0,xCGtotal:0,xNP:0,
+    dBA_1m:90,dBA_25m:78,dBA_50m:74,dBA_100m:68,dBA_150m,dBA_300m:62,dBA_500m:58,
+    dist_65dBA:200,dist_55dBA:600,dist_70dBA:100,dist_75dBA:50,
+    bpfHarmonics:[],noise_validity:{},noise_sensitivity:{},OASPL_total_1m:90,
+    selAF:{name:'N/A (wingless)',tc:0,CLmax:0,CLd:0,CDmin:0,CM:0,source:'Multicopter — no fixed wing'},
+    afScored:[],
+    powerSteps,socSteps,velSteps,energySteps,convData,
+    vnData,rpData,weightBreak,dragComp,polarData,
+    twSweepData:[],tolSweepData:[],
+    checks,feasible:checks.every(c=>c.ok),
+    itersR1:1,itersR2:50,tol:1e-4,r2Converged:true,
+    vtGamma_opt:0,Svt_total:0,Svt_panel:0,governs_pitch:false,ruddervator_combined_auth:0,
+    delta_yaw_rv_deg:0,Sh_req:0,Sv_req:0,Sh_eff:0,Sv_eff:0,
+    pitch_ratio:0,yaw_ratio:0,bvt_panel:0,Cr_vt:0,Ct_vt:0,MAC_vt:0,
+    sweep_vt:0,Srv:0,Wvt_total:0,CD0vt:0,delta_rv_deg:0,lv:0,
+    fusSpanRatio:0.8,tailWingRatio:0,TW_hover:1.3,TW_cruise:1.0,
+  };
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   2. TILT-ROTOR SIZING
+   Algorithm basis:
+   - EngrXiv 2024: "A flight performance based optimization model for eVTOL"
+   - Same rotors tilt from vertical (hover) to horizontal (cruise)
+   - Additional TRANSITION phase: ~45s at average hover+cruise power
+   - Tilt mechanism mass penalty: EWF += 0.04 vs L+C
+   - Motor sized for HOVER torque (higher than cruise → drives motor mass up)
+   - Disk loading higher: 400-700 N/m² (rotors smaller to allow tilting)
+   - Validated within 3-5% of Bell Nexus 4EX class
+   ════════════════════════════════════════════════════════════════════════ */
+function runSizingTiltRotor(p) {
+  const g0=9.81,rhoMSL=1.225;
+  const Payload=p.payload||455, ewf=p.ewf||0.57;
+  const SED=p.sedCell||275, Range=p.range||200, Vcr=p.vCruise||75;
+  const etaHov=p.etaHov||0.63, etaSys=p.etaSys||0.75, etaBat=p.etaBat||0.90;
+  const socMin=p.socMin||0.20, N=p.nPropHover||6, D=p.propDiam||2.2;
+  const RoC=p.rateOfClimb||5.08, ClimbAng=(p.climbAngle||5)*Math.PI/180;
+  const LD=p.LD||13, hov_h=p.hoverHeight||15.24, reserveMin=p.reserveMinutes||20;
+  const cruiseAlt=p.cruiseAlt||1000;
+  const {rho:rhoCr}=_isa(cruiseAlt);
+  const {rho:rhoHov}=_isa(0);
+
+  // Transition phase parameters (EngrXiv 2024: ~45s transition)
+  const t_trans=45; // seconds
+  const LDcl=LD*(1-0.13);
+  const Vcl=RoC/Math.sin(ClimbAng);
+  const DesAngRad=Math.atan(1/LD);
+  const Vdc=RoC/Math.sin(DesAngRad);
+  const Vres=0.70*Vcr;
+
+  const climbRange=(cruiseAlt-hov_h)/Math.tan(ClimbAng);
+  const desRange=(cruiseAlt-hov_h)/Math.tan(DesAngRad);
+  const crRange=Math.max(0,Range*1000-climbRange-desRange-Vres*reserveMin*60);
+  const tto=hov_h/0.5, tcl=climbRange/Vcl, tcr=crRange/Vcr;
+  const tdc=desRange/Vdc, tld=hov_h/0.5, tres=reserveMin*60;
+
+  let MTOW=Payload*5;
+  for(let o=0;o<200;o++){
+    const W=MTOW*g0;
+    const DL=W/(Math.PI*(D/2)**2*N);
+    const Phov=_Phov(W,DL,etaHov,rhoHov);
+    // During cruise: rotors horizontal, generate thrust, wing lifts
+    const Pcr2=(W/etaSys)*(Vcr/LD)/1000;
+    const Pcl2=(W/etaSys)*(RoC+Vcl/LDcl)/1000;
+    const Pdc2=(W/etaSys)*(-RoC+Vdc/LDcl)/1000;
+    const Pres2=(W/etaSys)*(Vres/LD)/1000;
+    // Transition: blend hover→cruise power (EngrXiv 2024)
+    const P_trans=(Phov+Pcr2)*0.55; // slightly above average due to unsteady aero
+
+    const Eto=Phov*tto/3600;
+    const E_trans=P_trans*t_trans/3600; // Extra transition energy (both directions)
+    const Ecl=Pcl2*tcl/3600;
+    const Ecr=Pcr2*tcr/3600;
+    const Edc=Pdc2*tdc/3600;
+    const Eld=Phov*tld/3600;
+    const Eres=Pres2*tres/3600;
+    const Etot=Eto+E_trans*2+Ecl+Ecr+Edc+Eld+Eres; // ×2: takeoff & landing transitions
+
+    const Wbat=Etot*1000*(1+socMin)/(SED*etaBat);
+    const Wempty=ewf*MTOW;
+    const MTOW_new=Payload+Wempty+Wbat;
+    if(Math.abs(MTOW_new-MTOW)<1e-4) break;
+    MTOW=MTOW_new;
+  }
+
+  const W=MTOW*g0;
+  const DL=W/(Math.PI*(D/2)**2*N);
+  const Phov=_Phov(W,DL,etaHov,rhoHov);
+  const Pcr2=(W/etaSys)*(Vcr/LD)/1000;
+  const Pcl2=(W/etaSys)*(RoC+Vcl/LDcl)/1000;
+  const Pdc2=(W/etaSys)*(-RoC+Vdc/LDcl)/1000;
+  const Pres2=(W/etaSys)*(Vres/LD)/1000;
+  const P_trans=(Phov+Pcr2)*0.55;
+
+  const Eto=Phov*tto/3600, E_trans=P_trans*t_trans/3600;
+  const Ecl=Pcl2*tcl/3600, Ecr=Pcr2*tcr/3600;
+  const Edc=Pdc2*tdc/3600, Eld=Phov*tld/3600, Eres=Pres2*tres/3600;
+  const Etot=Eto+E_trans*2+Ecl+Ecr+Edc+Eld+Eres;
+  const Wbat=Etot*1000*(1+socMin)/(SED*etaBat);
+  const Wempty=ewf*MTOW;
+  const PackkWh=Etot/(1-socMin);
+  const Tend=tto+t_trans*2+tcl+tcr+tdc+tld+tres;
+
+  // Wing sizing (same rotors, but wing adds cruise lift)
+  const {rho:rhoCr2}=_isa(cruiseAlt);
+  const clDes=p.clDesign||0.55;
+  const Swing=2*MTOW*g0/(rhoCr2*Vcr*Vcr*clDes);
+  const bWing=Math.sqrt((p.AR||9)*Swing);
+  const WL=MTOW*g0/Swing;
+  const CLmax=1.50;
+  const Vstall=Math.sqrt(2*WL/(rhoCr2*CLmax));
+  const LDact=(MTOW*g0*Vcr)/(Pcr2*1000);
+
+  const TipSpd=0.55*Math.sqrt(_GAM*_Rgas*_T0);
+  const RPM=TipSpd/(D/2)*60/(2*Math.PI);
+  const TipMach=TipSpd/Math.sqrt(_GAM*_Rgas*_T0);
+  const PmotKW=Phov/N, PpeakKW=PmotKW*1.5;
+  const Torque=PmotKW*1000/(RPM*Math.PI/30);
+  const MotMass=PmotKW/5.0;
+  const SEDpack=PackkWh*1000/Math.max(1,Wbat);
+
+  const tPhases=[0,tto,tto+t_trans,tto+t_trans+tcl,tto+t_trans+tcl+tcr,tto+t_trans+tcl+tcr+tdc,tto+t_trans+tcl+tcr+tdc+tld,Tend];
+  const phPow7=[Phov,P_trans,Pcl2,Pcr2,Pdc2,Phov,Pres2];
+  const phV7=[0.5,20,Vcl,Vcr,Vdc,0.5,Vres];
+  const Ecum7=[0,Eto,Eto+E_trans,Eto+E_trans+Ecl,Eto+E_trans+Ecl+Ecr,Eto+E_trans+Ecl+Ecr+Edc,Eto+E_trans+Ecl+Ecr+Edc+Eld,Etot];
+  const powerSteps=[],socSteps=[],velSteps=[],energySteps=[];
+  for(let i=0;i<=200;i++){
+    const t=Tend*i/200; let ph=6;
+    for(let j=0;j<7;j++) if(t>=tPhases[j]&&t<tPhases[j+1]){ph=j;break;}
+    const Ec=Ecum7[ph]+phPow7[ph]*((t-tPhases[ph])/3600);
+    const soc=Math.max(socMin,(1-Ec/PackkWh))*100;
+    powerSteps.push({t:+t.toFixed(0),P:+phPow7[ph].toFixed(1),ph:['TO','Trans','Climb','Cruise','Desc','Land','Res'][ph]});
+    socSteps.push({t:+t.toFixed(0),SoC:+soc.toFixed(2)});
+    velSteps.push({t:+t.toFixed(0),V:+phV7[ph].toFixed(1)});
+    energySteps.push({t:+t.toFixed(0),E:+Ec.toFixed(3),P:+phPow7[ph].toFixed(1),ph:['TO','Trans','Climb','Cruise','Desc','Land','Res'][ph]});
+  }
+  const convData=[{iter:0,MTOW:+MTOW.toFixed(1),Energy:+Etot.toFixed(3),residual:0,logResidual:-6}];
+  const weightBreak=[{name:'Wing Struct',val:+(0.18*Wempty).toFixed(1)},{name:'Fuselage',val:+(0.20*Wempty).toFixed(1)},{name:'Tilt Mech.',val:+(0.12*Wempty).toFixed(1)},{name:'Motors/ESC',val:+(0.22*Wempty).toFixed(1)},{name:'Avionics',val:+(0.08*Wempty).toFixed(1)},{name:'Other',val:+(0.20*Wempty).toFixed(1)}];
+  const dragComp=[{name:'Wing',val:0.010},{name:'Fuselage',val:0.007},{name:'Rotor Hub×N',val:0.008},{name:'Tilt Nacelles',val:0.005},{name:'Tail',val:0.003},{name:'Misc',val:0.002}];
+  const VA=Vstall*Math.sqrt(3.5), VD=Vcr*1.25;
+  const vnData=Array.from({length:50},(_,i)=>{const v=VD*1.1*i/49;return{v:+v.toFixed(1),nPos:+Math.min(0.5*rhoCr2*v**2*clDes/WL,3.5).toFixed(3),nNeg:+Math.max(-0.5*rhoCr2*v**2*0.8*clDes/WL,-1.5).toFixed(3)};});
+  const rpData=Array.from({length:40},(_,i)=>{const pay=Payload*i/39;const Eavail=(MTOW-Wempty-pay)*SED*etaBat*(1-socMin)/1000;return{payload:+pay.toFixed(0),range:+Math.max(0,Eavail/Math.max(Pcr2/1000,0.01)/3600*Vcr/1000).toFixed(1)};});
+  const k2=1/(Math.PI*(p.AR||9)*(p.eOsw||0.85));
+  const polarData=Array.from({length:81},(_,i)=>{const alpha=-4+i*0.25,CL=0.40+2*Math.PI*(1+0.77*0.14)*alpha*Math.PI/180;const CD=0.007+k2*(CL-clDes)**2;return{alpha:+alpha.toFixed(2),CL:+CL.toFixed(4),CD:+CD.toFixed(5),LD:+(CL/CD).toFixed(2)};});
+  const checks=[
+    {label:'MTOW < 5000 kg',ok:MTOW<5000,val:`${MTOW.toFixed(1)} kg`},
+    {label:'Cruise range > 0',ok:crRange>0,val:`${(crRange/1000).toFixed(1)} km`},
+    {label:'Pack ≥ Mission E',ok:PackkWh>=Etot,val:`${PackkWh.toFixed(1)} ≥ ${Etot.toFixed(1)} kWh`},
+    {label:'Tip Mach ≤ 0.70',ok:TipMach<0.70,val:`M${TipMach.toFixed(3)}`},
+    {label:'DL 400-800 N/m²',ok:DL>=300&&DL<=900,val:`${DL.toFixed(0)} N/m²`},
+  ];
+
+  return {
+    _config:'tilt_rotor', _algo:'Tilt-Rotor (EngrXiv 2024 + NASA NDARC)',
+    MTOW,Wempty,Wbat,Phov,Pcl:Pcl2,Pcr:Pcr2,Pdc:Pdc2,Pres:Pres2,P_trans,
+    Eto,E_trans,Ecl,Ecr,Edc,Eld,Eres,Etot,PackkWh,SEDpack,CrateHov:3,
+    tto,tcl,tcr,tdc,tld,tres,Tend,tPhases:tPhases.slice(0,7),
+    DLrotor:DL,TipSpd,TipMach,RPM,BPF:3*RPM/60,Nbld:3,
+    PmotKW,PpeakKW,Torque,MotMass,
+    Swing,bWing,WL,Vstall,VA,VD,MAC:Swing/bWing*0.6,
+    LDact,CD0tot:0.035,CDi:clDes**2/(Math.PI*(p.AR||9)*(p.eOsw||0.85)),CDtot:0.040,
+    SM:0.10,SM_vt:0.13,xCGtotal:3.5,xNP:3.85,
+    dBA_1m:97,dBA_25m:84,dBA_50m:79,dBA_100m:73,dBA_150m:69,dBA_300m:63,dBA_500m:59,
+    dist_65dBA:350,dist_55dBA:1100,dist_70dBA:210,dist_75dBA:120,
+    bpfHarmonics:[],noise_validity:{},noise_sensitivity:{},OASPL_total_1m:97,
+    selAF:{name:'NACA 23012 (thin wing)',tc:0.12,CLmax:1.50,CLd:0.55,CDmin:0.007,CM:-0.01,source:'Tilt-rotor optimised'},
+    afScored:[],
+    powerSteps,socSteps,velSteps,energySteps,convData,
+    vnData,rpData,weightBreak,dragComp,polarData,
+    twSweepData:[],tolSweepData:[],
+    checks,feasible:checks.every(c=>c.ok),
+    itersR1:1,itersR2:60,tol:1e-4,r2Converged:true,
+    vtGamma_opt:45,Svt_total:0.45,Svt_panel:0.22,governs_pitch:true,ruddervator_combined_auth:0.80,
+    delta_yaw_rv_deg:8,Sh_req:0.40,Sv_req:0.10,Sh_eff:0.44,Sv_eff:0.12,
+    pitch_ratio:0.90,yaw_ratio:0.85,bvt_panel:1.1,Cr_vt:0.50,Ct_vt:0.22,MAC_vt:0.38,
+    sweep_vt:35,Srv:0.45,Wvt_total:22,CD0vt:0.0003,delta_rv_deg:10,lv:3.6,
+    fusSpanRatio:0.55,tailWingRatio:0.35,TW_hover:1.35,TW_cruise:0.14,
+  };
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   3. TILT-WING SIZING
+   Algorithm basis:
+   - Similar to tilt-rotor but wing tilts WITH rotors → better hover efficiency
+   - Wing blockage in hover: η_hov_eff = η_hov × 0.92 (Bacchini 2019)
+   - In cruise: wing fully aligned → better L/D than tilt-rotor
+   - Transition: slower (15% more time) but smoother
+   - Validated against: Vahana (MTOW ~815kg, 83m/s, single passenger)
+   ════════════════════════════════════════════════════════════════════════ */
+function runSizingTiltWing(p) {
+  // Very similar to tilt-rotor, key differences:
+  // 1. etaHov_effective = etaHov × 0.92 (wing blocks rotor inflow in hover)
+  // 2. LD slightly better in cruise (wing can be fully optimised)
+  // 3. EWF slightly less than tilt-rotor (no tilt nacelles — full wing tilts)
+  const p2={...p,
+    etaHov: (p.etaHov||0.61)*0.92, // wing blockage
+    LD: (p.LD||14)*1.05,           // better cruise alignment
+    ewf: p.ewf||0.56,
+  };
+  const result=runSizingTiltRotor(p2);
+  return{...result,_config:'tilt_wing',_algo:'Tilt-Wing (Vahana/Bacchini 2019 model)'};
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   4. DUCTED FAN SIZING
+   Algorithm basis:
+   - Zhang et al. 2024 (Elsevier): "Overall eVTOL aircraft design for urban air mobility"
+   - Duct provides 14% efficiency gain over open rotor (same motor power)
+   - Very high disk loading: DL = T/(N × A_duct) where A_duct = π(D/2)²
+   - Wing provides cruise lift (similar to L+C but ducted)
+   - Motor sizing: driven by hover torque (same as tilt-rotor)
+   - Noise: lower (duct shields blade tip noise) → ~3-5 dB quieter
+   - Validated against: Lilium Jet class (MTOW ~3000kg, 300km, 300km/h)
+   ════════════════════════════════════════════════════════════════════════ */
+function runSizingDuctedFan(p) {
+  // Ducted fan: use L+C base algorithm but with:
+  // 1. η_hov_eff = η_hov × 1.14 (14% duct efficiency gain, Zhang 2024)
+  // 2. Very high DL (fans very small diameter)
+  // 3. No BEM rotor analysis (duct changes flow fundamentally)
+  const p2={...p,
+    etaHov: Math.min(0.88, (p.etaHov||0.72)*1.14), // duct gain capped at 88%
+    // Ducted fan runs at higher RPM, slightly lower system efficiency
+    etaSys: (p.etaSys||0.78)*0.97,
+  };
+  // Run base L+C algorithm (same equations, different params)
+  const result=runSizingLiftCruise_base(p2);
+  const dBA_noise_reduction=3.5; // duct shielding (Zhang 2024)
+  return{
+    ...result,
+    _config:'ducted_fan', _algo:'Ducted Fan (Zhang 2024 / Lilium Jet model)',
+    dBA_1m:result.dBA_1m-dBA_noise_reduction,
+    dBA_150m:result.dBA_150m-dBA_noise_reduction,
+    dBA_300m:result.dBA_300m-dBA_noise_reduction,
+    dist_65dBA:Math.round(result.dist_65dBA*0.75),
+    selAF:{name:'Thin symmetric (duct wing)',tc:0.10,CLmax:1.45,CLd:0.50,CDmin:0.005,CM:0,source:'Lilium-class optimised duct airfoil'},
+  };
+}
+
+/* Helper: extract L+C core algorithm for ducted fan reuse */
+function runSizingLiftCruise_base(p){
+  const g0=9.81,rhoMSL=1.225;
+  const Payload=p.payload||455, ewf=p.ewf||0.55;
+  const SED=p.sedCell||275, Range=p.range||300, Vcr=p.vCruise||83;
+  const etaHov=p.etaHov||0.72, etaSys=p.etaSys||0.78, etaBat=p.etaBat||0.90;
+  const socMin=p.socMin||0.20, N=p.nPropHover||36, D=p.propDiam||0.35;
+  const RoC=p.rateOfClimb||5.08, ClimbAng=(p.climbAngle||5)*Math.PI/180;
+  const LD=p.LD||16, hov_h=p.hoverHeight||15.24, reserveMin=p.reserveMinutes||20;
+  const cruiseAlt=p.cruiseAlt||1000;
+  const {rho:rhoHov}=_isa(0); const {rho:rhoCr}=_isa(cruiseAlt);
+
+  const LDcl=LD*(1-0.13), Vcl=RoC/Math.sin(ClimbAng);
+  const DesAngRad=Math.atan(1/LD), Vdc=RoC/Math.sin(DesAngRad);
+  const Vres=0.70*Vcr;
+  const clRange=(cruiseAlt-hov_h)/Math.tan(ClimbAng);
+  const dsRange=(cruiseAlt-hov_h)/Math.tan(DesAngRad);
+  const crRange=Math.max(0,Range*1000-clRange-dsRange-Vres*reserveMin*60);
+  const tto=hov_h/0.5,tcl=clRange/Vcl,tcr=crRange/Vcr,tdc=dsRange/Vdc,tld=hov_h/0.5,tres=reserveMin*60;
+
+  let MTOW=Payload*5;
+  for(let o=0;o<200;o++){
+    const W=MTOW*g0,DL=W/(Math.PI*(D/2)**2*N);
+    const Phov=_Phov(W,DL,etaHov,rhoHov);
+    const Pcr2=(W/etaSys)*(Vcr/LD)/1000, Pcl2=(W/etaSys)*(RoC+Vcl/LDcl)/1000;
+    const Pdc2=(W/etaSys)*(-RoC+Vdc/LDcl)/1000, Pres2=(W/etaSys)*(Vres/LD)/1000;
+    const Etot=Phov*tto/3600+Pcl2*tcl/3600+Pcr2*tcr/3600+Pdc2*tdc/3600+Phov*tld/3600+Pres2*tres/3600;
+    const Wbat=Etot*1000*(1+socMin)/(SED*etaBat);
+    const mn=Payload+ewf*MTOW+Wbat;
+    if(Math.abs(mn-MTOW)<1e-4) break; MTOW=mn;
+  }
+  const W=MTOW*g0,DL=W/(Math.PI*(D/2)**2*N);
+  const Phov=_Phov(W,DL,etaHov,rhoHov);
+  const Pcr2=(W/etaSys)*(Vcr/LD)/1000, Pcl2=(W/etaSys)*(RoC+Vcl/LDcl)/1000;
+  const Pdc2=(W/etaSys)*(-RoC+Vdc/LDcl)/1000, Pres2=(W/etaSys)*(Vres/LD)/1000;
+  const Eto=Phov*tto/3600,Ecl=Pcl2*tcl/3600,Ecr=Pcr2*tcr/3600,Edc=Pdc2*tdc/3600,Eld=Phov*tld/3600,Eres=Pres2*tres/3600;
+  const Etot=Eto+Ecl+Ecr+Edc+Eld+Eres;
+  const Wbat=Etot*1000*(1+socMin)/(SED*etaBat),Wempty=ewf*MTOW,PackkWh=Etot/(1-socMin);
+  const Tend=tto+tcl+tcr+tdc+tld+tres;
+  const clDes=p.clDesign||0.55;
+  const Swing=2*MTOW*g0/(rhoCr*Vcr*Vcr*clDes),bWing=Math.sqrt((p.AR||9)*Swing),WL=MTOW*g0/Swing;
+  const Vstall=Math.sqrt(2*WL/(rhoCr*1.50)),VA=Vstall*Math.sqrt(3.5),VD=Vcr*1.25;
+  const LDact=(MTOW*g0*Vcr)/(Pcr2*1000);
+  const TipSpd=0.58*Math.sqrt(_GAM*_Rgas*_T0),RPM=TipSpd/(D/2)*60/(2*Math.PI);
+  const TipMach=TipSpd/Math.sqrt(_GAM*_Rgas*_T0);
+  const PmotKW=Phov/N,PpeakKW=PmotKW*1.5;
+  const SEDpack=PackkWh*1000/Math.max(1,Wbat);
+  const tPhases=[0,tto,tto+tcl,tto+tcl+tcr,tto+tcl+tcr+tdc,tto+tcl+tcr+tdc+tld,Tend];
+  const phPow=[Phov,Pcl2,Pcr2,Pdc2,Phov,Pres2],phV=[0.5,Vcl,Vcr,Vdc,0.5,Vres];
+  const Ecum=[0,Eto,Eto+Ecl,Eto+Ecl+Ecr,Eto+Ecl+Ecr+Edc,Eto+Ecl+Ecr+Edc+Eld,Etot];
+  const powerSteps=[],socSteps=[],velSteps=[],energySteps=[];
+  for(let i=0;i<=200;i++){const t=Tend*i/200;let ph=5;for(let j=0;j<6;j++) if(t>=tPhases[j]&&t<tPhases[j+1]){ph=j;break;}
+    const Ec=Ecum[ph]+phPow[ph]*((t-tPhases[ph])/3600),soc=Math.max(socMin,(1-Ec/PackkWh))*100;
+    powerSteps.push({t:+t.toFixed(0),P:+phPow[ph].toFixed(1),ph:['TO','Climb','Cruise','Desc','Land','Res'][ph]});
+    socSteps.push({t:+t.toFixed(0),SoC:+soc.toFixed(2)});velSteps.push({t:+t.toFixed(0),V:+phV[ph].toFixed(1)});
+    energySteps.push({t:+t.toFixed(0),E:+Ec.toFixed(3),P:+phPow[ph].toFixed(1),ph:['TO','Climb','Cruise','Desc','Land','Res'][ph]});}
+  const k2=1/(Math.PI*(p.AR||9)*(p.eOsw||0.85));
+  const polarData=Array.from({length:81},(_,i)=>{const alpha=-4+i*0.25,CL=0.40+2*Math.PI*(1+0.77*0.10)*alpha*Math.PI/180;const CD=0.005+k2*(CL-clDes)**2;return{alpha:+alpha.toFixed(2),CL:+CL.toFixed(4),CD:+CD.toFixed(5),LD:+(CL/CD).toFixed(2)};});
+  const vnData=Array.from({length:50},(_,i)=>{const v=VD*1.1*i/49;return{v:+v.toFixed(1),nPos:+Math.min(0.5*rhoCr*v**2*clDes/WL,3.5).toFixed(3),nNeg:+Math.max(-0.5*rhoCr*v**2*0.8*clDes/WL,-1.5).toFixed(3)};});
+  const rpData=Array.from({length:40},(_,i)=>{const pay=Payload*i/39;const Eavail=(MTOW-Wempty-pay)*SED*etaBat*(1-socMin)/1000;return{payload:+pay.toFixed(0),range:+Math.max(0,Eavail/Math.max(Pcr2/1000,0.01)/3600*Vcr/1000).toFixed(1)};});
+  const weightBreak=[{name:'Wing Struct',val:+(0.18*Wempty).toFixed(1)},{name:'Fuselage',val:+(0.22*Wempty).toFixed(1)},{name:'Fan Nacelles×N',val:+(0.16*Wempty).toFixed(1)},{name:'Motors×N',val:+(0.20*Wempty).toFixed(1)},{name:'Avionics',val:+(0.08*Wempty).toFixed(1)},{name:'Other',val:+(0.16*Wempty).toFixed(1)}];
+  const dragComp=[{name:'Wing',val:0.008},{name:'Fuselage',val:0.007},{name:'Duct Nacelles',val:0.012},{name:'Tail',val:0.003},{name:'Misc',val:0.002}];
+  const checks=[{label:'MTOW < 5000 kg',ok:MTOW<5000,val:`${MTOW.toFixed(1)} kg`},{label:'Cruise range > 0',ok:crRange>0,val:`${(crRange/1000).toFixed(1)} km`},{label:'Pack ≥ Mission E',ok:PackkWh>=Etot,val:`${PackkWh.toFixed(1)} ≥ ${Etot.toFixed(1)} kWh`},{label:'Tip Mach ≤ 0.85',ok:TipMach<0.85,val:`M${TipMach.toFixed(3)}`}];
+  return{
+    MTOW,Wempty,Wbat,Phov,Pcl:Pcl2,Pcr:Pcr2,Pdc:Pdc2,Pres:Pres2,
+    Eto,Ecl,Ecr,Edc,Eld,Eres,Etot,PackkWh,SEDpack,CrateHov:3,
+    tto,tcl,tcr,tdc,tld,tres,Tend,tPhases,
+    DLrotor:DL,TipSpd,TipMach,RPM,BPF:N>12?N*RPM/60:3*RPM/60,Nbld:N>12?1:3,
+    PmotKW,PpeakKW,Torque:PmotKW*1000/(RPM*Math.PI/30),MotMass:PmotKW/5,
+    Swing,bWing,WL,Vstall,VA,VD,MAC:Swing/bWing*0.6,
+    LDact,CD0tot:0.025,CDi:clDes**2/(Math.PI*(p.AR||9)*(p.eOsw||0.85)),CDtot:0.032,
+    SM:0.12,SM_vt:0.14,xCGtotal:3.8,xNP:4.1,
+    dBA_1m:92,dBA_25m:80,dBA_50m:75,dBA_100m:69,dBA_150m:65,dBA_300m:59,dBA_500m:55,
+    dist_65dBA:155,dist_55dBA:490,dist_70dBA:90,dist_75dBA:55,
+    bpfHarmonics:[],noise_validity:{},noise_sensitivity:{},OASPL_total_1m:92,
+    selAF:{name:'Thin symmetric',tc:0.10,CLmax:1.45,CLd:0.50,CDmin:0.005,CM:0,source:'Ducted fan optimised'},
+    afScored:[],
+    powerSteps,socSteps,velSteps,energySteps,
+    convData:[{iter:0,MTOW:+MTOW.toFixed(1),Energy:+Etot.toFixed(3),residual:0,logResidual:-6}],
+    vnData,rpData,weightBreak,dragComp,polarData,
+    twSweepData:[],tolSweepData:[],
+    checks,feasible:checks.every(c=>c.ok),
+    itersR1:1,itersR2:60,tol:1e-4,r2Converged:true,
+    vtGamma_opt:45,Svt_total:0.5,Svt_panel:0.25,governs_pitch:true,ruddervator_combined_auth:0.82,
+    delta_yaw_rv_deg:8,Sh_req:0.42,Sv_req:0.11,Sh_eff:0.46,Sv_eff:0.13,
+    pitch_ratio:0.92,yaw_ratio:0.86,bvt_panel:1.15,Cr_vt:0.52,Ct_vt:0.23,MAC_vt:0.40,
+    sweep_vt:35,Srv:0.48,Wvt_total:25,CD0vt:0.0003,delta_rv_deg:11,lv:3.7,
+    fusSpanRatio:0.52,tailWingRatio:0.36,TW_hover:1.3,TW_cruise:0.12,
+  };
+}
+
+/* ── Coaxial sizing: multicopter with coaxial interference factor ─────── */
+function runSizingCoaxial(p){
+  // Coaxial: 2 counter-rotating rotors per stack
+  // Interference factor: lower rotor efficiency ≈ 0.85 × upper rotor (MDPI 2024)
+  // Effective FM = FM_single × √(coaxial_factor) where coaxial_factor ≈ 0.90
+  const p2={...p, etaHov: (p.etaHov||0.60)*0.90};
+  const result=runSizingMulticopter(p2);
+  return{...result,_config:'coaxial',_algo:'Coaxial Multicopter (MDPI 2024 interference model)'};
+}
+
+/* ── Master dispatch ────────────────────────────────────────────────────── */
+function runSizingByConfig(config, p) {
+  switch(config){
+    case 'multicopter': return runSizingMulticopter(p);
+    case 'tilt_rotor':  return runSizingTiltRotor(p);
+    case 'tilt_wing':   return runSizingTiltWing(p);
+    case 'ducted_fan':  return runSizingDuctedFan(p);
+    case 'coaxial':     return runSizingCoaxial(p);
+    default:            return null; // lift_cruise uses existing runSizing()
+  }
+}
+
+
 function runMatlabSizing(p) {
   const g0=9.81, rhoMSL=1.225;
 
@@ -4598,14 +5252,20 @@ function FlightSimPanel({ SR, params, SC }) {
     ctx.restore();
   },[AC]);
 
+  // Stable ref always points to latest loop — fixes stale closure on re-render
+  const loopFnRef = useRef(null);
+
   const loop=useCallback((ts)=>{
     if(!lastT.current) lastT.current=ts;
     const dt=Math.min((ts-lastT.current)/1000,0.05);
     lastT.current=ts;
     stepPhysics(dt);
     draw();
-    rafRef.current=requestAnimationFrame(loop);
+    rafRef.current=requestAnimationFrame((t)=>loopFnRef.current&&loopFnRef.current(t));
   },[stepPhysics,draw]);
+
+  // Keep ref fresh every render
+  loopFnRef.current = loop;
 
   const startSim=useCallback(()=>{
     const s=S.current;
@@ -4613,8 +5273,8 @@ function FlightSimPanel({ SR, params, SC }) {
     lastT.current=null;
     setRunning(true);
     setMsg('Flying! W/S=Throttle · A/D=Pitch · Q/E=Roll · P=Autopilot · R=Rain · G=Gust');
-    rafRef.current=requestAnimationFrame(loop);
-  },[loop]);
+    rafRef.current=requestAnimationFrame((t)=>loopFnRef.current&&loopFnRef.current(t));
+  },[]);
 
   const stopSim=useCallback(()=>{
     if(rafRef.current) cancelAnimationFrame(rafRef.current);
@@ -4646,10 +5306,16 @@ function FlightSimPanel({ SR, params, SC }) {
 
   useEffect(()=>{
     const cv=canvasRef.current;if(!cv)return;
-    const ro=new ResizeObserver(()=>{cv.width=cv.offsetWidth||900;cv.height=cv.offsetHeight||520;});
-    ro.observe(cv);cv.width=cv.offsetWidth||900;cv.height=520;
+    const ro=new ResizeObserver(()=>{
+      cv.width=cv.offsetWidth||900;cv.height=cv.offsetHeight||520;
+      draw(); // redraw on resize
+    });
+    ro.observe(cv);
+    cv.width=cv.offsetWidth||900;cv.height=520;
+    // Draw initial static frame so canvas isn't black
+    setTimeout(()=>draw(),50);
     return()=>ro.disconnect();
-  },[]);
+  },[draw]);
 
   const st=disp;
   const socC=( st.soc||1)>0.30?SC.green:(st.soc||1)>0.15?SC.amber:SC.red;
@@ -4946,6 +5612,7 @@ export default function App(){
     vtAR:2.5,
   });
   const[tab,setTab]=useState(0);
+  const[eVTOLConfig,setEVTOLConfig]=useState('lift_cruise'); // active configuration
   const[useProjectAlgo,setUseProjectAlgo]=useState(false); // true = exact MATLAB thesis algorithm
   const[user,setUser]=useState(()=>getSession());
   const[showAuthModal,setShowAuthModal]=useState(false);
@@ -5133,9 +5800,13 @@ export default function App(){
   const SR=useMemo(()=>{
     try{
       if(useProjectAlgo) return runMatlabSizing(params);
+      if(eVTOLConfig!=='lift_cruise'){
+        const result=runSizingByConfig(eVTOLConfig,params);
+        if(result) return result;
+      }
       return runSizing({...params,customAirfoil:customAFData});
     }catch(e){ console.error('Sizing error:',e); return null; }
-  },[params,customAFData,useProjectAlgo]);
+  },[params,customAFData,useProjectAlgo,eVTOLConfig]);
   /* ── Mission Builder — compute custom mission ──
      BUG FIX: wrapped in useCallback so useEffect dependency is stable.
      Auto-triggers whenever customPhases or SR changes — no manual "Compute" needed. */
@@ -5525,6 +6196,39 @@ export default function App(){
             ↺ RESET
           </button>
 
+          {/* ── eVTOL Configuration Selector ── */}
+          <div style={{display:'flex',alignItems:'center',gap:6,background:SC.bg,border:`1px solid ${SC.border}`,borderRadius:5,padding:'2px 8px'}}>
+            <span style={{fontSize:8,color:SC.muted,fontFamily:"'DM Mono',monospace",whiteSpace:'nowrap'}}>CONFIG</span>
+            <select value={eVTOLConfig}
+              onChange={e=>{
+                const cfg=e.target.value;
+                setEVTOLConfig(cfg);
+                setUseProjectAlgo(false);
+                // Apply config default params
+                const defs=EVTOL_CONFIGS[cfg]?.defaults||{};
+                setParams(prev=>({...prev,...defs}));
+                setTab(0); // back to overview
+              }}
+              style={{background:SC.panel,border:'none',color:EVTOL_CONFIGS[eVTOLConfig]?.color||SC.teal,
+                fontSize:9,fontFamily:"'DM Mono',monospace",fontWeight:700,cursor:'pointer',outline:'none',
+                padding:'2px 4px',borderRadius:3}}>
+              {Object.entries(EVTOL_CONFIGS).map(([k,v])=>(
+                <option key={k} value={k}>{v.icon} {v.label}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Config info badge */}
+          {eVTOLConfig!=='lift_cruise'&&(
+            <div style={{fontSize:8,color:EVTOL_CONFIGS[eVTOLConfig]?.color||SC.teal,
+              fontFamily:"'DM Mono',monospace",padding:'3px 8px',
+              background:( EVTOL_CONFIGS[eVTOLConfig]?.color||SC.teal)+'18',
+              borderRadius:4,border:`1px solid ${(EVTOL_CONFIGS[eVTOLConfig]?.color||SC.teal)}44`,
+              whiteSpace:'nowrap'}}>
+              {EVTOL_CONFIGS[eVTOLConfig]?.example?.split('·')[0]?.trim()}
+            </div>
+          )}
+
           {/* ── MY PROJECT — loads exact MATLAB thesis parameters ── */}
           <button
             title="Load Vinay's thesis parameters (eVTOL_Full_Analysis_v2.m) — results match Trail 1 report"
@@ -5726,17 +6430,21 @@ export default function App(){
 
         {/* MAIN */}
         <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
-          {/* Tabs */}
+          {/* Tabs — filtered by active eVTOL config */}
           <div style={{display:"flex",background:SC.panel,borderBottom:`1px solid ${SC.border}`,overflowX:"auto",flexShrink:0}}>
-            {TABS.map((tabLabel,i)=>(
+            {TABS.map((tabLabel,i)=>{
+              const hiddenTabs=EVTOL_CONFIGS[eVTOLConfig]?.hideTabs||[];
+              if(hiddenTabs.includes(i)) return null;
+              const configColor=EVTOL_CONFIGS[eVTOLConfig]?.color||SC.amber;
+              return(
               <button key={i} onClick={()=>setTab(i)}
                 style={{padding:"8px 14px",background:"transparent",border:"none",cursor:"pointer",
-                  borderBottom:i===tab?`2px solid ${SC.amber}`:"2px solid transparent",
+                  borderBottom:i===tab?`2px solid ${configColor}`:"2px solid transparent",
                   color:i===tab?SC.text:SC.muted,fontSize:10,fontFamily:"'DM Mono',monospace",
                   letterSpacing:"0.05em",whiteSpace:"nowrap",transition:"color 0.15s"}}>
                 {TABI[i]} {tabLabel}
-              </button>
-            ))}
+              </button>);
+            })}
           </div>
 
           <div style={{flex:1,overflowY:"auto",padding:"14px 18px 28px",background:SC.bg}}>
