@@ -1,7 +1,6 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { AuthModal, AuthGate, UserHeaderBar, getSession, saveSession, clearSession, addNotif, saveDesign, addReport, setAuthTheme } from "./AuthSystem";
 import { ShareDesignButton, LeaderboardPanel, CollabPanel, PublicDesignBanner } from "./CommunityFeatures";
-import { EVTOL_CONFIGS, runSizingByConfig, ConfigSelectorPanel, MultiConfigComparisonPanel } from "./eVTOL_MultiConfig";
 import {
   AreaChart, Area, LineChart, Line, BarChart, Bar, RadarChart, Radar,
   ComposedChart, ScatterChart, Scatter,
@@ -2130,7 +2129,7 @@ function Acc({title,icon,children}){
   );
 }
 
-const TABS=["Overview","Mission","Wing & Aero","Propulsion","Battery","Performance","Stability","V-Tail","Convergence","Monte Carlo","Certification","Noise","Cost","Mission Builder","Weather & Atmos","OpenVSP","Community","Collaboration","V-n Diagram","Design Space","BEM Rotor","Reg Tracker","AI Assistant","Multi-Config"];
+const TABS=["Overview","Mission","Wing & Aero","Propulsion","Battery","Performance","Stability","V-Tail","Convergence","Monte Carlo","Certification","Noise","Cost","Mission Builder","Weather & Atmos","OpenVSP","Community","Collaboration","V-n Diagram","Design Space","BEM Rotor","Reg Tracker","AI Assistant"];
 const TABI=["⬛","🛫","✈️","🔧","🔋","📈","⚖️","🦋","🔄","🎲","📋","🔊","💰","🗺️","🌤️","🛩️","🌐","👥","📐","🎯","🔬","📜","🤖"];
 /* TTP is defined inside App() so it reads the current C theme */
 
@@ -3667,7 +3666,6 @@ export default function App(){
     vtAR:2.5,
   });
   const[tab,setTab]=useState(0);
-  const[evtolConfig,setEvtolConfig]=useState('liftcruise');
   const[user,setUser]=useState(()=>getSession());
   const[showAuthModal,setShowAuthModal]=useState(false);
   const[darkMode,setDarkMode]=useState(true);
@@ -3851,11 +3849,7 @@ export default function App(){
     if(user) addNotif(user.id,{title:"CSV Exported",body:"Results downloaded as spreadsheet.",type:"success"});
   };
 
-  const SR=useMemo(()=>{
-    try{
-      return runSizingByConfig(evtolConfig,{...params,customAirfoil:customAFData});
-    }catch(e){console.error('Sizing error:',e);return null;}
-  },[params,customAFData,evtolConfig]);
+  const SR=useMemo(()=>{try{return runSizing({...params,customAirfoil:customAFData});}catch{return null;}},[params,customAFData]);
   /* ── Mission Builder — compute custom mission ──
      BUG FIX: wrapped in useCallback so useEffect dependency is stable.
      Auto-triggers whenever customPhases or SR changes — no manual "Compute" needed. */
@@ -4199,7 +4193,7 @@ export default function App(){
           <div style={{fontSize:19,fontWeight:800,letterSpacing:"-0.03em",lineHeight:1}}>
             <span style={{color:SC.amber}}>eVTOL</span>
             <span style={{color:SC.text}}> SIZER</span>
-            <span style={{fontSize:8,color:SC.dim,marginLeft:6,fontFamily:"'DM Mono',monospace",fontWeight:400}}>v2.1 — Multi-Config</span>
+            <span style={{fontSize:8,color:SC.dim,marginLeft:6,fontFamily:"'DM Mono',monospace",fontWeight:400}}>v2.0 — MATLAB Algorithm</span>
           </div>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:6,padding:"4px 10px",
@@ -4207,8 +4201,6 @@ export default function App(){
           <div style={{width:6,height:6,borderRadius:"50%",background:stCol,boxShadow:`0 0 8px ${stCol}`}}/>
           <span style={{fontSize:9,color:stCol,fontFamily:"'DM Mono',monospace",fontWeight:700,letterSpacing:"0.08em"}}>{stTxt}</span>
         </div>
-        {/* Active config badge */}
-        {(()=>{const cfg=EVTOL_CONFIGS[evtolConfig];return cfg?(<div style={{display:"flex",alignItems:"center",gap:5,padding:"4px 10px",background:`${cfg.meta.color}11`,border:`1px solid ${cfg.meta.color}44`,borderRadius:4}}><span style={{fontSize:12}}>{cfg.meta.emoji}</span><span style={{fontSize:9,color:cfg.meta.color,fontFamily:"'DM Mono',monospace",fontWeight:700}}>{cfg.meta.name.toUpperCase()}</span></div>):null;})()}
         {SR&&(
           <div style={{display:"flex",gap:14,marginLeft:6,flexWrap:"wrap"}}>
             {[[" MTOW",SR.MTOW,"kg",SR.MTOW<4000?SC.green:SR.MTOW<5000?SC.amber:SC.red],
@@ -4320,14 +4312,6 @@ export default function App(){
         {/* SIDEBAR */}
         <div style={{width:262,minWidth:262,background:SC.panel,borderRight:`1px solid ${SC.border}`,
           overflowY:"auto",padding:"10px 13px 24px"}}>
-          {/* ── eVTOL CONFIGURATION SELECTOR ────────────────────────── */}
-          <ConfigSelectorPanel
-            config={evtolConfig}
-            onChange={newCfg=>setEvtolConfig(newCfg)}
-            SC={SC}
-            SR={SR}
-            onApplyDefaults={defs=>setParams(prev=>({...prev,...defs}))}
-          />
           <Acc title="Mission Requirements" icon="🛫">
             <Slider label="Payload" unit="kg" value={params.payload} min={100} max={900} step={5} onChange={set("payload")} note="Passengers + cargo"/>
             <Slider label="Range" unit="km" value={params.range} min={50} max={500} step={10} onChange={set("range")}/>
@@ -8430,11 +8414,6 @@ export default function App(){
             {/* ──── TAB 22: AI DESIGN ASSISTANT ──── */}
             {tab===22&&(
               <AIAssistantPanel params={params} SR={SR} SC={SC} onParamChange={set} user={user}/>
-            )}
-
-            {/* ──── TAB 23: MULTI-CONFIG COMPARISON ──── */}
-            {tab===23&&(
-              <MultiConfigComparisonPanel params={params} SC={SC}/>
             )}
 
             {/* ──── TAB 17: REAL-TIME COLLABORATION ────
