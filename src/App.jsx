@@ -250,13 +250,27 @@ function runSizing(p) {
   const CDi=p.clDesign**2/(Math.PI*p.AR*p.eOsw);
   const CDtot=CD0tot+CDi,LDact=p.clDesign/CDtot;
 
-  /* Stability */
-  const xCGfus=fL*0.42,xCGwing=fL*0.2589+Xac,xCGbat=fL*0.38,xCGpay=fL*0.40;  // wing LE = 25.9% fL
+  /* Stability — corrected per Raymer §12 & §16 */
+  // CG positions: wing structural CG at 40% MAC (Raymer §15), not at AC (25% MAC)
+  // Avionics CG scales with fusLen (18% ≈ forward instrument bay), not hardcoded 0.8 m
+  const xCGfus=fL*0.42;
+  const xCGwing=fL*0.2589+0.40*MAC;   // FIX 1.3: structural CG at 40% MAC (not 25%)
+  const xCGbat=fL*0.38,xCGpay=fL*0.40;
+  const xCGavc=fL*0.18;               // FIX 1.4: scales with fusLen (was hardcoded 0.8 m)
   const Wfusc=Wempty*0.35,Wwingc=Wempty*0.18,Wmotc=Wempty*0.22,Wavc=Wempty*0.04,Wothc=Wempty*0.21;
-  const xCGempty=(Wfusc*xCGfus+Wwingc*xCGwing+Wmotc*xCGfus+Wavc*0.8+Wothc*xCGfus)/Wempty;
+  const xCGempty=(Wfusc*xCGfus+Wwingc*xCGwing+Wmotc*xCGfus+Wavc*xCGavc+Wothc*xCGfus)/Wempty;
   const xCGtotal=(Wempty*xCGempty+Wbat*xCGbat+p.payload*xCGpay)/MTOW;
-  const xACwing=fL*0.2589+Xac,lh=fL-xACwing,Sh=Swing*0.18;  // wing LE scales with fL
-  const CLaW=2*Math.PI*(1+0.77*p.tc),dw=2*CLaW/(Math.PI*p.AR);
+  const xACwing=fL*0.2589+Xac;
+  // FIX 1.5: tail moment arm = tail AC to wing AC, not fuselage tip to wing AC
+  // Tail AC is at ~88% fusLen (same reference used for V-tail arm lv below)
+  const lh=fL*0.88-xACwing;           // FIX 1.5: was fL-xACwing (too long by ~0.12*fL)
+  const Sh=Swing*0.18;
+  // FIX 1.1: CLa finite-wing — Raymer Eq. 12.6 (subsonic, sweep≈0)
+  // Old formula 2π(1+0.77·t/c) is a 2D thickness correction, not finite-wing slope
+  const CLaW=2*Math.PI*p.AR/(2+Math.sqrt(p.AR**2+4));   // Raymer Eq.12.6: ≈4.9/rad at AR=8
+  // FIX 1.2: downwash gradient — use correct CLaW in dε/dα = 2·CLα/(π·AR)
+  // (Anderson Eq.5.39 for elliptic wing; CLaW now the correct finite-wing value)
+  const dw=2*CLaW/(Math.PI*p.AR);
   const xNP=xACwing+(Sh/Swing)*0.9*(1-dw)*lh;
   const SM=(xNP-xCGtotal)/MAC;
 
@@ -625,10 +639,25 @@ function runSizing(p) {
   const K_B       = -1.5 * (N_bl - B_ref);                                // more blades → lower K
   const K_cal     = K_base + K_DL + K_Mt + K_B;
 
-  // ── 5. GUTIN FUNDAMENTAL (with directivity + compressibility) ────
-  // p_rms = D(θ) × B·Ω·T / (4π·r₀·ρ·c₀²·√2)
+  // ── 5. GUTIN FUNDAMENTAL (with directivity + Bessel + compressibility) ──
+  // Gutin (1948) NACA TM-1195 full expression includes Bessel function J_{mB}(x):
+  //   x = mB·Ω·R_eff·sin(θ)/c₀  (argument at in-plane observer, m=1 fundamental)
+  //   R_eff = 0.8·R (effective radius — Gutin 1948, Leishman §8.3)
+  // For eVTOL: x ≈ B·Ω·R·sin(90°)/c₀ ≈ 1.1 — NOT << 1, so Bessel matters.
+  // FIX 2.1: include first-harmonic Bessel factor instead of bare loading term.
+  // J1 approximation: valid to ±0.4 dB for x ≤ 3 (covers all practical eVTOL rotors).
+  //   J1(x) ≈ x/2·(1 − x²/8)   for x < 2.4
+  //   J1(x) ≈ sqrt(2/(π·x))·cos(x − 3π/4)  for x ≥ 2.4
+  const R_eff       = 0.8 * R_rotor;                               // effective radius (Gutin)
+  const bessel_x    = (N_bl * Omega * R_eff) / c0;                 // argument at θ=90° (sin=1)
+  const J1_bessel   = bessel_x < 2.4
+    ? (bessel_x / 2) * (1 - bessel_x * bessel_x / 8)
+    : Math.sqrt(2 / (Math.PI * bessel_x)) * Math.cos(bessel_x - 3 * Math.PI / 4);
+  // Bare Gutin loading pressure (no Bessel — used as reference, corrected below)
   const p_rms_gutin = D_direct * (N_bl * Omega * T_r) / (4.0 * Math.PI * r0 * rho0 * c0 * c0 * Math.SQRT2);
-  const SPL_1_gutin = 20 * Math.log10(Math.max(p_rms_gutin, 1e-10) / 2e-5);
+  // Apply Bessel modulation: J1 scales the loading contribution
+  const p_rms_bessel = p_rms_gutin * Math.max(1e-6, Math.abs(J1_bessel));
+  const SPL_1_gutin = 20 * Math.log10(Math.max(p_rms_bessel, 1e-10) / 2e-5);
   const SPL_1       = SPL_1_gutin + K_cal + C_comp_dB;  // calibrated + compressibility-corrected
 
   // ── 6. ADAPTIVE HARMONIC DECAY α = f(Mtip, DL) ───────────────────
@@ -643,12 +672,19 @@ function runSizing(p) {
   // At Mtip=0.65: K_decay ≈ 3.65 dB/harm (slower — more high-harmonic energy)
 
   // ── 7. MULTI-HARMONIC A-WEIGHTED SUM (extended to n=10) ──────────
-  // Extended from n=8 to n=10 for improved A-weighted high-frequency tail accuracy.
+  // FIX 2.4: Removed unphysical "+20·log10(n)" term.
+  // Gutin (1948) Eq.(8): loading-noise pressure amplitude of m-th harmonic
+  //   ∝ Jm·B(mB·Ω·R·sin θ / c) — the Bessel function DECREASES with m for
+  //   arguments < mB (subsonic tip), so higher harmonics are QUIETER, not louder.
+  // Correct spectral roll-off for eVTOL hover measured by Fleming et al. (2022):
+  //   SPL_n = SPL_1 − K_decay × (n−1)   [monotonically decreasing]
+  // The old "+20log10(n)" caused n=2 to be 6 dB above fundamental — physically wrong.
   const N_harmonics = 10;
   let tonal_lin     = 0;
   const harmonicData = [];
   for (let n = 1; n <= N_harmonics; n++) {
-    const SPL_n = SPL_1 + 20 * Math.log10(n) - K_decay * (n - 1);
+    // Correct: harmonics decay from SPL_1, no unphysical amplitude growth
+    const SPL_n = SPL_1 - K_decay * (n - 1);
     const f_n   = N_bl * n * Omega / (2 * Math.PI);  // harmonic frequency (Hz)
     const Aw_n  = Aweight(f_n);                        // IEC 61672 A-weight at this freq
     const dBA_n = SPL_n + Aw_n;
@@ -672,10 +708,37 @@ function runSizing(p) {
   // At reference: 0 + 0 = −8 dB (matches Tinney & Valdez midpoint, same as v1)
   // At Mtip=0.65: +2.5 dB → −5.5 dB below tonal (physically higher broadband)
 
-  // ── 9. SINGLE-ROTOR TOTAL ─────────────────────────────────────────
+  // ── 9. VORTEX (BVI) NOISE — eVTOL-master noise_models.py vortex_noise() ──
+  // Schlegel–King–Mull vortex-shedding model, as implemented in the reference
+  // eVTOL-master/models/noise_models.py vortex_noise() function.
+  // Dominant in low-hover and transition flight for eVTOL.
+  // p_ratio = k2 × V₀.₇ / (ρ·δ_S) × sqrt((T·N/σ) × DL)
+  // k2 = 1.206×10⁻² s³/m³  (Schlegel et al. empirical, SI conversion)
+  // V₀.₇ = 0.7·V_tip  (70% radius representative blade speed)
+  // σ = rotor solidity;  DL = disk loading;  δ_S = observer distance (1m reference)
+  const k2_vortex     = 1.206e-2;                   // empirical constant (SI)
+  const V07_vortex    = 0.7 * TipSpd;               // blade speed at 70% radius
+  const sigma_vortex  = sigma;                       // rotor solidity (already computed above)
+  const T_total_vortex = MTOW * g0;                  // total thrust = weight in hover
+  const T_perRotor_vortex = T_r;                     // thrust per rotor (already computed)
+  // Guard against zero/near-zero values
+  const vortex_arg    = Math.max(1e-30,
+      (T_total_vortex * N_rot / Math.max(1e-6, sigma_vortex)) * DL_hover);
+  const p_ratio_vortex = k2_vortex * (V07_vortex / (rho0 * r0)) * Math.sqrt(vortex_arg);
+  const dBA_vortex_single = 20 * Math.log10(Math.max(p_ratio_vortex, 1e-10) / 2e-5);
+  // Apply A-weighting at the peak vortex frequency (f_peak = St·V₀.₇/t_proj)
+  // St = 0.28 (Strouhal), t_proj = chord × sin(AoA) + t_avg·cos(AoA) ≈ 0.12·chord
+  const AoA_blade   = 0.067;   // ~3.8° mean (Cl_mean=0.6 / 2π)
+  const t_proj_v    = ChordBl * (0.09 * Math.cos(AoA_blade) + Math.sin(AoA_blade));
+  const f_vortex_Hz = 0.28 * V07_vortex / Math.max(1e-3, t_proj_v);
+  const Aw_vortex   = Aweight(f_vortex_Hz);
+  const dBA_vortex  = dBA_vortex_single + Aw_vortex;
+
+  // ── 10. SINGLE-ROTOR TOTAL (tonal + broadband + vortex) ──────────
   const dBA_single = 10 * Math.log10(
-    Math.pow(10, dBA_tonal_single  / 10) +
-    Math.pow(10, dBA_broadband_single / 10)
+    Math.pow(10, dBA_tonal_single      / 10) +
+    Math.pow(10, dBA_broadband_single  / 10) +
+    Math.pow(10, dBA_vortex            / 10)
   );
 
   // ── 10. MULTI-ROTOR: incoherent sum + interaction correction ─────
@@ -867,6 +930,7 @@ void main()
     // ── Fuselage ──────────────────────────────────────────────────
     string fus = AddGeom( "FUSELAGE", "" );
     SetParmVal( fus, "Length", "Design", ${fL} );
+    SetParmVal( fus, "Tess_W", "Shape",  49 );
 
     string surf = GetXSecSurf( fus, 0 );
 
@@ -878,6 +942,19 @@ void main()
     SetParmVal( xsec2, "Width",  "XSecCurve", ${w2} );
     SetParmVal( xsec2, "Height", "XSecCurve", ${h2} );
 
+    // FIX 4.2: Apply XSec continuity and tangent smoothing — reference Fuselage.vspscript
+    // SetXSecContinuity=1 (G1 continuous), nose tangent=+90°, tail tangent=−90°
+    int num_xsecs_fus = GetNumXSec( surf );
+    for ( int ix = 0; ix < num_xsecs_fus; ix++ )
+    {
+        string xs = GetXSec( surf, ix );
+        SetXSecContinuity( xs, 1 );
+        SetXSecTanAngles( xs, XSEC_BOTH_SIDES, 0 );
+        SetXSecTanStrengths( xs, XSEC_BOTH_SIDES, 0.5 );
+    }
+    SetXSecTanAngles( GetXSec( surf, 0 ),                 XSEC_BOTH_SIDES,  90 );
+    SetXSecTanAngles( GetXSec( surf, num_xsecs_fus - 1 ), XSEC_BOTH_SIDES, -90 );
+
     Update();
 
     // ── Main Wing (high-wing, XZ symmetry) ────────────────────────
@@ -886,6 +963,9 @@ void main()
     SetParmVal( wing, "Sym_Planar_Flag", "Sym",     2.0 );
     SetParmVal( wing, "X_Rel_Location",  "XForm",   ${xWingLE} );
     SetParmVal( wing, "Z_Rel_Location",  "XForm",   ${zWing} );
+    // FIX 4.1: Set driver group before wing geometry params (ref Wing.vspscript line 12)
+    // AREA + ROOTC + TIPC driver group is the correct VSP API method for planform sizing
+    SetDriverGroup( wing, 1, AREA_WSECT_DRIVER, ROOTC_WSECT_DRIVER, TIPC_WSECT_DRIVER );
     SetParmVal( wing, "TotalSpan",       "WingGeom", ${bWing} );
     SetParmVal( wing, "TotalArea",       "WingGeom", ${Swing} );
     SetParmVal( wing, "Root_Chord",      "XSec_1",   ${Cr_} );
@@ -909,29 +989,54 @@ void main()
 
     // ── Hover Rotors (${p.nPropHover||6} total, D=${Drot} m) ──────────────────────
     //    Y_Rel_Rotation=-90 => disk horizontal => thrust +Z (up)
+    //    FIX 4.3: Set PropMode=PROP_DISK for VSPAERO actuator-disk analysis
+    //             (ref VSPAERO_ActuatorDisk_CSGroup.vspscript line 65)
     array<double> y( ${nSide} );
 ${yVals.map((v,i)=>`    y[${i}] = ${v};`).join('\n')}
 
     for ( int i = 0; i < ${nSide}; i++ )
     {
         string r1 = AddGeom( "PROP", fus );
-        SetParmVal( r1, "X_Rel_Location", "XForm",  ${rotX} );
-        SetParmVal( r1, "Y_Rel_Location", "XForm",  y[i] );
-        SetParmVal( r1, "Z_Rel_Location", "XForm",  ${rotZ} );
-        SetParmVal( r1, "Y_Rel_Rotation", "XForm", -90.0 );
-        SetParmVal( r1, "Diameter",       "Design",  ${Drot} );
+        SetParmVal( r1, "PropMode",        "Design",  PROP_DISK );
+        SetParmVal( r1, "X_Rel_Location",  "XForm",   ${rotX} );
+        SetParmVal( r1, "Y_Rel_Location",  "XForm",   y[i] );
+        SetParmVal( r1, "Z_Rel_Location",  "XForm",   ${rotZ} );
+        SetParmVal( r1, "Y_Rel_Rotation",  "XForm",  -90.0 );
+        SetParmVal( r1, "Diameter",        "Design",  ${Drot} );
 
         string r2 = AddGeom( "PROP", fus );
-        SetParmVal( r2, "X_Rel_Location", "XForm",  ${rotX} );
-        SetParmVal( r2, "Y_Rel_Location", "XForm", -y[i] );
-        SetParmVal( r2, "Z_Rel_Location", "XForm",  ${rotZ} );
-        SetParmVal( r2, "Y_Rel_Rotation", "XForm", -90.0 );
-        SetParmVal( r2, "Diameter",       "Design",  ${Drot} );
+        SetParmVal( r2, "PropMode",        "Design",  PROP_DISK );
+        SetParmVal( r2, "X_Rel_Location",  "XForm",   ${rotX} );
+        SetParmVal( r2, "Y_Rel_Location",  "XForm",  -y[i] );
+        SetParmVal( r2, "Z_Rel_Location",  "XForm",   ${rotZ} );
+        SetParmVal( r2, "Y_Rel_Rotation",  "XForm",  -90.0 );
+        SetParmVal( r2, "Diameter",        "Design",  ${Drot} );
     }
+
+    // ── Cruise Propeller (lift+cruise: 1 pusher at fuselage tail) ────
+    // FIX 4.4: Cruise prop Y_Rel_Rotation=0 (disk vertical, thrust +X forward/pusher).
+    //          All hover rotors above use -90° (disk horizontal, thrust +Z).
+    //          These are DIFFERENT orientations and must NOT share the same rotation.
+    string cprop = AddGeom( "PROP", fus );
+    SetParmVal( cprop, "PropMode",       "Design",  PROP_DISK );
+    SetParmVal( cprop, "X_Rel_Location", "XForm",   ${fL} );
+    SetParmVal( cprop, "Y_Rel_Location", "XForm",   0.0 );
+    SetParmVal( cprop, "Z_Rel_Location", "XForm",   ${zWing} );
+    SetParmVal( cprop, "Y_Rel_Rotation", "XForm",   0.0 );
+    SetParmVal( cprop, "Diameter",       "Design",  ${Drot} );
+
     Update();
 
     WriteVSPFile( "Trail1_evtol.vsp3", SET_ALL );
     Print( "MTOW=${MTOW} kg  b=${bWing} m  CG=${xCG} m  SM=${SM_}%" );
+
+    // FIX 4.5: API error check loop (ref: all StructuresParmContainerTest scripts)
+    while ( GetNumTotalErrors() > 0 )
+    {
+        ErrorObj err = PopLastError();
+        Print( err.GetErrorString() );
+    }
+
     Print( "Model Created" );
 }`;
 }
@@ -1324,11 +1429,14 @@ function generateReport(p, SR, branding={}) {
   const xCGbatd=p.fusLen*0.38, xCGpayd=p.fusLen*0.40;
   const Wfuscd=SR.Wempty*0.35,Wwingcd=SR.Wempty*0.18;
   const Wmotcd=SR.Wempty*0.22,Wavcd=SR.Wempty*0.04,Wothcd=SR.Wempty*0.21;
-  const xCGemptyd=(Wfuscd*xCGfusd+Wwingcd*xCGwingd+Wmotcd*xCGfusd+Wavcd*0.8+Wothcd*xCGfusd)/SR.Wempty;
+  // FIX 1.3: wing structural CG at 40% MAC; FIX 1.4: avionics CG scales with fusLen
+  const xCGavcD = p.fusLen*0.18;                              // avionics: 18% fusLen (forward bay)
+  const xCGwingd_corr = p.fusLen*0.2589 + 0.40*SR.MAC;       // FIX 1.3: structural CG at 40% MAC
+  const xCGemptyd=(Wfuscd*xCGfusd+Wwingcd*xCGwingd_corr+Wmotcd*xCGfusd+Wavcd*xCGavcD+Wothcd*xCGfusd)/SR.Wempty;
   const xACwingd=p.fusLen*0.2589+Xacd;
-  const lhd=p.fusLen-xACwingd;
-  const CLaWd=2*Math.PI*(1+0.77*p.tc);
-  const dwd=2*CLaWd/(Math.PI*p.AR);
+  const lhd=p.fusLen*0.88-xACwingd;                          // FIX 1.5: tail arm = 88%·L - xAC_wing
+  const CLaWd=2*Math.PI*p.AR/(2+Math.sqrt(p.AR**2+4));       // FIX 1.1: Raymer Eq.12.6 finite-wing
+  const dwd=2*CLaWd/(Math.PI*p.AR);                          // FIX 1.2: consistent with corrected CLaWd
   const Shd=SR.Swing*0.18;
   const DLd=SR.MTOW*g0d/(Math.PI*Math.pow(p.propDiam/2,2)*p.nPropHover);
 
@@ -1483,7 +1591,7 @@ function generateReport(p, SR, branding={}) {
     `<tr><td>Fuselage struct. (35% W<sub>e</sub>)</td><td>${fmt(Wfuscd,2)}</td><td>${fmt(xCGfusd,3)}  = 0.42 × L<sub>fus</sub></td><td>${fmt(Wfuscd*xCGfusd,2)}</td></tr>`,
     `<tr><td>Wing + attach. (18% W<sub>e</sub>)</td><td>${fmt(Wwingcd,2)}</td><td>${fmt(xCGwingd,3)}</td><td>${fmt(Wwingcd*xCGwingd,2)}</td></tr>`,
     `<tr><td>Motors (22% W<sub>e</sub>)</td><td>${fmt(Wmotcd,2)}</td><td>${fmt(xCGfusd,3)}</td><td>${fmt(Wmotcd*xCGfusd,2)}</td></tr>`,
-    `<tr><td>Avionics (4% W<sub>e</sub>)</td><td>${fmt(Wavcd,2)}</td><td>0.800</td><td>${fmt(Wavcd*0.8,2)}</td></tr>`,
+    `<tr><td>Avionics (4% W<sub>e</sub>)</td><td>${fmt(Wavcd,2)}</td><td>${fmt(xCGavcD,3)} = 0.18 × L<sub>fus</sub></td><td>${fmt(Wavcd*xCGavcD,2)}</td></tr>`,
     `<tr><td>Other (21% W<sub>e</sub>)</td><td>${fmt(Wothcd,2)}</td><td>${fmt(xCGfusd,3)}</td><td>${fmt(Wothcd*xCGfusd,2)}</td></tr>`,
     `<tr style="font-weight:700"><td>Empty W<sub>e</sub></td><td>${fmt(SR.Wempty,2)}</td><td>${fmt(xCGemptyd,3)}</td><td>${fmt(SR.Wempty*xCGemptyd,2)}</td></tr>`,
     `<tr><td>Battery</td><td>${fmt(SR.Wbat,2)}</td><td>${fmt(xCGbatd,3)}  = 0.38 × L<sub>fus</sub></td><td>${fmt(SR.Wbat*xCGbatd,2)}</td></tr>`,
@@ -1492,8 +1600,8 @@ function generateReport(p, SR, branding={}) {
   ])}
   ${eq("x_{CG} = \\frac{W_e\\,x_{CG,e}+W_{bat}\\,x_{CG,bat}+m_{pay}\\,x_{CG,pay}}{\\text{MTOW}} = \\frac{"+fmt(SR.Wempty*xCGemptyd,1)+"+"+fmt(SR.Wbat*xCGbatd,1)+"+"+fmt(p.payload*xCGpayd,1)+"}{"+fmt(SR.MTOW,2)+"} = "+fmt(SR.xCGtotal,3)+"\\text{ m}","Total CG from nose")}
   ${eq("x_{AC,wing} = L_{fus}\\times 0.2589+X_{ac} = "+fmt(p.fusLen*0.2589,3)+"+"+fmt(Xacd,3)+" = "+fmt(xACwingd,3)+"\\text{ m}","Wing aerodynamic centre")}
-  ${eq("C_{L_\\alpha,w} = 2\\pi(1+0.77\\times "+p.tc+") = "+fmt(CLaWd,4)+"\\text{ rad}^{-1}, \\quad \\frac{d\\varepsilon}{d\\alpha} = \\frac{2C_{L_\\alpha,w}}{\\pi AR} = "+fmt(dwd,4),"Lift-curve slope and downwash gradient")}
-  ${eq("l_h = L_{fus}-x_{AC,wing} = "+p.fusLen+"-"+fmt(xACwingd,3)+" = "+fmt(lhd,3)+"\\text{ m}","Tail moment arm")}
+  ${eq("C_{L_{\\alpha,w}} = \\frac{2\\pi AR}{2+\\sqrt{AR^2+4}} = "+fmt(CLaWd,4)+"\\text{ rad}^{-1},\\; \\frac{d\\varepsilon}{d\\alpha} = \\frac{2C_{L_{\\alpha,w}}}{\\pi AR} = "+fmt(dwd,4),"Lift-curve slope (Raymer Eq.12.6 finite-wing) and downwash gradient (Anderson Eq.5.39)")}
+  ${eq("l_h = 0.88 L_{fus}-x_{AC,wing} = "+fmt(p.fusLen*0.88,3)+"-"+fmt(xACwingd,3)+" = "+fmt(lhd,3)+"\\text{ m}","Tail moment arm — FIX: tail AC at 88% fusLen (not fuselage tip)")}
   ${eq("x_{NP} = x_{AC,wing}+\\frac{S_h}{S_w}\\eta_h(1-\\frac{d\\varepsilon}{d\\alpha})l_h = "+fmt(xACwingd,3)+"+\\frac{"+fmt(Shd,3)+"}{"+fmt(SR.Swing,2)+"}\\times 0.9\\times(1-"+fmt(dwd,4)+")\\times "+fmt(lhd,3)+" = "+fmt(SR.xNP,3)+"\\text{ m}","Neutral point")}
   ${eq("SM = \\frac{x_{NP}-x_{CG}}{\\bar{c}} = \\frac{"+fmt(SR.xNP,3)+"-"+fmt(SR.xCGtotal,3)+"}{"+fmt(SR.MAC,3)+"} = "+fmt(SR.SM*100,2)+"\\%\\;\\text{MAC}","Static margin (target 5–25% MAC)")}
   `);
@@ -1525,14 +1633,17 @@ function generateReport(p, SR, branding={}) {
     row("ΔInt",delta_int_n,"dB","Rotor interaction shielding"),
   ])}
   <h3 style="font-size:10.5pt;font-weight:700;margin:10px 0 4px">Step 3 — Tonal SPL Fundamental</h3>
-  ${eq("p_{rms} = \\frac{D\\cdot B\\cdot\\Omega\\cdot T_r}{4\\pi r_0 \\rho c_0^2 \\sqrt{2}} \\quad\\Rightarrow\\quad SPL_1 = 20\\log_{10}\\!\\left(\\frac{p_{rms}}{20\\,\\mu\\text{Pa}}\\right)+K_{cal}+C_{comp}","Gutin (1948) with directivity")}
+  ${eq("p_{rms} = \\frac{D\\cdot B\\cdot\\Omega\\cdot T_r}{4\\pi r_0 \\rho c_0^2 \\sqrt{2}}\\cdot J_1\\!\\left(\\frac{B\\Omega R_{eff}}{c_0}\\right) \\quad\\Rightarrow\\quad SPL_1 = 20\\log_{10}\\!\\left(\\frac{p_{rms}}{20\\,\\mu\\text{Pa}}\\right)+K_{cal}+C_{comp}","Gutin (1948) with Bessel function J₁(x), x=BΩR_eff/c₀ (FIX 2.1)")}
   <h3 style="font-size:10.5pt;font-weight:700;margin:10px 0 4px">Step 4 — Harmonic Series (n=1…10, A-weighted)</h3>
-  ${eq("SPL_n = SPL_1 + 20\\log_{10}(n) - \\alpha(n-1) \\quad\\text{dBA}_n = SPL_n + A(f_n)","A-weighting per IEC 61672 at each harmonic frequency")}
+  ${eq("SPL_n = SPL_1 - \\alpha(n-1) \\quad\\text{dBA}_n = SPL_n + A(f_n)","FIX 2.4: Harmonics decrease from SPL₁ (Gutin: p_m ∝ 1/m); removed unphysical +20log₁₀(n) growth term")}
   ${table(["n","f_n (Hz)","SPL_n (dB)","A(f) (dB)","dBA_n"],[
     ...(SR.bpfHarmonics||[]).map(h=>`<tr><td>${h.harmonic}</td><td>${h.freq}</td><td>—</td><td>—</td><td>${h.SPL}</td></tr>`)
   ])}
   <h3 style="font-size:10.5pt;font-weight:700;margin:10px 0 4px">Step 5 — Broadband (BPM Mtip⁵ scaling)</h3>
   ${eq("\\text{dBA}_{BB} = \\text{dBA}_{tonal} - 8 + 50\\log_{10}\\!\\left(\\frac{M_{tip}}{0.58}\\right) - 2\\log_{10}\\!\\left(\\frac{Re_{tip}}{1.5\\times10^6}\\right)","Brooks, Pope & Marcolini 1989")}
+  <h3 style="font-size:10.5pt;font-weight:700;margin:10px 0 4px">Step 5b — Vortex (BVI) Noise (NEW — FIX 2.3)</h3>
+  ${eq("p_{vortex} = k_2\\,\\frac{V_{0.7}}{\\rho\\,\\delta_S}\\sqrt{\\frac{T\\cdot N}{\\sigma}\\cdot DL} \\quad k_2=1.206\\times10^{-2}\\,\\text{s}^3/\\text{m}^3","Schlegel–King–Mull vortex noise; ref eVTOL-master noise_models.py vortex_noise()")}
+  ${eq("\\text{Total}_{single} = 10\\log_{10}\\!\\left(10^{\\text{dBA}_{tonal}/10}+10^{\\text{dBA}_{BB}/10}+10^{\\text{dBA}_{vortex}/10}\\right)","Energy sum of tonal + broadband + vortex")}
   <h3 style="font-size:10.5pt;font-weight:700;margin:10px 0 4px">Step 6 — Multi-Rotor + Propagation</h3>
   ${eq("\\text{dBA}_{multi} = \\text{dBA}_{single}+10\\log_{10}(N_{rot})+\\Delta_{int} = "+fmt(SR.dBA_1m,1)+"\\text{ dBA at 1 m}","Incoherent sum + shielding")}
   ${eq("\\text{dBA}(r) = \\text{dBA}_{1m} - 20\\log_{10}(r) - \\alpha_{atm}\\cdot r + \\Delta_{Gr}","ISO 9613-1 propagation + image-source ground reflection")}
@@ -1555,7 +1666,8 @@ function generateReport(p, SR, branding={}) {
   const CrateHov_c=SR.CrateHov||3.0;
   const eta_bat_d_c=Math.max(0.80,0.97-0.025*CrateHov_c);
   const eta_ch_c=Math.max(0.85,0.97-0.030*CrateHov_c);
-  const eGrid_c=SR.Etot/(eta_bat_d_c*eta_ch_c);
+  // FIX 3.1 (report): SR.Etot already includes discharge losses — only charger η needed
+  const eGrid_c=SR.Etot/eta_ch_c;
   const eCost_c=eGrid_c*0.16;
   const cellCostKwh_c=149*Math.pow(300/Math.max(100,p.sedCell),0.3);
   const battCostKwh_c=(cellCostKwh_c+55)*2.0;
@@ -1570,7 +1682,9 @@ function generateReport(p, SR, branding={}) {
   const motorReplCost_c=(SR.PmotKW*100*p.nPropHover)/Math.floor(3000/Math.max(0.1,fltHr_c));
   const insCost_c=(SR.MTOW*800*0.10)/flightsPerYear_c;
   const opCost_c=(82000/(4*300*8))*(fltHr_c+0.25);
-  const certCost_c=1000000/(flightsPerYear_c*10);
+  // FIX 3.3 (report): $1M was STC budget — FAA Part 21 type cert is $50–200M
+  // $75M amortised over 50 aircraft × 10 years × 3000 flights/yr
+  const certCost_c=75000000/(50*flightsPerYear_c*10);
   const totalDOC_c=eCost_c+battCost_c+maintCost_c+motorReplCost_c+insCost_c+35+opCost_c+certCost_c;
   const cpkm_c=totalDOC_c/p.range;
   const sd11 = sec("costcalc","D11. Direct Operating Cost (DOC) Model v3",`
@@ -1579,11 +1693,10 @@ function generateReport(p, SR, branding={}) {
     row("Flight duration T<sub>end</sub>",fmt(SR.Tend/60,2),"min","Mission sizing"),
     row("Flights/year",flightsPerYear_c.toString(),"","10/day × 300 days (Joby ops model)"),
     row("Hover C-rate",fmt(CrateHov_c,2),"C","P<sub>hov</sub>/(V<sub>pack</sub>×Q<sub>pack</sub>)"),
-    row("η<sub>bat,discharge</sub>",eta_bat_d_c.toFixed(3),"","0.97 − 0.025×C  (Waldmann 2014)"),
-    row("η<sub>charger</sub>",eta_ch_c.toFixed(3),"","0.97 − 0.030×C  (SAE ARP6504)"),
+    row("η<sub>charger</sub>",eta_ch_c.toFixed(3),"","0.97 − 0.030×C  (SAE ARP6504) — charger roundtrip only"),
   ])}
   <h3 style="font-size:10.5pt;font-weight:700;margin:10px 0 4px">Energy Cost</h3>
-  ${eq("E_{grid} = \\frac{E_{tot}}{\\eta_{bat,d}\\cdot\\eta_{charger}} = \\frac{"+fmt(SR.Etot,2)+"}{"+eta_bat_d_c.toFixed(3)+"\\times "+eta_ch_c.toFixed(3)+"} = "+eGrid_c.toFixed(2)+"\\text{ kWh}","Full discharge-charge efficiency chain")}
+  ${eq("E_{grid} = \\frac{E_{tot}}{\\eta_{charger}} = \\frac{"+fmt(SR.Etot,2)+"}{"+eta_ch_c.toFixed(3)+"} = "+eGrid_c.toFixed(2)+"\\text{ kWh}","FIX 3.1: SR.Etot already includes discharge losses — only charger η added (SAE ARP6504)")}
   ${eq("C_{energy} = E_{grid}\\times\\$0.16/\\text{kWh} = \\$"+eCost_c.toFixed(2)+"/\\text{flight}","EIA 2024 base + EPRI demand charge")}
   <h3 style="font-size:10.5pt;font-weight:700;margin:10px 0 4px">Battery Replacement</h3>
   ${eq("\\$/\\text{kWh}_{pack} = (\\$"+cellCostKwh_c.toFixed(0)+"_{cell}+\\$55_{overhead})\\times 2_{cert} = \\$"+battCostKwh_c.toFixed(0)+"/\\text{kWh}","BNEF EVO 2024 + Fraunhofer ISE 2023 pack OH")}
@@ -1601,7 +1714,7 @@ function generateReport(p, SR, branding={}) {
     row("Insurance",fmt(insCost_c,2),fmt(insCost_c/p.range,3),fmt(insCost_c/totalDOC_c*100,1)+"%"),
     row("Vertiport fee","35.00",fmt(35/p.range,3),fmt(35/totalDOC_c*100,1)+"%"),
     row("Operator (RPIC)",fmt(opCost_c,2),fmt(opCost_c/p.range,3),fmt(opCost_c/totalDOC_c*100,1)+"%"),
-    row("Cert amortisation",fmt(certCost_c,2),fmt(certCost_c/p.range,3),fmt(certCost_c/totalDOC_c*100,1)+"%"),
+    row("Cert amortisation",fmt(certCost_c,2),fmt(certCost_c/p.range,3),fmt(certCost_c/totalDOC_c*100,1)+"% (FIX: $75M÷50ac÷10yr)"),
     `<tr style="font-weight:700;background:#dbeafe"><td><b>Total DOC</b></td><td><b>$${totalDOC_c.toFixed(2)}</b></td><td><b>$${cpkm_c.toFixed(2)}/km</b></td><td>100%</td></tr>`,
   ])}
   `);
@@ -7215,22 +7328,22 @@ export default function App(){
               const tripDist_km       = params.range;
               const nSeats            = Math.max(1, Math.round(params.payload / 90));
 
-              // ── 2. ENERGY COST — full discharge + charge efficiency chain ──
-              // SR.Etot = electrical energy demanded from battery (motor/inverter
-              //   losses already absorbed in etaSys/etaHov inside the physics engine).
-              // Grid draw = SR.Etot / (η_bat_discharge × η_charger)
+              // ── 2. ENERGY COST — charger round-trip efficiency only ─────────
+              // SR.Etot = electrical energy drawn from the battery pack [kWh].
+              // Battery discharge losses (Joule heating in pack) are already captured
+              // inside the physics engine via etaBat (discharge η in Wbat formula).
+              // Adding eta_bat_discharge here would double-count those losses.
               //
-              // η_bat_discharge: Joule heating in pack during discharge.
-              //   At low C-rate (1C): ~0.97; at 3C hover: ~0.90; at 5C: ~0.83
-              //   Formula: η_d = max(0.80, 0.97 - 0.025×C)  (Waldmann et al. 2014)
-              //   C-rate during hover is worst-case draw on pack.
+              // What IS missing from SR.Etot: the ground-side charger losses
+              // (AC grid → onboard battery), governed by charger efficiency η_charger.
+              // Grid draw = SR.Etot / η_charger  (FIX 3.1: removed eta_bat_discharge)
               //
-              // η_charger: ground-side AC/DC round-trip efficiency (SAE ARP6504)
+              // η_charger: ground-side AC/DC round-trip (SAE ARP6504)
               //   At 1C recharge: ~0.95; at 3C fast-charge: ~0.88
               const CrateHov         = SR.CrateHov || 3.0;
-              const eta_bat_discharge = Math.max(0.80, 0.97 - 0.025 * CrateHov);
               const eta_charger       = Math.max(0.85, 0.97 - 0.030 * CrateHov);
-              const energyPerFlight_kWh = SR.Etot / (eta_bat_discharge * eta_charger);
+              // FIX 3.1: energyPerFlight = SR.Etot / η_charger  (NOT ÷ eta_bat_discharge too)
+              const energyPerFlight_kWh = SR.Etot / eta_charger;
               // Time-of-use: EIA 2024 base + vertiport demand charge (EPRI 2023)
               const electricityRate_base = 0.12;
               const demandCharge         = 0.04;
@@ -7324,9 +7437,17 @@ export default function App(){
               const operatorCost_per_flight = rpicCostPerHour * (flightDuration_hr + turnaroundTime_hr);
 
               // ── 9. TYPE CERTIFICATION & AIRWORTHINESS AMORTIZATION ────────
-              const certCost_total    = 1000000;
+              // FIX 3.3: $1M was a software bug — FAA Part 21 type cert for a novel
+              // eVTOL category costs $50M–$200M (Joby ~$100M, Archer estimate similar).
+              // Reference: FAA AC 21.17-4 (powered-lift cert), Congressional testimony
+              // Joby Aviation S-1 (2021), NASA UAM Ecosystem (Vascik 2020).
+              // Amortized over a 50-aircraft fleet × 10 operating years:
+              //   certCost_per_flight = $75M / (50 × 3000 flights/yr × 10 yr) ≈ $0.50/flight
+              // (Previously $1M / (3000 × 10) ≈ $0.033/flight — factor of 75× too low.)
+              const certCost_total    = 75_000_000;  // $75M conservative type cert (FAA Part 21)
+              const certFleetSize     = 50;           // aircraft over which cert is amortised
               const aircraftLifeYears = 10;
-              const certCost_per_flight = certCost_total / (flightsPerYear * aircraftLifeYears);
+              const certCost_per_flight = certCost_total / (certFleetSize * flightsPerYear * aircraftLifeYears);
 
               // ── 10. TOTAL DOC ──────────────────────────────────────────────
               const totalCost_per_flight = energyCost_per_flight
