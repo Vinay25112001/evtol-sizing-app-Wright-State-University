@@ -878,6 +878,9 @@ function runSizing(p) {
    All parm elements: <Name Value="sci_notation" ID="10_CHAR_ID"/>
    ═══════════════════════════════════════════════════════════════════════ */
 function generateVSP3File(p, SR) {
+  // ─── Guard: require valid sizing results before generating geometry ───
+  if (!SR || !SR.MTOW || !p || !p.fusLen) return null;
+
   // ─── Helpers ─────────────────────────────────────────────────────────
   const sci = (v) => {
     const n = isFinite(Number(v)) ? Number(v) : 0;
@@ -926,46 +929,32 @@ function generateVSP3File(p, SR) {
   const xVtLE  = Math.min(xACw + lv - 0.25*CrVT, fL - 0.05);
   const zVtRoot= 0;
 
-  // ── LONGITUDINAL LIFT BOOMS ───────────────────────────────────────────
+  // ── LONGITUDINAL LIFT BOOMS ─────────────────────────────────────────────
   //
-  // FIX 1 — EXACT INBOARD CLEARANCE FORMULA (Y-axis):
-  //   yBoom = (Fuselage_Width / 2) + Rotor_Radius + Safety_Clearance
-  //         = (fD / 2)             + Rrot          + 0.2
-  //         = (1.65 / 2)           + 1.5           + 0.2  = 2.525 m
-  // Fuselage max width = fD (from cross-section station p=0.380, W=fD=1.65m).
-  const yBoom      = (fD / 2) + Rrot + 0.2;   // = 2.525 m
+  // Y-AXIS: fixed at 2.525 m — just clears fuselage side + one rotor radius + 0.2 m gap.
+  const yBoom = (fD / 2) + Rrot + 0.2;        // = (0.825 + 1.5 + 0.2) = 2.525 m
 
-  // FIX 2 — AFT X EXTENSION TO CLEAR V-TAIL (X-axis):
-  // With yBoom=2.525m, the rotor disc spans y=1.025m to y=4.025m, overlapping
-  // the V-tail panel (horizontal span = bvt·cos(45°) = 2.666m).
-  // The V-tail TE sweeps aft with span; worst case (most aft TE) is at the
-  // V-tail tip: xVtTipTE = xVtLE + bvt·tan(swVT) + CtVT ≈ 9.312m.
-  // Aft rotor must sit BEHIND this + Rrot clearance + 0.2m safety:
-  //   xRotAft = xVtTipTE + Rrot + 0.2  ≈ 11.012m
-  const yVtSpan_h  = bvt * Math.cos(vtG * Math.PI / 180);    // V-tail horiz reach ≈ 2.666m
+  // X-AXIS: boom is symmetric about CG, shifted 0.5 m aft for balance trim.
+  //   boomXFwd = 2·xCG offset from nose    (front rotor position)
+  //   boomXAft = boomXFwd + 2·xCG           (aft rotor position, equal arm from CG)
+  //   boomXOffset: tune this single value to slide both rotors together.
+  // V-tail geometry is retained below only to keep xVtTipTE available for
+  // the safety-check log embedded in the .vsp3 file.
   const xVtTipTE   = xVtLE + bvt * Math.tan(swVT * Math.PI / 180) + CtVT;
-  // ── V-TAIL CLEARANCE → sets AFT BOOM LIMIT (not rotor position directly) ──
-  // This value drives boomXAft; the aft ROTOR is then derived from the boom tip.
-  const vtClearAft = xVtTipTE + Rrot + 0.2;   // minimum x the aft boom tip must reach
+  const vtClearAft = xVtTipTE + Rrot + 0.2;   // safety-check reference only
   const boomDiam   = 0.25;
 
-  // ── SYMMETRIC BOOM ABOUT AIRCRAFT CG — NOSE-ANCHORED ────────────────
-  // Design intent (top-down):
-  //   • boomXFwd = 0            → boom starts at nose  (OpenVSP XForm X_Loc = 0)
-  //   • boomXAft = 2·xCG        → boom ends at 2× CG   (OpenVSP XForm X_Loc = 2·xCG)
-  //   • boomLen  = 2·xCG        → ≈6 m when xCG≈3 m from sizing engine
-  //   • Rotors sit exactly at boom tips — boom defines rotor location.
-  //   • vtClearAft is a SAFETY CHECK only: logged below, not used for placement.
-  const boomXOffset = 0.5;                     // shift entire boom 0.5 m aft
-  const boomXFwd = 0 + boomXOffset;           // = 0.5 m  → X_Loc = 0.5
-  const boomXAft = 2 * xCG + boomXOffset;     // = 2·xCG + 0.5 m
-  const boomLen  = boomXAft - boomXFwd;       // = 2·xCG (length unchanged)
-  const zBoom    = fD / 2;                     // flush with high-wing / top of fuselage
+  // ── BOOM X POSITIONS ─────────────────────────────────────────────────
+  const boomXOffset = 0.5;                     // aft shift applied to both tips equally
+  const boomXFwd    = 0 + boomXOffset;         // front boom tip x-position
+  const boomXAft    = 2 * xCG + boomXOffset;   // aft   boom tip x-position (= 2·xCG from front)
+  const boomLen     = boomXAft - boomXFwd;     // total boom length = 2·xCG
+  const zBoom       = fD / 2;                  // flush with top of fuselage (high-wing)
 
   // ── LIFT ROTOR POSITIONS — DERIVED FROM BOOM TIPS ────────────────────
-  const zLiftRotor = zBoom + boomDiam / 2;    // hub sits on top of boom surface
-  const xRotFwd    = boomXFwd;                // = 0       → front disk X_Loc = 0
-  const xRotAft    = boomXAft;                // = 2·xCG   → aft   disk X_Loc = 2·xCG
+  const zLiftRotor = zBoom + boomDiam / 2;     // hub centred on top of boom
+  const xRotFwd    = boomXFwd;                 // front rotor at front boom tip
+  const xRotAft    = boomXAft;                 // aft   rotor at aft   boom tip
 
   // ── CENTER PUSHER ROTOR ───────────────────────────────────────────────
   const xPusher   = fL;
@@ -1440,33 +1429,13 @@ ${nacLeftXML}
 ${tiltRotRightXML}
 ${tiltRotLeftXML}
   </Vehicle>
-  <!-- ═══════════════════════════════════════════════════════════════════
-       Lift + Tilt-Cruise Hybrid eVTOL  |  Wright State University
-       ───────────────────────────────────────────────────────────────────
-       CONFIGURATION SUMMARY (9 components, 11 physical bodies with mirrors)
-         1. Fuselage           — unchanged geometry
-         2. MainWing           — shape unchanged, high-wing Z=${zWing.toFixed(3)} m
-         3. LiftBoom × 2      — straight horizontal pods at Y=±${yBoom.toFixed(4)} m
-              Formula: fD/2 + Rrot + 0.2 = ${(fD/2).toFixed(4)} + ${Rrot} + 0.2 = ${yBoom.toFixed(4)} m
-              Fwd X=${boomXFwd.toFixed(3)} m  |  Aft X=${boomXAft.toFixed(3)} m  |  L=${boomLen.toFixed(3)} m
-              Fwd arm from CG=${(xCG-boomXFwd).toFixed(3)} m  |  Aft arm from CG=${(boomXAft-xCG).toFixed(3)} m  |  Symmetric=${Math.abs((xCG-boomXFwd)-(boomXAft-xCG))<0.001?'YES':'NO'}
-              V-tail clearance check: vtClearAft=${vtClearAft.toFixed(3)} m ${vtClearAft<=boomXAft?'≤':'>'} boomXAft=${boomXAft.toFixed(3)} m → ${vtClearAft<=boomXAft?'OK ✓':'⚠ V-tail may collide with aft rotor!'}
-         4. LiftRotor_Fwd × 2 — boom fwd tips, YRot=90 (thrust UP)
-         5. LiftRotor_Aft × 2 — boom aft tips, YRot=90 (thrust UP)
-         6. CruisePusher      — fuselage tail x=${xPusher.toFixed(3)} m, YRot=0 (thrust FWD +X)
-         7. VTail             — unchanged geometry
-         8. TiltNacelle × 2  — wingtip pods at Y=±${yTipRot.toFixed(4)} m (exact bW/2), Z=${zNac.toFixed(4)} m (chord midline)
-         9. TiltRotor × 2    — nacelle front X=${xTipRot.toFixed(4)} m (5cm fwd of nacelle nose), YRot=90
-       ───────────────────────────────────────────────────────────────────
-       TILT MECHANISM (wingtip rotors):
-         RotY = 90°  →  disc horizontal  →  thrust UP   [HOVER — default]
-         RotY =  0°  →  disc vertical    →  thrust FWD  [CRUISE]
-         Animate Y_Rotation 90→0 in OpenVSP for transition simulation.
-       ───────────────────────────────────────────────────────────────────
+  <!-- Trail1 eVTOL  |  Wright State University
        MTOW: ${MTOW.toFixed(1)} kg  |  Wing: b=${bW.toFixed(2)} m  S=${SW.toFixed(2)} m²
        CG: ${xCG.toFixed(3)} m from nose  |  SM: ${(SM*100).toFixed(1)}% MAC
+       Boom: Fwd=${boomXFwd.toFixed(3)} m  Aft=${boomXAft.toFixed(3)} m  L=${boomLen.toFixed(3)} m  Y=±${yBoom.toFixed(3)} m
        V-tail: Γ=${vtG.toFixed(1)}°  bvt=${bvt.toFixed(2)} m  Λ=${swVT.toFixed(1)}°
-  ═══════════════════════════════════════════════════════════════════ -->
+       V-tail clearance: vtClearAft=${vtClearAft.toFixed(3)} m ${vtClearAft<=boomXAft?'≤':'>'} boomXAft=${boomXAft.toFixed(3)} m → ${vtClearAft<=boomXAft?'OK':'⚠ CHECK REQUIRED'}
+  -->
 </Vsp_Geometry>`;
 
   return xml;
