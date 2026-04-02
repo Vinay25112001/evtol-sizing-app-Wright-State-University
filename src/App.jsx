@@ -1125,24 +1125,27 @@ function generateVSP3File(p, SR) {
   // Aft rotor must sit BEHIND this + Rrot clearance + 0.2m safety:
   //   xRotAft = xVtTipTE + Rrot + 0.2  ≈ 11.012m
   const yVtSpan_h  = bvt * Math.cos(vtG * Math.PI / 180);    // V-tail horiz reach ≈ 2.666m
-  const xVtTipTE   = xVtLE + bvt * Math.tan(swVT * Math.PI / 180) + CtVT;  // ≈ 9.312m
-  const xRotAft    = xVtTipTE + Rrot + 0.2;    // ≈ 11.012m — aft rotor behind V-tail tip TE
+  const xVtTipTE   = xVtLE + bvt * Math.tan(swVT * Math.PI / 180) + CtVT;
+  // ── V-TAIL CLEARANCE → sets AFT BOOM LIMIT (not rotor position directly) ──
+  // This value drives boomXAft; the aft ROTOR is then derived from the boom tip.
+  const vtClearAft = xVtTipTE + Rrot + 0.2;   // minimum x the aft boom tip must reach
   const boomDiam   = 0.25;
-  // ── FIX: symmetric boom arms about aircraft CG ──────────────────────
-  // Aft arm is constrained by V-tail clearance (xRotAft, computed above).
-  // Mirror it forward of the CG so both lift-rotor moment arms are equal.
-  // Math.max(0.3, …) clamps the forward tip to ≥0.3 m aft of the nose in
-  // case fallback defaults produce an unrealistically short fuselage; with
-  // real sizing-engine output the clamp never fires and arms are truly equal.
-  const armAft     = xRotAft - xCG;                 // aft moment arm (V-tail constrained)
-  const boomXFwd   = Math.max(0.3, xCG - armAft);   // forward arm mirrors aft arm about CG
-  const boomXAft   = xRotAft;                        // unchanged — V-tail clearance preserved
-  const boomLen    = boomXAft - boomXFwd;            // updates automatically
-  const zBoom      = fD / 2;                   // flush with high-wing / top of fuselage
 
-  // ── FOUR FIXED LIFT ROTORS (on boom tips) ────────────────────────────
+  // ── SYMMETRIC BOOM ABOUT AIRCRAFT CG ─────────────────────────────────
+  // Design rule: xRotFwd = 2·xCG − xRotAft  (equal moment arms about CG)
+  //   1. boomXAft is set by the V-tail clearance constraint (vtClearAft).
+  //   2. boomXFwd is the strict mirror of boomXAft about xCG — NO Math.max clamp.
+  //   3. xRotFwd and xRotAft are READ from the boom tips, not placed independently.
+  //      The boom defines rotor location; rotors do NOT define boom location.
+  const boomXAft = vtClearAft;                 // aft boom tip satisfies V-tail clearance
+  const boomXFwd = 2 * xCG - boomXAft;        // forward tip: strict CG mirror
+  const boomLen  = boomXAft - boomXFwd;        // = 2·(boomXAft − xCG), fully symmetric
+  const zBoom    = fD / 2;                     // flush with high-wing / top of fuselage
+
+  // ── LIFT ROTOR POSITIONS — DERIVED FROM BOOM TIPS (not independent) ──
   const zLiftRotor = zBoom + boomDiam / 2;     // hub sits on top of boom surface
-  const xRotFwd    = boomXFwd;
+  const xRotFwd    = boomXFwd;                 // forward rotor AT forward boom tip
+  const xRotAft    = boomXAft;                 // aft rotor AT aft boom tip
 
   // ── CENTER PUSHER ROTOR ───────────────────────────────────────────────
   const xPusher   = fL;
@@ -1626,8 +1629,8 @@ ${tiltRotLeftXML}
          3. LiftBoom × 2      — straight horizontal pods at Y=±${yBoom.toFixed(4)} m
               Formula: fD/2 + Rrot + 0.2 = ${(fD/2).toFixed(4)} + ${Rrot} + 0.2 = ${yBoom.toFixed(4)} m
               Fwd X=${boomXFwd.toFixed(3)} m  |  Aft X=${boomXAft.toFixed(3)} m  |  L=${boomLen.toFixed(3)} m
-              Fwd arm from CG=${(xCG-boomXFwd).toFixed(3)} m  |  Aft arm from CG=${armAft.toFixed(3)} m  (symmetric about CG)
-              Aft rotor behind V-tail tip TE (${xVtTipTE.toFixed(3)} m) + Rrot + 0.2m margin
+              Fwd arm from CG=${(xCG-boomXFwd).toFixed(3)} m  |  Aft arm from CG=${(boomXAft-xCG).toFixed(3)} m  |  Symmetric=${Math.abs((xCG-boomXFwd)-(boomXAft-xCG))<0.001?'YES':'NO'}
+              V-tail tip TE=${xVtTipTE.toFixed(3)} m  →  vtClearAft=${vtClearAft.toFixed(3)} m  →  xRotFwd=2·CG−xRotAft=${xRotFwd.toFixed(3)} m
          4. LiftRotor_Fwd × 2 — boom fwd tips, YRot=90 (thrust UP)
          5. LiftRotor_Aft × 2 — boom aft tips, YRot=90 (thrust UP)
          6. CruisePusher      — fuselage tail x=${xPusher.toFixed(3)} m, YRot=0 (thrust FWD +X)
