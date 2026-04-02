@@ -1050,7 +1050,7 @@ ${yVals.map((v,i)=>`    y[${i}] = ${v};`).join('\n')}
    All parm elements: <Name Value="sci_notation" ID="10_CHAR_ID"/>
    ═══════════════════════════════════════════════════════════════════════ */
 function generateVSP3File(p, SR) {
-  // ── helpers ───────────────────────────────────────────────────────
+  // ─── Helpers ─────────────────────────────────────────────────────────
   const sci = (v) => {
     const n = isFinite(Number(v)) ? Number(v) : 0;
     if (n === 0) return '0.000000000000000000e+000';
@@ -1063,59 +1063,62 @@ function generateVSP3File(p, SR) {
   };
   const V = (tag,val) => `<${tag} Value="${sci(val)}" ID="${ID()}"/>`;
 
-  // ── sizing values ─────────────────────────────────────────────────
-  const fL  = Number(p.fusLen)      || 6.5;
-  const fD  = Number(p.fusDiam)     || 1.65;
-  const bW  = Number(SR.bWing)      || 12.67;
-  const SW  = Number(SR.Swing)      || 17.83;
-  const Cr  = Number(SR.Cr_)        || 1.94;
-  const Ct  = Number(SR.Ct_)        || 0.87;
-  const sw  = Number(SR.sweep)      || 9.57;
-  const tc  = Number(p.tc)          || 0.12;
-  const xACw= Number(SR.xACwing)    || fL*0.39;
-  const MAC = Number(SR.MAC)        || 1.40;
-  const Drot= Number(SR.Drotor)     || 3.0;
-  const MTOW= Number(SR.MTOW)       || 2721;
-  const xCG = Number(SR.xCGtotal)   || fL*0.35;
-  const SM  = Number(SR.SM_vt||SR.SM)||0.22;
+  // ─── Sizing values from engine ────────────────────────────────────────
+  const fL   = Number(p.fusLen)              || 6.5;
+  const fD   = Number(p.fusDiam)             || 1.65;
+  const bW   = Number(SR.bWing)              || 12.67;
+  const SW   = Number(SR.Swing)              || 17.83;
+  const Cr   = Number(SR.Cr_)               || 1.94;
+  const Ct   = Number(SR.Ct_)               || 0.87;
+  const sw   = Number(SR.sweep)              || 9.57;
+  const tc   = Number(p.tc)                  || 0.12;
+  const xACw = Number(SR.xACwing)            || fL*0.39;
+  const MAC  = Number(SR.MAC)               || 1.40;
+  const Drot = Number(SR.Drotor)             || 3.0;
+  const MTOW = Number(SR.MTOW)              || 2721;
+  const xCG  = Number(SR.xCGtotal)          || fL*0.35;
+  const SM   = Number(SR.SM_vt||SR.SM)       || 0.22;
+  // V-tail from sizing engine (the calculated values)
+  const CrVT = Number(SR.Cr_vt)             || 2.15;
+  const CtVT = Number(SR.Ct_vt)             || 0.86;
+  const bvt  = Number(SR.bvt_panel)         || 3.77;
+  const swVT = Number(SR.sweep_vt)          || 34.4;
+  const vtG  = Number(p.vtGamma)            || 40;
+  const lv   = Number(SR.lv)               || fL*0.50;
 
-  // ── component positions ───────────────────────────────────────────
-  // Wing: mid-mounted (Z=0) so it passes through fuselage centre
-  const xWingLE = xACw - 0.25*Cr;
-  const zWing   = 0;
+  // ─── Component positions ──────────────────────────────────────────────
+  const xWingLE = xACw - 0.25*Cr;       // wing LE (absolute x from nose)
+  const zWing   = 0;                     // mid-wing: passes through fuselage CL
 
-  // Tail: H-stab + V-fin at 82% fuselage length
-  const xTail   = fL * 0.82;
-  // H-stab dimensions (≈30% of main wing)
-  const bHS     = bW  * 0.28;
-  const CrHS    = Cr  * 0.52;
-  const CtHS    = CrHS* 0.55;
-  // V-fin dimensions (height ≈ 0.85× fuselage diameter)
-  const bVF     = fD  * 0.85;
-  const CrVF    = Cr  * 0.48;
-  const CtVF    = CrVF* 0.42;
-  const zVF     = fD  * 0.50;   // root at top of fuselage
+  // V-tail: tail AC is lv behind wing AC; LE is 25% root chord ahead of AC
+  const xVtLE  = Math.min(xACw + lv - 0.25*CrVT, fL - 0.05);
+  const zVtRoot= 0;                      // V-tail root at fuselage CL
 
-  // Lift rotors (4 total via 2 XZ-symmetric pairs)
-  const rotX    = xWingLE + Cr*0.25;  // at wing AC
-  const rotZ    = Drot*0.50;          // half-diameter above wing plane
-  const yMid    = bW*0.25;            // mid-span (bW/4)
-  const yTip    = bW*0.50;            // wingtip  (bW/2)
+  // Booms: vertical rods extending upward from wing surface
+  // Diameter: 0.25m as specified; length: enough to clear rotor blade tips
+  const boomDiam = 0.25;                 // m (user specified)
+  const boomLen  = Math.max(0.70, Drot * 0.27); // ≈ 0.81m for D=3m
+  const rotX     = xWingLE + Cr*0.25;   // boom/rotor X at wing AC
+  const rotZ     = boomLen;             // rotor hub at TOP of boom
+  const yMid     = bW * 0.25;           // mid-span (bW/4)
+  const yTip     = bW * 0.50;           // wingtip  (bW/2)
 
-  // Cruise pusher (aft fuselage, vertical disk → thrust +X)
-  const xPush   = fL;
-  const zPush   = 0;
+  // Cruise pusher at fuselage tail
+  const xPush    = fL;
 
-  // ── TE-sweep helper ───────────────────────────────────────────────
-  const sweepTE = (swDeg, span, rC, tC) => {
-    const t=Math.tan(swDeg*Math.PI/180);
-    const te=Math.atan(t - 2*(1-tC/rC)/((1+tC/rC)*span/(( rC+tC)/2)))*180/Math.PI;
-    return isFinite(te)?te:swDeg*0.5;
+  // ─── TE-sweep helper ──────────────────────────────────────────────────
+  const sweepTE = (swDeg, halfSpan, rC, tC) => {
+    if (halfSpan < 0.01) return swDeg;
+    const avgC = (rC + tC) / 2;
+    const te = Math.atan(
+      Math.tan(swDeg*Math.PI/180) - 2*(1 - tC/rC)/((1+tC/rC)*halfSpan/avgC)
+    ) * 180 / Math.PI;
+    return isFinite(te) ? te : swDeg*0.5;
   };
-  const wTE  = sweepTE(sw,  bW/2, Cr,  Ct );
-  const hsTE = sweepTE(15,  bHS/2,CrHS,CtHS);
+  const wTE  = sweepTE(sw,   bW/2,  Cr,   Ct  );
+  const vtTE = sweepTE(swVT, bvt,   CrVT, CtVT);
 
-  // ── Disk AngelScript (verbatim from joby_s2.vsp3) ─────────────────
+  // ─── Disk AngelScript — verbatim from joby_s2.vsp3 ───────────────────
   const DS = `//==== Init Is Called Once During Each Custom Geom Construction  ============================//
 //==== Avoid Global Variables Unless You Want Shared With All Custom Geoms of This Type =====//
 void Init()
@@ -1183,23 +1186,13 @@ void Scale(double curr_scale )
 }
 `;
 
-  // ── Wing XSec builder — exact joby_s2.vsp3 structure ────────────
-  // Ref: joby lines 366-580 (two XSec blocks inside XSecSurf)
-  //
-  // Each XSec has two children:
-  //   1. <ParmContainer> containing <XSec> (wing geometry parms: Root_Chord, Span, etc.)
-  //   2. <XSec> (airfoil) with <Type>2</Type>, DriverGroup, and XSecCurve <Type>7</Type>
-  //
-  // CRITICAL from joby analysis:
-  //   - Parm tag = <XSec> not <WingXSec>
-  //   - Airfoil XSec Type = 2 (WingXSec)
-  //   - XSecCurve inner Type = 7 (NACA 4-series)
-  //   - DriverGroup ChoiceVec encodes which 3 of 8 parms are primary drivers
+  // ─── Wing XSec builder — exact joby_s2.vsp3 structure ────────────────
+  // parm tag = <XSec> (NOT <WingXSec>)  airfoil <Type>2</Type>  curve <Type>7</Type>
   const wingXSec = (rC, tC, span, swDeg, swLoc, dihed, twist, tessU, choiceVec, swRef) => {
     const a   = (rC+tC)/2*span;
-    const asp = span>0.1 ? span*span/a : 0.5;
-    const taper = tC/Math.max(rC,1e-6);
-    const swD = swRef !== undefined ? swRef : swDeg;  // InLE sweep = prev panel or own
+    const asp = span>0.1 ? span*span/Math.max(a,1e-6) : 0.5;
+    const tpr = tC/Math.max(rC,1e-6);
+    const swD = swRef !== undefined ? swRef : swDeg;
     const teD = sweepTE(swD, span, rC, tC);
     return `
           <XSec>
@@ -1207,53 +1200,30 @@ void Scale(double curr_scale )
               <ID>${ID()}</ID>
               <n>Default</n>
               <XSec>
-                ${V('Area',       a)}
-                ${V('Aspect',     asp)}
-                ${V('Avg_Chord',  a/Math.max(span,1e-6))}
-                ${V('Dihedral',   dihed)}
-                ${V('InCluster',  1)}
-                ${V('InLEDihedral', -dihed)}
-                ${V('InLEMode',   0)}
-                ${V('InLEStrength',1)}
-                ${V('InLESweep',  swD)}
-                ${V('InTEDihedral',-dihed)}
-                ${V('InTEMode',   0)}
-                ${V('InTEStrength',1)}
-                ${V('InTESweep',  teD)}
-                ${V('OutCluster', 1)}
-                ${V('OutLEDihedral',dihed)}
-                ${V('OutLEMode',  0)}
-                ${V('OutLEStrength',1)}
-                ${V('OutLESweep', swD)}
-                ${V('OutTEDihedral',dihed)}
-                ${V('OutTEMode',  0)}
-                ${V('OutTEStrength',1)}
-                ${V('OutTESweep', teD)}
-                ${V('Root_Chord', rC)}
-                ${V('Sec_Sweep',  swDeg)}
-                ${V('Sec_Sweep_Location', 1)}
-                ${V('SectTess_U', tessU)}
-                ${V('Span',       span)}
-                ${V('Sweep',      swDeg)}
-                ${V('Sweep_Location', swLoc)}
-                ${V('Taper',      taper)}
-                ${V('Tip_Chord',  tC)}
-                ${V('Twist',      twist)}
-                ${V('Twist_Location', 0.25)}
+                ${V('Area',a)}${V('Aspect',asp)}${V('Avg_Chord',a/Math.max(span,1e-6))}
+                ${V('Dihedral',dihed)}${V('InCluster',1)}
+                ${V('InLEDihedral',-dihed)}${V('InLEMode',0)}${V('InLEStrength',1)}${V('InLESweep',swD)}
+                ${V('InTEDihedral',-dihed)}${V('InTEMode',0)}${V('InTEStrength',1)}${V('InTESweep',teD)}
+                ${V('OutCluster',1)}
+                ${V('OutLEDihedral',dihed)}${V('OutLEMode',0)}${V('OutLEStrength',1)}${V('OutLESweep',swD)}
+                ${V('OutTEDihedral',dihed)}${V('OutTEMode',0)}${V('OutTEStrength',1)}${V('OutTESweep',teD)}
+                ${V('Root_Chord',rC)}${V('Sec_Sweep',swDeg)}${V('Sec_Sweep_Location',1)}
+                ${V('SectTess_U',tessU)}${V('Span',span)}
+                ${V('Sweep',swDeg)}${V('Sweep_Location',swLoc)}
+                ${V('Taper',tpr)}${V('Tip_Chord',tC)}
+                ${V('Twist',twist)}${V('Twist_Location',0.25)}
               </XSec>
             </ParmContainer>
             <XSec>
               <Type>2</Type>
               <GroupName>XSec</GroupName>
               <DriverGroup>
-                <NumVar>8</NumVar>
-                <NumChoices>3</NumChoices>
+                <NumVar>8</NumVar><NumChoices>3</NumChoices>
                 <ChoiceVec>${choiceVec}</ChoiceVec>
               </DriverGroup>
               <XSecCurve>
                 <ParmContainer>
-                  <ID>${ID()}</ID>
-                  <n>Default</n>
+                  <ID>${ID()}</ID><n>Default</n>
                   <Cap>
                     ${V('LE_Cap_Length',1)}${V('LE_Cap_Offset',0)}${V('LE_Cap_Strength',0.5)}${V('LE_Cap_Type',1)}
                     ${V('TE_Cap_Length',1)}${V('TE_Cap_Offset',0)}${V('TE_Cap_Strength',0.5)}${V('TE_Cap_Type',1)}
@@ -1267,61 +1237,37 @@ void Scale(double curr_scale )
                     ${V('TE_Trim_AbsRel',0)}${V('TE_Trim_Thick',0)}${V('TE_Trim_Thick_Chord',0)}${V('TE_Trim_Type',0)}${V('TE_Trim_X',0)}${V('TE_Trim_X_Chord',0)}
                   </Trim>
                   <XSecCurve>
-                    ${V('Camber',     0)}
-                    ${V('CamberLoc',  0.2)}
-                    ${V('Chord',      tC)}
-                    ${V('DeltaX',     0)}
-                    ${V('DeltaY',     0)}
-                    ${V('EqArcLenFlag',1)}
-                    ${V('FitDegree',  7)}
-                    ${V('Invert',     0)}
-                    ${V('Scale',      1)}
-                    ${V('ShiftLE',    0)}
-                    ${V('Theta',      0)}
-                    ${V('ThickChord', tc)}
+                    ${V('Camber',0)}${V('CamberLoc',0.2)}${V('Chord',tC)}
+                    ${V('DeltaX',0)}${V('DeltaY',0)}${V('EqArcLenFlag',1)}${V('FitDegree',7)}
+                    ${V('Invert',0)}${V('Scale',1)}${V('ShiftLE',0)}${V('Theta',0)}${V('ThickChord',tc)}
                   </XSecCurve>
                 </ParmContainer>
-                <XSecCurve>
-                  <Type>7</Type>
-                </XSecCurve>
+                <XSecCurve><Type>7</Type></XSecCurve>
               </XSecCurve>
             </XSec>
           </XSec>`;
   };
 
-  // ── Wing Geom builder ──────────────────────────────────────────────
-  // xRot: X_Rotation degrees (0 for horizontal wing/stab, 90 for vertical fin)
-  // sym:  Sym_Planar_Flag (2=XZ symmetric, 0=no symmetry)
+  // ─── Wing Geom builder ────────────────────────────────────────────────
+  // xRot: X_Rotation (0 = flat wing/stab, 90 = vertical fin if ever needed)
+  // sym:  Sym_Planar_Flag (2 = XZ symmetric, 0 = no symmetry)
   const wingGeom = (label, R,G,B, xLoc,zLoc, xRot,
-                    rC,tC,span,swDeg,dihed,twist,
-                    rC0,tC0,  // root reference XSec parms
-                    rCF,tCF,spanF,swDF,dihedF,twistF,  // fin section (only used if 2 sections diff)
-                    tessW, sym, totalSpan, totalArea, totalChord) => {
-    // XSec[0]: root reference — Span=1, Root_Chord=1, Tip_Chord=rC
+                    rC,tC,halfSpan,swDeg,dihed,twist,
+                    tessW, sym, totSpan, totArea, totChord) => {
     const s0 = wingXSec(1.0, rC, 1.0, 0, 0.0, 0, 0, 6, '1, 5, 6, ', swDeg);
-    // XSec[1]: main panel
-    const s1 = wingXSec(rC, tC, span, swDeg, 0.0, dihed, twist, 6, '1, 3, 2, ');
+    const s1 = wingXSec(rC, tC, halfSpan, swDeg, 0.0, dihed, twist, 6, '1, 3, 2, ');
     return `
     <Geom>
       <ParmContainer>
-        <ID>${ID()}</ID>
-        <n>${label}</n>
-        <Attach>
-          ${V('Rots_Attach_Flag',0)}${V('Trans_Attach_Flag',0)}
-          ${V('U_Attach_Location',1e-6)}${V('V_Attach_Location',1e-6)}
-        </Attach>
-        <Shape>
-          ${V('Tess_U',16)}${V('Tess_W',tessW)}${V('Wake',0)}
-        </Shape>
-        <Sym>
-          ${V('Sym_Ancestor',1)}${V('Sym_Ancestor_Origin_Flag',1)}
-          ${V('Sym_Axial_Flag',0)}${V('Sym_Planar_Flag',sym)}${V('Sym_Rot_N',2)}
-        </Sym>
+        <ID>${ID()}</ID><n>${label}</n>
+        <Attach>${V('Rots_Attach_Flag',0)}${V('Trans_Attach_Flag',0)}${V('U_Attach_Location',1e-6)}${V('V_Attach_Location',1e-6)}</Attach>
+        <Shape>${V('Tess_U',16)}${V('Tess_W',tessW)}${V('Wake',0)}</Shape>
+        <Sym>${V('Sym_Ancestor',1)}${V('Sym_Ancestor_Origin_Flag',1)}${V('Sym_Axial_Flag',0)}${V('Sym_Planar_Flag',sym)}${V('Sym_Rot_N',2)}</Sym>
         <WingGeom>
           ${V('LECluster',0.25)}${V('RelativeDihedralFlag',0)}${V('RelativeTwistFlag',0)}
           ${V('RotateAirfoilMatchDideralFlag',0)}${V('TECluster',0.25)}
-          ${V('TotalArea',totalArea)}${V('TotalChord',totalChord)}
-          ${V('TotalProjectedSpan',totalSpan)}${V('TotalSpan',totalSpan)}
+          ${V('TotalArea',totArea)}${V('TotalChord',totChord)}
+          ${V('TotalProjectedSpan',totSpan)}${V('TotalSpan',totSpan)}
         </WingGeom>
         <XForm>
           ${V('Abs_Or_Relitive_flag',1)}${V('Last_Scale',1)}${V('Origin',0)}${V('Scale',1)}
@@ -1334,26 +1280,17 @@ void Scale(double curr_scale )
         </XForm>
       </ParmContainer>
       <GeomBase>
-        <TypeName>Wing</TypeName>
-        <TypeID>5</TypeID>
-        <TypeFixed>0</TypeFixed>
-        <ParentID>NONE</ParentID>
-        <Child_List/>
+        <TypeName>Wing</TypeName><TypeID>5</TypeID><TypeFixed>0</TypeFixed>
+        <ParentID>NONE</ParentID><Child_List/>
       </GeomBase>
       <Material><n>Default</n></Material>
       <Wire_Color>
-        <ParmContainer>
-          <ID>${ID()}</ID><n>Default</n>
-          <Color_Parm>
-            ${V('Alpha',255)}${V('Blue',B)}${V('Green',G)}${V('Red',R)}
-          </Color_Parm>
+        <ParmContainer><ID>${ID()}</ID><n>Default</n>
+          <Color_Parm>${V('Alpha',255)}${V('Blue',B)}${V('Green',G)}${V('Red',R)}</Color_Parm>
         </ParmContainer>
       </Wire_Color>
       <Textures><Num_of_Tex>0</Num_of_Tex></Textures>
-      <Geom>
-        <Set_List>1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, </Set_List>
-        <SubSurfaces/>
-      </Geom>
+      <Geom><Set_List>1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, </Set_List><SubSurfaces/></Geom>
       <WingGeom>
         <ParmContainer><ID>${ID()}</ID><n>Default</n></ParmContainer>
         <XSecSurf>${s0}${s1}
@@ -1362,8 +1299,8 @@ void Scale(double curr_scale )
     </Geom>`;
   };
 
-  // ── Disk Geom builder ──────────────────────────────────────────────
-  const diskGeom = (label, R,G,B, xAbs,yAbs,zAbs, yRot, diameter, sym) => `
+  // ─── Disk Geom builder ────────────────────────────────────────────────
+  const diskGeom = (label, R,G,B, xA,yA,zA, yRot, diameter, sym) => `
     <Geom>
       <CustomGeom>
         <Diameter Value="${sci(diameter)}" ID="${ID()}"/>
@@ -1371,26 +1308,16 @@ void Scale(double curr_scale )
         <ScriptFileContents>${DS}</ScriptFileContents>
       </CustomGeom>
       <ParmContainer>
-        <ID>${ID()}</ID>
-        <n>${label}</n>
-        <Attach>
-          ${V('Rots_Attach_Flag',0)}${V('Trans_Attach_Flag',0)}
-          ${V('U_Attach_Location',1e-6)}${V('V_Attach_Location',1e-6)}
-        </Attach>
+        <ID>${ID()}</ID><n>${label}</n>
+        <Attach>${V('Rots_Attach_Flag',0)}${V('Trans_Attach_Flag',0)}${V('U_Attach_Location',1e-6)}${V('V_Attach_Location',1e-6)}</Attach>
         <Design>${V('Diameter',diameter)}</Design>
         <Shape>${V('Tess_U',8)}${V('Tess_W',9)}${V('Wake',0)}</Shape>
-        <Sym>
-          ${V('Sym_Ancestor',1)}${V('Sym_Ancestor_Origin_Flag',1)}
-          ${V('Sym_Axial_Flag',0)}${V('Sym_Planar_Flag',sym)}${V('Sym_Rot_N',2)}
-        </Sym>
+        <Sym>${V('Sym_Ancestor',1)}${V('Sym_Ancestor_Origin_Flag',1)}${V('Sym_Axial_Flag',0)}${V('Sym_Planar_Flag',sym)}${V('Sym_Rot_N',2)}</Sym>
         <XForm>
           ${V('Abs_Or_Relitive_flag',1)}${V('Last_Scale',1)}${V('Origin',0)}${V('Scale',1)}
-          ${V('X_Location',xAbs)}${V('X_Rel_Location',xAbs)}
-          ${V('X_Rel_Rotation',0)}${V('X_Rotation',0)}
-          ${V('Y_Location',yAbs)}${V('Y_Rel_Location',yAbs)}
-          ${V('Y_Rel_Rotation',yRot)}${V('Y_Rotation',yRot)}
-          ${V('Z_Location',zAbs)}${V('Z_Rel_Location',zAbs)}
-          ${V('Z_Rel_Rotation',0)}${V('Z_Rotation',0)}
+          ${V('X_Location',xA)}${V('X_Rel_Location',xA)}${V('X_Rel_Rotation',0)}${V('X_Rotation',0)}
+          ${V('Y_Location',yA)}${V('Y_Rel_Location',yA)}${V('Y_Rel_Rotation',yRot)}${V('Y_Rotation',yRot)}
+          ${V('Z_Location',zA)}${V('Z_Rel_Location',zA)}${V('Z_Rel_Rotation',0)}${V('Z_Rotation',0)}
         </XForm>
       </ParmContainer>
       <GeomBase>
@@ -1399,27 +1326,15 @@ void Scale(double curr_scale )
       </GeomBase>
       <Material><n>Default</n></Material>
       <Wire_Color>
-        <ParmContainer>
-          <ID>${ID()}</ID><n>Default</n>
+        <ParmContainer><ID>${ID()}</ID><n>Default</n>
           <Color_Parm>${V('Alpha',255)}${V('Blue',B)}${V('Green',G)}${V('Red',R)}</Color_Parm>
         </ParmContainer>
       </Wire_Color>
       <Textures><Num_of_Tex>0</Num_of_Tex></Textures>
-      <Geom>
-        <Set_List>1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, </Set_List>
-        <SubSurfaces/>
-      </Geom>
+      <Geom><Set_List>1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, </Set_List><SubSurfaces/></Geom>
     </Geom>`;
 
-  // ── Fuselage XSec builder (already proven working) ─────────────────
-  const maxW = fD, maxH = fD*0.88;
-  const fusStations = [
-    {p:0.000, W:fD*0.01, H:fD*0.01, tA: 90, bA: 90, tS:0.4, bS:0.4, ell:false},
-    {p:0.150, W:maxW*0.60, H:maxH*0.55, tA:0,  bA:0,  tS:1.0, bS:1.0, ell:true },
-    {p:0.380, W:maxW,      H:maxH,      tA:0,  bA:0,  tS:1.0, bS:1.0, ell:true },
-    {p:0.700, W:maxW*0.72, H:maxH*0.60, tA:-4, bA:-4, tS:1.0, bS:1.0, ell:true },
-    {p:1.000, W:fD*0.01, H:fD*0.01, tA:-90, bA:-90, tS:0.25, bS:0.25, ell:false},
-  ];
+  // ─── Fuselage XSec builder (proven working) ───────────────────────────
   const fusXSec = st => `
           <XSec>
             <ParmContainer>
@@ -1437,7 +1352,7 @@ void Scale(double curr_scale )
                 ${V('LeftLSlew',0)}${V('LeftLSlewSet',1)}${V('LeftLStrength',st.tS)}${V('LeftLStrengthSet',1)}
                 ${V('LeftRAngle',st.tA)}${V('LeftRAngleSet',1)}${V('LeftRCurve',0)}${V('LeftRCurveSet',0)}
                 ${V('LeftRSlew',0)}${V('LeftRSlewSet',1)}${V('LeftRStrength',st.tS)}${V('LeftRStrengthSet',1)}
-                ${V('RLSym',1)}${V('RefLength',fL)}
+                ${V('RLSym',1)}${V('RefLength',st.refLen || 1)}
                 ${V('RightLAngle',st.tA)}${V('RightLAngleSet',1)}${V('RightLCurve',0)}${V('RightLCurveSet',0)}
                 ${V('RightLRAngleEq',1)}${V('RightLRCurveEq',0)}${V('RightLRSlewEq',0)}${V('RightLRStrengthEq',0)}
                 ${V('RightLSlew',0)}${V('RightLSlewSet',1)}${V('RightLStrength',st.tS)}${V('RightLStrengthSet',1)}
@@ -1469,24 +1384,21 @@ void Scale(double curr_scale )
             </XSec>
           </XSec>`;
 
-  // ═══════════════════════════════════════════════════════════════
-  // BUILD XML
-  // ═══════════════════════════════════════════════════════════════
-
-  // 1. FUSELAGE ────────────────────────────────────────────────────
-  const fusXML = `
+  // ─── Fuselage Geom builder (used for main body AND boom rods) ─────────
+  // yRot: Y_Rotation (-90 = points upward/+Z; 0 = default along +X)
+  const fusGeom = (label, R,G,B, xLoc,yLoc,zLoc, yRot, length, sym, stations, tessU=16, tessW=17) => `
     <Geom>
       <ParmContainer>
-        <ID>${ID()}</ID><n>Fuselage</n>
+        <ID>${ID()}</ID><n>${label}</n>
         <Attach>${V('Rots_Attach_Flag',0)}${V('Trans_Attach_Flag',0)}${V('U_Attach_Location',1e-6)}${V('V_Attach_Location',1e-6)}</Attach>
-        <Design>${V('Length',fL)}${V('OrderPolicy',0)}</Design>
-        <Shape>${V('Tess_U',16)}${V('Tess_W',17)}</Shape>
-        <Sym>${V('Sym_Ancestor',1)}${V('Sym_Ancestor_Origin_Flag',1)}${V('Sym_Axial_Flag',0)}${V('Sym_Planar_Flag',0)}${V('Sym_Rot_N',2)}</Sym>
+        <Design>${V('Length',length)}${V('OrderPolicy',0)}</Design>
+        <Shape>${V('Tess_U',tessU)}${V('Tess_W',tessW)}</Shape>
+        <Sym>${V('Sym_Ancestor',1)}${V('Sym_Ancestor_Origin_Flag',1)}${V('Sym_Axial_Flag',0)}${V('Sym_Planar_Flag',sym)}${V('Sym_Rot_N',2)}</Sym>
         <XForm>
           ${V('Abs_Or_Relitive_flag',1)}${V('Last_Scale',1)}${V('Origin',0)}${V('Scale',1)}
-          ${V('X_Location',0)}${V('X_Rel_Location',0)}${V('X_Rel_Rotation',0)}${V('X_Rotation',0)}
-          ${V('Y_Location',0)}${V('Y_Rel_Location',0)}${V('Y_Rel_Rotation',0)}${V('Y_Rotation',0)}
-          ${V('Z_Location',0)}${V('Z_Rel_Location',0)}${V('Z_Rel_Rotation',0)}${V('Z_Rotation',0)}
+          ${V('X_Location',xLoc)}${V('X_Rel_Location',xLoc)}${V('X_Rel_Rotation',0)}${V('X_Rotation',0)}
+          ${V('Y_Location',yLoc)}${V('Y_Rel_Location',yLoc)}${V('Y_Rel_Rotation',yRot)}${V('Y_Rotation',yRot)}
+          ${V('Z_Location',zLoc)}${V('Z_Rel_Location',zLoc)}${V('Z_Rel_Rotation',0)}${V('Z_Rotation',0)}
         </XForm>
       </ParmContainer>
       <GeomBase>
@@ -1496,73 +1408,106 @@ void Scale(double curr_scale )
       <Material><n>Default</n></Material>
       <Wire_Color>
         <ParmContainer><ID>${ID()}</ID><n>Default</n>
-          <Color_Parm>${V('Alpha',255)}${V('Blue',0)}${V('Green',0)}${V('Red',0)}</Color_Parm>
+          <Color_Parm>${V('Alpha',255)}${V('Blue',B)}${V('Green',G)}${V('Red',R)}</Color_Parm>
         </ParmContainer>
       </Wire_Color>
       <Textures><Num_of_Tex>0</Num_of_Tex></Textures>
       <Geom><Set_List>1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, </Set_List><SubSurfaces/></Geom>
       <FuselageGeom>
         <ParmContainer><ID>${ID()}</ID><n>Default</n></ParmContainer>
-        <XSecSurf>${fusStations.map(fusXSec).join('')}
+        <XSecSurf>${stations.map(fusXSec).join('')}
         </XSecSurf>
       </FuselageGeom>
     </Geom>`;
 
-  // 2. MAIN WING (mid-mounted, Z=0) ──────────────────────────────
-  // Z=0 = fuselage centreline → wing passes through fuselage (mid-wing)
-  // XZ symmetry → mirrors to -Y, giving full bW span
+  // ═══ BUILD COMPONENTS ══════════════════════════════════════════════════
+
+  // ── 1. MAIN FUSELAGE ──────────────────────────────────────────────────
+  const maxW = fD, maxH = fD*0.88;
+  const fusSt = [
+    {p:0.000, W:fD*0.01, H:fD*0.01, tA: 90, bA: 90, tS:0.40, bS:0.40, ell:false, refLen:fL},
+    {p:0.150, W:maxW*0.60, H:maxH*0.55, tA:0,  bA:0,  tS:1.0,  bS:1.0,  ell:true,  refLen:fL},
+    {p:0.380, W:maxW,      H:maxH,      tA:0,  bA:0,  tS:1.0,  bS:1.0,  ell:true,  refLen:fL},
+    {p:0.700, W:maxW*0.72, H:maxH*0.60, tA:-4, bA:-4, tS:1.0,  bS:1.0,  ell:true,  refLen:fL},
+    {p:1.000, W:fD*0.01, H:fD*0.01, tA:-90, bA:-90, tS:0.25, bS:0.25, ell:false, refLen:fL},
+  ];
+  const fusXML = fusGeom('Fuselage', 0,0,0, 0,0,0, 0, fL, 0, fusSt, 16, 17);
+
+  // ── 2. MAIN WING (mid-mounted, Z=0, XZ symmetric) ─────────────────────
   const wingXML = wingGeom(
     'MainWing', 0,0,255,
     xWingLE, zWing, 0,
     Cr, Ct, bW/2, sw, 2.0, -1.5,
-    null,null, null,null,null,null,null,null,
     33, 2, bW, SW, MAC
   );
 
-  // 3. HORIZONTAL STABILIZER (H-tail, Z=0, XZ symmetric) ──────────
-  // Placed at 82% fuselage length
-  // Thinner and smaller than main wing, zero twist
-  const hstabXML = wingGeom(
-    'HStab', 255,165,0,
-    xTail, 0, 0,
-    CrHS, CtHS, bHS/2, 15, 0, 0,
-    null,null, null,null,null,null,null,null,
-    17, 2, bHS, bHS*(CrHS+CtHS)/2, (CrHS+CtHS)/2
+  // ── 3. BOOM RODS (vertical cylinders, Y_Rotation=-90 → upward) ────────
+  // Diameter = boomDiam (0.25m), Length = boomLen (~0.81m)
+  // 4 booms total (2 pairs via XZ symmetry):
+  //   Pair A: mid-span at Y=bW/4
+  //   Pair B: wingtip  at Y=bW/2
+  //
+  // Y_Rotation = -90° makes the fuselage axis (normally +X) point to +Z (upward)
+  // so the boom bottom is at (rotX, yPos, 0) and top at (rotX, yPos, boomLen)
+  const boomSt = [
+    {p:0.00, W:boomDiam*0.15, H:boomDiam*0.15, tA: 90, bA: 90, tS:0.4, bS:0.4, ell:false, refLen:boomLen},
+    {p:0.15, W:boomDiam,      H:boomDiam,       tA:0,  bA:0,   tS:1.0, bS:1.0, ell:true,  refLen:boomLen},
+    {p:0.85, W:boomDiam,      H:boomDiam,       tA:0,  bA:0,   tS:1.0, bS:1.0, ell:true,  refLen:boomLen},
+    {p:1.00, W:boomDiam*0.15, H:boomDiam*0.15, tA:-90, bA:-90, tS:0.25,bS:0.25,ell:false, refLen:boomLen},
+  ];
+  // Mid-span booms (pair A — mirrors to -yMid)
+  const boomMidXML = fusGeom(
+    'Boom_MidSpan', 200,200,200,
+    rotX, yMid, 0,          // X at wing AC, Y at mid-span, Z at wing level
+    -90,                     // Y_Rotation=-90 → boom points upward (+Z)
+    boomLen, 2, boomSt, 8, 9
+  );
+  // Wingtip booms (pair B — mirrors to -yTip)
+  const boomTipXML = fusGeom(
+    'Boom_WingTip', 200,200,200,
+    rotX, yTip, 0,
+    -90,
+    boomLen, 2, boomSt, 8, 9
   );
 
-  // 4. VERTICAL FIN (X_Rotation=90° → span extends in +Z) ─────────
-  // Rooted at top of fuselage (Z=fD/2), extends upward
-  // No XZ symmetry (Sym=0) — single surface
-  const vfinXML = wingGeom(
-    'VFin', 255,165,0,
-    xTail, zVF, 90,
-    CrVF, CtVF, bVF, 30, 0, 0,
-    null,null, null,null,null,null,null,null,
-    13, 0, bVF, bVF*(CrVF+CtVF)/2, (CrVF+CtVF)/2
-  );
-
-  // 5. LIFT ROTORS — 4 total via 2 XZ-symmetric pairs ──────────────
-  // Y_Rotation=90° → disk plane horizontal → thrust in +Z (vertical lift)
-  // Pair A: mid-span (Y=bW/4 on each side = 2 rotors)
-  // Pair B: wingtip  (Y=bW/2 on each side = 2 rotors)
-  const liftRotA = diskGeom(
+  // ── 4. LIFT ROTORS at TOPS of BOOMS ────────────────────────────────────
+  // Z = boomLen (rotor hub is at top of boom)
+  // Y_Rotation=90 → disk plane horizontal → thrust in +Z
+  // Mid-span rotors (mirrors to -yMid → 2 total)
+  const rotMidXML = diskGeom(
     'LiftRotor_MidSpan', 255,0,0,
-    rotX, yMid, rotZ, 90, Drot, 2   // Sym=2 → mirrors to -yMid
+    rotX, yMid, rotZ,    // Z=boomLen
+    90, Drot, 2
   );
-  const liftRotB = diskGeom(
+  // Wingtip rotors (mirrors to -yTip → 2 total)
+  const rotTipXML = diskGeom(
     'LiftRotor_WingTip', 255,0,0,
-    rotX, yTip, rotZ, 90, Drot, 2   // Sym=2 → mirrors to -yTip
+    rotX, yTip, rotZ,
+    90, Drot, 2
   );
 
-  // 6. CRUISE PUSHER — single aft pusher prop ─────────────────────
-  // Y_Rotation=0° → disk plane vertical → thrust in +X
-  // No symmetry (Sym=0)
+  // ── 5. V-TAIL — from website sizing calculations ──────────────────────
+  // Uses SR.Cr_vt, SR.Ct_vt, SR.bvt_panel, SR.sweep_vt, p.vtGamma
+  // XZ symmetry creates both V-panels from single definition
+  // Dihedral = vtGamma: panels spread upward and outward
+  // Root at (xVtLE, 0, 0) — fuselage centreline
+  const vtailXML = wingGeom(
+    'VTail', 255,215,0,    // gold colour for V-tail
+    xVtLE, zVtRoot, 0,    // X at calculated LE position, Z=0 (fuselage CL)
+    CrVT, CtVT, bvt, swVT, vtG, 0,   // dihedral = vtGamma from sizing
+    17, 2,                 // tessW=17, XZ symmetric
+    bvt*2, bvt*(CrVT+CtVT)/2, (CrVT+CtVT)/2
+  );
+
+  // ── 6. CRUISE PUSHER (single aft prop, vertical disk → thrust +X) ──────
+  // Y_Rotation=0 → disk plane perpendicular to X axis → thrust in +X
   const cruiseXML = diskGeom(
     'CruiseProp', 0,200,0,
-    xPush, 0, zPush, 0, Drot*0.75, 0   // smaller cruise prop, no sym
+    xPush, 0, 0,
+    0, Drot*0.75, 0   // slightly smaller cruise prop, no symmetry
   );
 
-  // ── Assemble final VSP3 ─────────────────────────────────────────
+  // ── Assemble final VSP3 XML ────────────────────────────────────────────
   const xml = `<?xml version="1.0"?>
 <Vsp_Geometry>
   <Version>4</Version>
@@ -1573,19 +1518,22 @@ void Scale(double curr_scale )
     </ParmContainer>
 ${fusXML}
 ${wingXML}
-${hstabXML}
-${vfinXML}
-${liftRotA}
-${liftRotB}
+${boomMidXML}
+${boomTipXML}
+${rotMidXML}
+${rotTipXML}
+${vtailXML}
 ${cruiseXML}
   </Vehicle>
-  <!-- ═══════════════════════════════════════════════════════════════
+  <!-- ═══════════════════════════════════════════════════════════════════
        Trail-1 Lift+Cruise eVTOL  |  Wright State University
-       Dr. Darryl K. Ahner  |  Reference: joby_s2.vsp3 (MIT)
+       Dr. Darryl K. Ahner  |  Ref: joby_s2.vsp3 (MIT)
        MTOW: ${MTOW.toFixed(1)} kg  |  Wing: b=${bW.toFixed(2)} m  S=${SW.toFixed(2)} m²
-       CG: ${xCG.toFixed(3)} m  |  SM: ${(SM*100).toFixed(1)}% MAC
-       Config: mid-wing, H-tail+V-fin, 4 lift rotors + 1 cruise pusher
-  ═══════════════════════════════════════════════════════════════ -->
+       CG: ${xCG.toFixed(3)} m from nose  |  SM: ${(SM*100).toFixed(1)}% MAC
+       V-tail: Γ=${vtG.toFixed(1)}°  bvt=${bvt.toFixed(2)} m  Cr=${CrVT.toFixed(2)} m  Λ=${swVT.toFixed(1)}°
+       Booms: D=${boomDiam}m  L=${boomLen.toFixed(2)}m
+       Rotors: 4 lift (mid+tip) + 1 cruise pusher
+  ═══════════════════════════════════════════════════════════════════ -->
 </Vsp_Geometry>`;
 
   return xml;
