@@ -1598,7 +1598,7 @@ ${parm('Iyz', 0)}
 }
 
 
-
+function generateReport(p, SR, branding={}) {
   const fmt = (v, d=3) => (typeof v==="number" && isFinite(v)) ? v.toFixed(d) : "—";
   const now = new Date().toLocaleDateString("en-US",{year:"numeric",month:"long",day:"numeric"});
   const feasBadge = SR.feasible
