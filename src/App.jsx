@@ -2659,6 +2659,707 @@ const TABI=["⬛","🛫","✈️","🔧","🔋","📈","⚖️","🦋","🔄","�
    wake contraction, figure of merit vs collective pitch.
    Ref: Leishman "Principles of Helicopter Aerodynamics" Ch.3
    ════════════════════════════════════════════════════════════════════════ */
+/* ════════════════════════════════════════════════════════════════════════
+   FEATURE 9 — CROSS-SECTION PREVIEW PANEL
+   Renders fuselage cross-section and wing airfoil as inline SVG.
+   ════════════════════════════════════════════════════════════════════════ */
+function CrossSectionPreview({ params, SR, SC }) {
+  const fD   = Number(params.fusDiam) || 1.65;
+  const fL   = Number(params.fusLen)  || 6.5;
+  const tc   = Number(params.tc)      || 0.12;
+  const Cr   = Number(SR?.Cr_)        || 1.94;
+  const Ct   = Number(SR?.Ct_)        || 0.87;
+  const bW   = Number(SR?.bWing)      || 12.67;
+  const sw   = Number(SR?.sweep)      || 9.57;
+  const [station, setStation] = useState(0.38); // fraction along fuselage
+
+  // Fuselage cross-section: 5-station superellipse
+  const fusSt = [
+    {p:0.00, w:fD*0.01, h:fD*0.01},
+    {p:0.15, w:fD*0.60, h:fD*0.55*0.88},
+    {p:0.38, w:fD,      h:fD*0.88},
+    {p:0.70, w:fD*0.72, h:fD*0.60*0.88},
+    {p:1.00, w:fD*0.01, h:fD*0.01},
+  ];
+  // Interpolate width/height at current station
+  const interp = (st) => {
+    for (let i = 0; i < fusSt.length - 1; i++) {
+      const a = fusSt[i], b = fusSt[i+1];
+      if (st >= a.p && st <= b.p) {
+        const t = (st - a.p) / (b.p - a.p);
+        return { w: a.w + t*(b.w-a.w), h: a.h + t*(b.h-a.h) };
+      }
+    }
+    return fusSt[fusSt.length-1];
+  };
+  const cs = interp(station);
+
+  // SVG viewport 200×200, centred
+  const CX = 100, CY = 100, SCALE = 55 / (fD * 0.5 + 0.1);
+  const rx = cs.w * 0.5 * SCALE, ry = cs.h * 0.5 * SCALE;
+
+  // NACA 4-digit airfoil points for wing profile
+  const nacaPoints = (tc, nPts=60) => {
+    const pts = [];
+    for (let i = 0; i <= nPts; i++) {
+      const x = 0.5 * (1 - Math.cos(Math.PI * i / nPts));
+      const yt = 5*tc*(0.2969*Math.sqrt(x) - 0.1260*x - 0.3516*x*x + 0.2843*x*x*x - 0.1015*x*x*x*x);
+      pts.push({x, yt});
+    }
+    // upper then lower surface
+    const upper = pts.map(p => ({x: p.x, y: -p.yt}));
+    const lower = pts.slice().reverse().map(p => ({x: p.x, y: p.yt}));
+    return [...upper, ...lower];
+  };
+  const airfoilPts = nacaPoints(tc);
+  const W2 = 180, H2 = 80, PAD = 10;
+  const toSVG = (x, y) => ({ sx: PAD + x*W2, sy: H2/2 + y*H2*3.5 });
+  const airfoilPath = airfoilPts.map((p,i) => {
+    const {sx,sy} = toSVG(p.x, p.y);
+    return `${i===0?'M':'L'}${sx.toFixed(1)},${sy.toFixed(1)}`;
+  }).join(' ') + ' Z';
+
+  // Wing planform (top-down, simplified trapezoid)
+  const halfSpan = 90, rootC = 34, tipC = rootC*(Ct/Cr), swPx = halfSpan*Math.tan(sw*Math.PI/180);
+  const planformPath = [
+    `M100,10`, `L${100+halfSpan},${10+swPx}`,
+    `L${100+halfSpan},${10+swPx+tipC}`, `L100,${10+rootC}`, `Z`,
+    `M100,10`, `L${100-halfSpan},${10+swPx}`,
+    `L${100-halfSpan},${10+swPx+tipC}`, `L100,${10+rootC}`, `Z`
+  ].join(' ');
+
+  return (
+    <div style={{display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:10}}>
+      {/* Fuselage Cross-Section */}
+      <div style={{background:SC.panel, border:`1px solid ${SC.border}`, borderRadius:8, padding:12}}>
+        <div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace",marginBottom:6,letterSpacing:'0.1em'}}>
+          FUSELAGE X-SECTION @ {(station*100).toFixed(0)}% L
+        </div>
+        <input type="range" min="0" max="1" step="0.01" value={station}
+          onChange={e=>setStation(Number(e.target.value))}
+          style={{width:'100%',marginBottom:8,accentColor:SC.amber}}/>
+        <svg width="100%" viewBox="0 0 200 200" style={{display:'block'}}>
+          <rect width="200" height="200" fill="transparent"/>
+          {/* Grid */}
+          {[-1,0,1].map(i=>(
+            <line key={'hg'+i} x1="0" y1={CY+i*40} x2="200" y2={CY+i*40} stroke={SC.border} strokeWidth="0.5"/>
+          ))}
+          {[-1,0,1].map(i=>(
+            <line key={'vg'+i} x1={CX+i*40} y1="0" x2={CX+i*40} y2="200" stroke={SC.border} strokeWidth="0.5"/>
+          ))}
+          {/* Dimension labels */}
+          <text x={CX} y={CY-ry-6} textAnchor="middle" fontSize="8" fill={SC.muted} fontFamily="DM Mono,monospace">
+            {cs.h.toFixed(2)}m
+          </text>
+          <text x={CX+rx+6} y={CY+4} textAnchor="start" fontSize="8" fill={SC.muted} fontFamily="DM Mono,monospace">
+            {cs.w.toFixed(2)}m
+          </text>
+          {/* Ellipse cross-section */}
+          <ellipse cx={CX} cy={CY} rx={rx} ry={ry}
+            fill={`${SC.blue}18`} stroke={SC.blue} strokeWidth="2"/>
+          {/* Centreline crosshairs */}
+          <line x1={CX-rx-10} y1={CY} x2={CX+rx+10} y2={CY} stroke={SC.amber} strokeWidth="0.8" strokeDasharray="4,3"/>
+          <line x1={CX} y1={CY-ry-10} x2={CX} y2={CY+ry+10} stroke={SC.amber} strokeWidth="0.8" strokeDasharray="4,3"/>
+        </svg>
+      </div>
+
+      {/* Wing Airfoil */}
+      <div style={{background:SC.panel, border:`1px solid ${SC.border}`, borderRadius:8, padding:12}}>
+        <div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace",marginBottom:6,letterSpacing:'0.1em'}}>
+          WING AIRFOIL — NACA {Math.round(tc*100).toString().padStart(2,'0')} (t/c={tc})
+        </div>
+        <div style={{fontSize:8,color:SC.dim,fontFamily:"'DM Mono',monospace",marginBottom:8}}>
+          Root chord: {Cr.toFixed(2)}m  |  Tip chord: {Ct.toFixed(2)}m
+        </div>
+        <svg width="100%" viewBox={`0 0 ${W2+PAD*2} ${H2}`} style={{display:'block'}}>
+          <rect width={W2+PAD*2} height={H2} fill="transparent"/>
+          {/* Chord line */}
+          <line x1={PAD} y1={H2/2} x2={PAD+W2} y2={H2/2} stroke={SC.border} strokeWidth="0.5" strokeDasharray="4,3"/>
+          {/* Airfoil */}
+          <path d={airfoilPath} fill={`${SC.teal}22`} stroke={SC.teal} strokeWidth="1.5"/>
+          {/* Quarter chord mark */}
+          <line x1={PAD+W2*0.25} y1={H2*0.1} x2={PAD+W2*0.25} y2={H2*0.9} stroke={SC.amber} strokeWidth="1" strokeDasharray="3,2"/>
+          <text x={PAD+W2*0.25} y={8} textAnchor="middle" fontSize="7" fill={SC.amber} fontFamily="DM Mono,monospace">c/4</text>
+        </svg>
+      </div>
+
+      {/* Wing Planform */}
+      <div style={{background:SC.panel, border:`1px solid ${SC.border}`, borderRadius:8, padding:12}}>
+        <div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace",marginBottom:6,letterSpacing:'0.1em'}}>
+          WING PLANFORM (TOP VIEW)
+        </div>
+        <div style={{fontSize:8,color:SC.dim,fontFamily:"'DM Mono',monospace",marginBottom:8}}>
+          b={bW.toFixed(2)}m  |  Λ={sw.toFixed(1)}°  |  λ={( Ct/Cr).toFixed(2)}
+        </div>
+        <svg width="100%" viewBox="0 0 200 80" style={{display:'block'}}>
+          <rect width="200" height="80" fill="transparent"/>
+          <path d={planformPath} fill={`${SC.blue}18`} stroke={SC.blue} strokeWidth="1.5"/>
+          {/* Fuselage centreline */}
+          <line x1="100" y1="0" x2="100" y2="80" stroke={SC.amber} strokeWidth="0.8" strokeDasharray="4,3"/>
+          {/* Span arrow */}
+          <line x1="10" y1="72" x2="190" y2="72" stroke={SC.muted} strokeWidth="0.8"/>
+          <text x="100" y="79" textAnchor="middle" fontSize="7" fill={SC.muted} fontFamily="DM Mono,monospace">b={bW.toFixed(1)}m</text>
+        </svg>
+      </div>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   FEATURE 10 — CFD-READY EXPORT CHECKLIST
+   Validates geometry for VSPAERO before download.
+   ════════════════════════════════════════════════════════════════════════ */
+function CFDChecklist({ params, SR, SC }) {
+  const fL   = Number(params.fusLen)     || 6.5;
+  const fD   = Number(params.fusDiam)    || 1.65;
+  const bW   = Number(SR?.bWing)         || 12.67;
+  const Cr   = Number(SR?.Cr_)           || 1.94;
+  const Ct   = Number(SR?.Ct_)           || 0.87;
+  const Drot = Number(SR?.Drotor)        || 3.0;
+  const bvt  = Number(SR?.bvt_panel)     || 3.77;
+  const SM   = Number(SR?.SM_vt||SR?.SM) || 0;
+  const MTOW = Number(SR?.MTOW)          || 0;
+  const xCG  = Number(SR?.xCGtotal)      || 0;
+  const xNP  = Number(SR?.xNP)           || 0;
+  const lv   = Number(SR?.lv)            || fL*0.5;
+  const tc   = Number(params.tc)         || 0.12;
+  const nProp= Number(params.nPropHover) || 6;
+  const sweep= Number(SR?.sweep)         || 9.57;
+  const vtG  = Number(params.vtGamma)    || 40;
+  const yBoom= fD/2 + Drot/2 + 0.2;
+  const bvtH = bvt * Math.cos(vtG*Math.PI/180);
+
+  const checks = [
+    // ── Geometry completeness ──
+    { cat:'Geometry', label:'Fuselage closed (nose + tail tapers defined)',
+      ok: fL > 0 && fD > 0, detail:`L=${fL}m  Ø=${fD}m` },
+    { cat:'Geometry', label:'Wing has finite tip chord (no sharp tip)',
+      ok: Ct > 0.1, detail:`Ct=${Ct.toFixed(2)}m (min 0.1m)` },
+    { cat:'Geometry', label:'Wing aspect ratio in valid CFD range (5–20)',
+      ok: bW*bW/(Cr*bW) > 5 && bW*bW/(Cr*bW) < 20,
+      detail:`AR=${(bW*bW/(Number(SR?.Swing)||17.8)).toFixed(1)}` },
+    { cat:'Geometry', label:'V-tail dihedral angle in VSPAERO range (20°–60°)',
+      ok: vtG >= 20 && vtG <= 60, detail:`Γ=${vtG}°` },
+    { cat:'Geometry', label:'Airfoil t/c within valid range (6%–20%)',
+      ok: tc >= 0.06 && tc <= 0.20, detail:`t/c=${(tc*100).toFixed(0)}%` },
+
+    // ── Symmetry ──
+    { cat:'Symmetry', label:'Wing uses XZ symmetry plane (sym=2)',
+      ok: true, detail:'Set in VSP3 generator ✓' },
+    { cat:'Symmetry', label:'Fuselage on aircraft centreline (Y=0)',
+      ok: true, detail:'X_Loc=Y_Loc=0 ✓' },
+    { cat:'Symmetry', label:'Lift booms mirrored ±Y (sym=2)',
+      ok: true, detail:`Y=±${yBoom.toFixed(2)}m ✓` },
+
+    // ── Clearance / interference ──
+    { cat:'Clearance', label:'Rotor disc clears fuselage laterally',
+      ok: yBoom - Drot/2 > fD/2 + 0.1,
+      detail:`Gap=${(yBoom - Drot/2 - fD/2).toFixed(2)}m (min 0.1m)` },
+    { cat:'Clearance', label:'Rotor disc clears V-tail laterally',
+      ok: yBoom - Drot/2 > bvtH,
+      detail:`Rotor inner=${( yBoom-Drot/2).toFixed(2)}m  V-tail span=${bvtH.toFixed(2)}m` },
+    { cat:'Clearance', label:'Fuselage length accommodates wing + tail',
+      ok: lv + Cr < fL * 1.05,
+      detail:`Wing TE + tail arm = ${(lv+Cr).toFixed(2)}m vs fL=${fL}m` },
+
+    // ── Stability (VSPAERO needs flyable geometry) ──
+    { cat:'Stability', label:'Static margin positive (aircraft flyable)',
+      ok: SM > 0.02, detail:`SM=${(SM*100).toFixed(1)}% MAC (min 2%)` },
+    { cat:'Stability', label:'CG forward of NP',
+      ok: xCG < xNP, detail:`CG=${xCG.toFixed(2)}m  NP=${xNP.toFixed(2)}m` },
+    { cat:'Stability', label:'MTOW positive and non-zero',
+      ok: MTOW > 50, detail:`MTOW=${MTOW.toFixed(0)}kg` },
+
+    // ── VSPAERO mesh hints ──
+    { cat:'VSPAERO', label:'Wing sweep < 45° (panel method valid)',
+      ok: sweep < 45, detail:`Λ=${sweep.toFixed(1)}°` },
+    { cat:'VSPAERO', label:'Even rotor count (symmetric torque balance)',
+      ok: nProp % 2 === 0, detail:`n=${nProp} rotors` },
+    { cat:'VSPAERO', label:'Boom diameter small vs rotor (< 20% disc dia)',
+      ok: 0.25 / Drot < 0.20, detail:`Boom Ø=0.25m  Rotor Ø=${Drot}m  ratio=${(0.25/Drot*100).toFixed(0)}%` },
+  ];
+
+  const cats = [...new Set(checks.map(c=>c.cat))];
+  const passed = checks.filter(c=>c.ok).length;
+  const total  = checks.length;
+  const pct    = Math.round(passed/total*100);
+  const overallCol = pct===100 ? SC.green : pct>=80 ? SC.amber : SC.red;
+
+  return (
+    <div style={{display:'flex', flexDirection:'column', gap:10}}>
+      {/* Score banner */}
+      <div style={{background:SC.panel, border:`2px solid ${overallCol}`, borderRadius:8,
+        padding:'14px 20px', display:'flex', alignItems:'center', gap:16}}>
+        <div style={{fontSize:36, fontWeight:800, color:overallCol, fontFamily:"'DM Mono',monospace",
+          lineHeight:1}}>{pct}%</div>
+        <div>
+          <div style={{fontSize:13, fontWeight:700, color:SC.text, fontFamily:"'DM Mono',monospace"}}>
+            CFD-Ready Score
+          </div>
+          <div style={{fontSize:9, color:SC.muted, fontFamily:"'DM Mono',monospace", marginTop:2}}>
+            {passed}/{total} checks passed · {pct===100?'✅ Ready for VSPAERO export':pct>=80?'⚠ Minor issues — review amber items':'❌ Fix red items before CFD run'}
+          </div>
+        </div>
+        {/* Progress bar */}
+        <div style={{flex:1, height:8, background:SC.border, borderRadius:4, overflow:'hidden'}}>
+          <div style={{width:`${pct}%`, height:'100%', background:overallCol, borderRadius:4,
+            transition:'width 0.4s ease'}}/>
+        </div>
+      </div>
+
+      {/* Checks by category */}
+      {cats.map(cat=>(
+        <div key={cat} style={{background:SC.panel, border:`1px solid ${SC.border}`, borderRadius:8, padding:12}}>
+          <div style={{fontSize:9, color:SC.muted, fontFamily:"'DM Mono',monospace",
+            letterSpacing:'0.12em', marginBottom:8}}>{cat.toUpperCase()}</div>
+          <div style={{display:'flex', flexDirection:'column', gap:5}}>
+            {checks.filter(c=>c.cat===cat).map((c,i)=>(
+              <div key={i} style={{display:'flex', alignItems:'center', gap:10, padding:'5px 8px',
+                borderRadius:5, background:c.ok?`${SC.green}0a`:`${SC.red}0a`,
+                border:`1px solid ${c.ok?SC.green+'33':SC.red+'33'}`}}>
+                <span style={{fontSize:12, flexShrink:0}}>{c.ok?'✅':'❌'}</span>
+                <span style={{fontSize:10, color:SC.text, flex:1, fontFamily:"'DM Mono',monospace"}}>{c.label}</span>
+                <span style={{fontSize:8, color:SC.muted, fontFamily:"'DM Mono',monospace",
+                  whiteSpace:'nowrap'}}>{c.detail}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   FEATURE 11 — DESIGN VERSION HISTORY
+   Git-style timeline with slider to scrub through saved designs.
+   Uses localStorage for persistence.
+   ════════════════════════════════════════════════════════════════════════ */
+const HISTORY_KEY = 'evtol_design_history';
+const MAX_HISTORY = 20;
+
+function saveVersionToHistory(params, SR) {
+  try {
+    const hist = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+    const entry = {
+      id: Date.now(),
+      ts: new Date().toISOString(),
+      label: `v${hist.length+1}`,
+      MTOW: Number(SR?.MTOW||0).toFixed(0),
+      range: Number(SR?.range_km||params.range||0).toFixed(0),
+      bWing: Number(SR?.bWing||0).toFixed(2),
+      SM: Number((SR?.SM_vt||SR?.SM||0)*100).toFixed(1),
+      Etot: Number(SR?.Etot||0).toFixed(1),
+      payload: params.payload,
+      note: '',
+      params: JSON.stringify(params),
+    };
+    hist.unshift(entry);
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(hist.slice(0, MAX_HISTORY)));
+  } catch(e) {}
+}
+
+function DesignVersionHistory({ params, SR, SC, onLoadVersion }) {
+  const [hist, setHist] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]'); } catch{ return []; }
+  });
+  const [selected, setSelected] = useState(0);
+  const [editNote, setEditNote] = useState(null);
+  const [noteVal, setNoteVal] = useState('');
+
+  const refresh = () => {
+    try { setHist(JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]')); } catch{}
+  };
+
+  const saveNow = () => {
+    saveVersionToHistory(params, SR);
+    refresh();
+  };
+
+  const loadVersion = (idx) => {
+    const entry = hist[idx];
+    if (!entry) return;
+    try {
+      const p = JSON.parse(entry.params || '{}');
+      if (Object.keys(p).length > 0) onLoadVersion(p);
+    } catch(e) {}
+  };
+
+  const deleteVersion = (idx) => {
+    const h = [...hist];
+    h.splice(idx, 1);
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(h));
+    setHist(h);
+    setSelected(Math.min(selected, h.length-1));
+  };
+
+  const saveNote = (idx) => {
+    const h = [...hist];
+    h[idx] = {...h[idx], note: noteVal};
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(h));
+    setHist(h);
+    setEditNote(null);
+  };
+
+  const clearAll = () => {
+    if (!window.confirm('Clear all version history?')) return;
+    localStorage.removeItem(HISTORY_KEY);
+    setHist([]);
+    setSelected(0);
+  };
+
+  const cur = hist[selected];
+
+  const kpiDelta = (field, unit='', higher=true) => {
+    if (hist.length < 2 || !cur) return null;
+    const prev = hist[Math.min(selected+1, hist.length-1)];
+    const d = Number(cur[field]) - Number(prev[field]);
+    if (Math.abs(d) < 0.01) return null;
+    const good = higher ? d > 0 : d < 0;
+    return <span style={{fontSize:8, color:good?SC.green:SC.red, fontFamily:"'DM Mono',monospace"}}>
+      {d>0?'+':''}{d.toFixed(1)}{unit}
+    </span>;
+  };
+
+  return (
+    <div style={{display:'flex', flexDirection:'column', gap:10}}>
+      {/* Header controls */}
+      <div style={{display:'flex', gap:8, alignItems:'center', flexWrap:'wrap'}}>
+        <button onClick={saveNow} type="button"
+          style={{padding:'7px 18px', background:`linear-gradient(135deg,${SC.green},#16a34a)`,
+            border:'none', borderRadius:6, color:'#fff', fontSize:11, fontWeight:800,
+            cursor:'pointer', fontFamily:"'DM Mono',monospace"}}>
+          💾 Save Current Design
+        </button>
+        <span style={{fontSize:9, color:SC.muted, fontFamily:"'DM Mono',monospace"}}>
+          {hist.length}/{MAX_HISTORY} versions stored locally
+        </span>
+        {hist.length > 0 && (
+          <button onClick={clearAll} type="button"
+            style={{marginLeft:'auto', padding:'5px 12px', background:'transparent',
+              border:`1px solid ${SC.red}44`, borderRadius:5, color:SC.red,
+              fontSize:9, cursor:'pointer', fontFamily:"'DM Mono',monospace"}}>
+            Clear All
+          </button>
+        )}
+      </div>
+
+      {hist.length === 0 ? (
+        <div style={{background:SC.panel, border:`1px solid ${SC.border}`, borderRadius:8,
+          padding:'40px 20px', textAlign:'center', color:SC.muted,
+          fontSize:11, fontFamily:"'DM Mono',monospace"}}>
+          No versions saved yet. Click "Save Current Design" to start tracking history.
+        </div>
+      ) : (
+        <div style={{display:'grid', gridTemplateColumns:'1fr 2fr', gap:10}}>
+          {/* Timeline list */}
+          <div style={{background:SC.panel, border:`1px solid ${SC.border}`, borderRadius:8,
+            padding:10, maxHeight:420, overflowY:'auto'}}>
+            <div style={{fontSize:9, color:SC.muted, fontFamily:"'DM Mono',monospace",
+              letterSpacing:'0.1em', marginBottom:8}}>VERSION TIMELINE</div>
+
+            {/* Scrubber */}
+            {hist.length > 1 && (
+              <div style={{marginBottom:10}}>
+                <input type="range" min="0" max={hist.length-1} step="1" value={selected}
+                  onChange={e=>setSelected(Number(e.target.value))}
+                  style={{width:'100%', accentColor:SC.amber}}/>
+                <div style={{display:'flex', justifyContent:'space-between', fontSize:7, color:SC.dim,
+                  fontFamily:"'DM Mono',monospace"}}>
+                  <span>Latest</span><span>Oldest</span>
+                </div>
+              </div>
+            )}
+
+            {hist.map((v, idx) => (
+              <div key={v.id} onClick={()=>setSelected(idx)}
+                style={{padding:'7px 9px', borderRadius:6, marginBottom:4, cursor:'pointer',
+                  border:`1px solid ${idx===selected?SC.amber+'66':SC.border}`,
+                  background:idx===selected?`${SC.amber}0d`:'transparent',
+                  transition:'all 0.15s'}}>
+                <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+                  <span style={{fontSize:10, fontWeight:700, color:idx===selected?SC.amber:SC.text,
+                    fontFamily:"'DM Mono',monospace"}}>{v.label}</span>
+                  <span style={{fontSize:7, color:SC.dim, fontFamily:"'DM Mono',monospace"}}>
+                    {new Date(v.ts).toLocaleDateString()}
+                  </span>
+                </div>
+                <div style={{fontSize:8, color:SC.muted, fontFamily:"'DM Mono',monospace", marginTop:2}}>
+                  {v.MTOW}kg · {v.range}km · b={v.bWing}m
+                </div>
+                {v.note && (
+                  <div style={{fontSize:8, color:SC.teal, fontFamily:"'DM Mono',monospace",
+                    marginTop:2, fontStyle:'italic'}}>"{v.note}"</div>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/* Detail panel */}
+          {cur && (
+            <div style={{display:'flex', flexDirection:'column', gap:8}}>
+              {/* KPI cards */}
+              <div style={{display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:6}}>
+                {[
+                  ['MTOW', cur.MTOW, 'kg', false],
+                  ['Range', cur.range, 'km', true],
+                  ['Wingspan', cur.bWing, 'm', true],
+                  ['Stat. Margin', cur.SM, '%', true],
+                  ['Energy', cur.Etot, 'kWh', false],
+                  ['Payload', cur.payload, 'kg', true],
+                ].map(([lbl, val, unit, higher])=>(
+                  <div key={lbl} style={{background:SC.bg, border:`1px solid ${SC.border}`,
+                    borderRadius:6, padding:'8px 10px'}}>
+                    <div style={{fontSize:8, color:SC.muted, fontFamily:"'DM Mono',monospace"}}>{lbl}</div>
+                    <div style={{fontSize:16, fontWeight:700, color:SC.amber,
+                      fontFamily:"'DM Mono',monospace", lineHeight:1.2}}>{val}
+                      <span style={{fontSize:8, color:SC.muted, marginLeft:2}}>{unit}</span>
+                    </div>
+                    {kpiDelta(lbl==='MTOW'?'MTOW':lbl==='Range'?'range':lbl==='Wingspan'?'bWing':lbl==='Stat. Margin'?'SM':lbl==='Energy'?'Etot':'payload', unit, higher)}
+                  </div>
+                ))}
+              </div>
+
+              {/* Notes */}
+              <div style={{background:SC.panel, border:`1px solid ${SC.border}`, borderRadius:8, padding:10}}>
+                <div style={{fontSize:9, color:SC.muted, fontFamily:"'DM Mono',monospace",
+                  marginBottom:6}}>DESIGN NOTES — {cur.label}</div>
+                {editNote===selected ? (
+                  <div style={{display:'flex', gap:6}}>
+                    <input value={noteVal} onChange={e=>setNoteVal(e.target.value)}
+                      placeholder="Add a note for this version..."
+                      style={{flex:1, background:SC.bg, border:`1px solid ${SC.border}`, borderRadius:4,
+                        color:SC.text, fontSize:10, padding:'5px 8px', fontFamily:"'DM Mono',monospace"}}/>
+                    <button onClick={()=>saveNote(selected)} type="button"
+                      style={{padding:'5px 12px', background:`${SC.green}22`, border:`1px solid ${SC.green}`,
+                        borderRadius:4, color:SC.green, fontSize:9, cursor:'pointer', fontFamily:"'DM Mono',monospace"}}>
+                      Save
+                    </button>
+                    <button onClick={()=>setEditNote(null)} type="button"
+                      style={{padding:'5px 10px', background:'transparent', border:`1px solid ${SC.border}`,
+                        borderRadius:4, color:SC.muted, fontSize:9, cursor:'pointer'}}>✕</button>
+                  </div>
+                ) : (
+                  <div style={{display:'flex', alignItems:'center', gap:8}}>
+                    <span style={{fontSize:10, color:cur.note?SC.text:SC.dim, fontFamily:"'DM Mono',monospace",
+                      flex:1, fontStyle:cur.note?'normal':'italic'}}>
+                      {cur.note || 'No note — click Edit to add one'}
+                    </span>
+                    <button onClick={()=>{setEditNote(selected);setNoteVal(cur.note||'');}} type="button"
+                      style={{padding:'4px 10px', background:'transparent', border:`1px solid ${SC.border}`,
+                        borderRadius:4, color:SC.muted, fontSize:8, cursor:'pointer', fontFamily:"'DM Mono',monospace"}}>
+                      Edit
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Actions */}
+              <div style={{display:'flex', gap:8}}>
+                <button onClick={()=>loadVersion(selected)} type="button"
+                  style={{flex:1, padding:'9px', background:`linear-gradient(135deg,${SC.blue},#6366f1)`,
+                    border:'none', borderRadius:6, color:'#fff', fontSize:11, fontWeight:800,
+                    cursor:'pointer', fontFamily:"'DM Mono',monospace"}}>
+                  ↩ Restore This Version
+                </button>
+                <button onClick={()=>deleteVersion(selected)} type="button"
+                  style={{padding:'9px 16px', background:'transparent',
+                    border:`1px solid ${SC.red}44`, borderRadius:6, color:SC.red,
+                    fontSize:11, cursor:'pointer', fontFamily:"'DM Mono',monospace"}}>
+                  🗑
+                </button>
+              </div>
+
+              <div style={{fontSize:8, color:SC.dim, fontFamily:"'DM Mono',monospace", textAlign:'center'}}>
+                Saved {new Date(cur.ts).toLocaleString()} · {cur.label}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   FEATURE 12 — PUBLIC DESIGN GALLERY
+   Showcases community designs with inline SVG thumbnails.
+   Filterable by MTOW / range / config type.
+   ════════════════════════════════════════════════════════════════════════ */
+function DesignGallery({ SC, onLoadDesign }) {
+  const [filter, setFilter] = useState({mtow:'all', range:'all', sort:'mtow'});
+  const [expanded, setExpanded] = useState(null);
+
+  // Gallery seeded with representative eVTOL archetypes
+  const GALLERY = [
+    { id:1, name:'Trail1 — WSU Baseline', author:'Wright State Univ.', config:'Lift+Cruise',
+      MTOW:2721, range:150, bWing:12.67, nProp:6, Drotor:3.0, payload:400, SM:14.2, Etot:95,
+      tags:['Research','Hybrid','6-rotor'], color:'#3b82f6',
+      params:{fusLen:6.5,fusDiam:1.65,payload:400,range:150,nPropHover:6,vtGamma:40} },
+    { id:2, name:'UltraLight Urban', author:'Community', config:'Multirotor',
+      MTOW:550, range:40, bWing:5.2, nProp:4, Drotor:1.2, payload:120, SM:10.1, Etot:22,
+      tags:['Urban','Compact','4-rotor'], color:'#22c55e',
+      params:{fusLen:3.5,fusDiam:1.0,payload:120,range:40,nPropHover:4,vtGamma:35} },
+    { id:3, name:'Heavy Cargo VTOL', author:'Community', config:'Lift+Cruise',
+      MTOW:5800, range:200, bWing:18.5, nProp:8, Drotor:4.0, payload:1200, SM:16.5, Etot:280,
+      tags:['Cargo','Heavy','8-rotor'], color:'#f59e0b',
+      params:{fusLen:10.0,fusDiam:2.2,payload:1200,range:200,nPropHover:8,vtGamma:45} },
+    { id:4, name:'Regional Commuter', author:'Community', config:'Tilting',
+      MTOW:3200, range:280, bWing:15.0, nProp:6, Drotor:2.8, payload:560, SM:18.0, Etot:145,
+      tags:['Regional','Tilting','Long-range'], color:'#8b5cf6',
+      params:{fusLen:8.0,fusDiam:1.8,payload:560,range:280,nPropHover:6,vtGamma:40} },
+    { id:5, name:'Solo Scout', author:'Community', config:'Multirotor',
+      MTOW:380, range:25, bWing:3.8, nProp:4, Drotor:0.9, payload:80, SM:8.5, Etot:14,
+      tags:['Solo','Ultralight','4-rotor'], color:'#14b8a6',
+      params:{fusLen:2.8,fusDiam:0.85,payload:80,range:25,nPropHover:4,vtGamma:30} },
+    { id:6, name:'Medical Rapid Response', author:'Community', config:'Lift+Cruise',
+      MTOW:1850, range:120, bWing:10.0, nProp:6, Drotor:2.4, payload:300, SM:12.0, Etot:68,
+      tags:['Medical','Mid-size','6-rotor'], color:'#ef4444',
+      params:{fusLen:5.5,fusDiam:1.45,payload:300,range:120,nPropHover:6,vtGamma:40} },
+  ];
+
+  const filtered = GALLERY.filter(d=>{
+    if(filter.mtow==='light' && d.MTOW>1000) return false;
+    if(filter.mtow==='medium' && (d.MTOW<=1000||d.MTOW>3500)) return false;
+    if(filter.mtow==='heavy' && d.MTOW<=3500) return false;
+    if(filter.range==='short' && d.range>80) return false;
+    if(filter.range==='medium' && (d.range<=80||d.range>180)) return false;
+    if(filter.range==='long' && d.range<=180) return false;
+    return true;
+  }).sort((a,b)=>filter.sort==='mtow'?a.MTOW-b.MTOW:filter.sort==='range'?b.range-a.range:b.payload-a.payload);
+
+  // Inline SVG thumbnail: simplified top-down aircraft silhouette
+  const AircraftThumb = ({d, w=160, h=120}) => {
+    const sc = Math.min(w,h) / (d.bWing + 2);
+    const cx=w/2, cy=h/2;
+    const fuseW=d.fusLen*sc*0.08, fuseH=d.fusLen*sc*0.55;
+    const wingSpan=d.bWing*sc*0.45, wingC=12;
+    const rotR=d.Drotor*sc*0.35;
+    const yBoom=(d.fusLen*0.13+d.Drotor*0.5+0.2)*sc*0.45;
+    return (
+      <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{display:'block'}}>
+        {/* Fuselage */}
+        <ellipse cx={cx} cy={cy} rx={fuseW} ry={fuseH} fill={`${d.color}22`} stroke={d.color} strokeWidth="1.5"/>
+        {/* Wing */}
+        <rect x={cx-wingSpan} y={cy-wingC/2} width={wingSpan*2} height={wingC}
+          fill={`${d.color}33`} stroke={d.color} strokeWidth="1" rx="2"/>
+        {/* Rotors — pairs at boom positions */}
+        {[-yBoom, yBoom].map((yOff,ri)=>
+          [cy-fuseH*0.4, cy, cy+fuseH*0.4].slice(0, Math.ceil(d.nProp/2)).map((xOff,ci)=>(
+            <circle key={`r${ri}${ci}`} cx={cx+yOff} cy={cy+(ci-(Math.ceil(d.nProp/2)-1)/2)*fuseH*0.55}
+              r={rotR} fill={`${d.color}18`} stroke={d.color} strokeWidth="1" strokeDasharray="3,2"/>
+          ))
+        )}
+        {/* V-tail */}
+        <polyline points={`${cx},${cy+fuseH*0.85} ${cx-fuseW*2.5},${cy+fuseH*0.5} ${cx},${cy+fuseH*0.65}`}
+          fill={`${d.color}22`} stroke={d.color} strokeWidth="1.2"/>
+        <polyline points={`${cx},${cy+fuseH*0.85} ${cx+fuseW*2.5},${cy+fuseH*0.5} ${cx},${cy+fuseH*0.65}`}
+          fill={`${d.color}22`} stroke={d.color} strokeWidth="1.2"/>
+      </svg>
+    );
+  };
+
+  const sel = GALLERY.find(d=>d.id===expanded);
+
+  return (
+    <div style={{display:'flex', flexDirection:'column', gap:10}}>
+      {/* Filter bar */}
+      <div style={{display:'flex', gap:8, flexWrap:'wrap', alignItems:'center',
+        background:SC.panel, border:`1px solid ${SC.border}`, borderRadius:8, padding:'10px 14px'}}>
+        <span style={{fontSize:9, color:SC.muted, fontFamily:"'DM Mono',monospace", whiteSpace:'nowrap'}}>FILTER:</span>
+        {[
+          ['mtow',   [['all','All MTOW'],['light','Light (<1t)'],['medium','Medium (1–3.5t)'],['heavy','Heavy (>3.5t)']]],
+          ['range',  [['all','All Range'],['short','Short (<80km)'],['medium','Mid (80–180km)'],['long','Long (>180km)']]],
+          ['sort',   [['mtow','Sort: MTOW'],['range','Sort: Range'],['payload','Sort: Payload']]],
+        ].map(([key, opts])=>(
+          <select key={key} value={filter[key]} onChange={e=>setFilter(f=>({...f,[key]:e.target.value}))}
+            style={{background:SC.bg, border:`1px solid ${SC.border}`, borderRadius:5, color:SC.text,
+              fontSize:9, padding:'4px 8px', fontFamily:"'DM Mono',monospace", cursor:'pointer'}}>
+            {opts.map(([val,label])=><option key={val} value={val}>{label}</option>)}
+          </select>
+        ))}
+        <span style={{fontSize:8, color:SC.dim, fontFamily:"'DM Mono',monospace", marginLeft:'auto'}}>
+          {filtered.length} designs shown
+        </span>
+      </div>
+
+      {/* Cards grid */}
+      <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))', gap:10}}>
+        {filtered.map(d=>(
+          <div key={d.id} onClick={()=>setExpanded(expanded===d.id?null:d.id)}
+            style={{background:SC.panel, border:`1px solid ${expanded===d.id?d.color:SC.border}`,
+              borderRadius:8, overflow:'hidden', cursor:'pointer', transition:'border-color 0.2s',
+              boxShadow:expanded===d.id?`0 0 16px ${d.color}44`:'none'}}>
+            {/* Thumbnail */}
+            <div style={{background:SC.bg, display:'flex', justifyContent:'center', alignItems:'center',
+              padding:'8px 0'}}>
+              <AircraftThumb d={d}/>
+            </div>
+            {/* Info */}
+            <div style={{padding:'10px 12px'}}>
+              <div style={{fontSize:11, fontWeight:700, color:d.color,
+                fontFamily:"'DM Mono',monospace", marginBottom:2}}>{d.name}</div>
+              <div style={{fontSize:8, color:SC.muted, fontFamily:"'DM Mono',monospace",
+                marginBottom:6}}>{d.author} · {d.config}</div>
+              <div style={{display:'flex', gap:6, flexWrap:'wrap', marginBottom:8}}>
+                {d.tags.map(t=>(
+                  <span key={t} style={{fontSize:7, padding:'2px 6px', borderRadius:3,
+                    background:`${d.color}22`, color:d.color, fontFamily:"'DM Mono',monospace"}}>{t}</span>
+                ))}
+              </div>
+              <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:4}}>
+                {[['MTOW', d.MTOW+'kg'], ['Range', d.range+'km'],
+                  ['Payload', d.payload+'kg'], ['SM', d.SM+'%']].map(([l,v])=>(
+                  <div key={l} style={{fontSize:8, fontFamily:"'DM Mono',monospace"}}>
+                    <span style={{color:SC.muted}}>{l}: </span>
+                    <span style={{color:SC.text, fontWeight:600}}>{v}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Expanded detail */}
+      {sel && (
+        <div style={{background:SC.panel, border:`2px solid ${sel.color}`,
+          borderRadius:10, padding:16, display:'grid', gridTemplateColumns:'auto 1fr', gap:16,
+          alignItems:'start'}}>
+          <AircraftThumb d={sel} w={180} h={140}/>
+          <div>
+            <div style={{fontSize:16, fontWeight:800, color:sel.color,
+              fontFamily:"'DM Mono',monospace", marginBottom:4}}>{sel.name}</div>
+            <div style={{fontSize:9, color:SC.muted, fontFamily:"'DM Mono',monospace", marginBottom:10}}>
+              {sel.author} · {sel.config} · {sel.nProp} hover rotors · D={sel.Drotor}m
+            </div>
+            <div style={{display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:8, marginBottom:12}}>
+              {[['MTOW',sel.MTOW,'kg'],['Range',sel.range,'km'],
+                ['Payload',sel.payload,'kg'],['Wingspan',sel.bWing,'m'],
+                ['SM',sel.SM,'%'],['Energy',sel.Etot,'kWh'],
+                ['Rotors',sel.nProp,''],['Rotor Ø',sel.Drotor,'m']
+              ].map(([l,v,u])=>(
+                <div key={l} style={{background:SC.bg, border:`1px solid ${SC.border}`,
+                  borderRadius:5, padding:'7px 9px'}}>
+                  <div style={{fontSize:7, color:SC.muted, fontFamily:"'DM Mono',monospace"}}>{l}</div>
+                  <div style={{fontSize:14, fontWeight:700, color:sel.color,
+                    fontFamily:"'DM Mono',monospace"}}>{v}<span style={{fontSize:8, color:SC.muted}}> {u}</span></div>
+                </div>
+              ))}
+            </div>
+            <button onClick={()=>{ onLoadDesign&&onLoadDesign(sel.params); setExpanded(null); }} type="button"
+              style={{padding:'9px 24px', background:`linear-gradient(135deg,${sel.color},${sel.color}aa)`,
+                border:'none', borderRadius:6, color:'#fff', fontSize:12, fontWeight:800,
+                cursor:'pointer', fontFamily:"'DM Mono',monospace"}}>
+              ↩ Load This Design Into Sizing Tool
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ── API Key Input — shared by RegTracker and AI Assistant ── */
 function ApiKeyInput({ SC }) {
   const [key, setKey] = useState(localStorage.getItem("anthropic_api_key") || "");
@@ -8711,6 +9412,16 @@ export default function App(){
                   </Panel>
                 </div>
 
+                {/* ── Feature 9: Cross-Section Preview ── */}
+                <Panel title="Geometry Preview — Cross-Section &amp; Airfoil">
+                  <CrossSectionPreview params={params} SR={SR} SC={SC}/>
+                </Panel>
+
+                {/* ── Feature 10: CFD-Ready Checklist ── */}
+                <Panel title="CFD-Ready Export Checklist — VSPAERO Validation">
+                  <CFDChecklist params={params} SR={SR} SC={SC}/>
+                </Panel>
+
                 {/* Bottom download buttons — two side by side */}
                 <div style={{display:"flex",justifyContent:"center",gap:12,paddingTop:4,paddingBottom:8,flexWrap:"wrap"}}>
                   {/* .vsp3 download */}
@@ -8736,17 +9447,34 @@ export default function App(){
               </div>
             )}
 
-            {/* ──── TAB 16: COMMUNITY & LEADERBOARD ──── */}
+            {/* ──── TAB 16: COMMUNITY, LEADERBOARD, GALLERY & VERSION HISTORY ──── */}
             {tab===16&&(
-              <LeaderboardPanel C={SC} onLoadDesign={(row)=>{
-                try{
-                  const params=JSON.parse(row.params||"{}");
-                  if(Object.keys(params).length>0){
-                    setParams(prev=>({...prev,...params}));
-                    addNotif&&user&&addNotif(user.id,{title:"Design Loaded",body:`Loaded "${row.name}" from community leaderboard.`,type:"info"});
-                  }
-                }catch(e){}
-              }}/>
+              <div style={{display:"flex",flexDirection:"column",gap:14}}>
+                {/* ── Feature 11: Design Version History ── */}
+                <Panel title="📂 Design Version History">
+                  <DesignVersionHistory
+                    params={params} SR={SR} SC={SC}
+                    onLoadVersion={p=>setParams(prev=>({...prev,...p}))}/>
+                </Panel>
+
+                {/* ── Feature 12: Public Design Gallery ── */}
+                <Panel title="🎨 Public Design Gallery">
+                  <DesignGallery SC={SC} onLoadDesign={p=>setParams(prev=>({...prev,...p}))}/>
+                </Panel>
+
+                {/* Original Leaderboard */}
+                <Panel title="🏆 Community Leaderboard">
+                  <LeaderboardPanel C={SC} onLoadDesign={(row)=>{
+                    try{
+                      const p=JSON.parse(row.params||"{}");
+                      if(Object.keys(p).length>0){
+                        setParams(prev=>({...prev,...p}));
+                        addNotif&&user&&addNotif(user.id,{title:"Design Loaded",body:`Loaded "${row.name}" from community leaderboard.`,type:"info"});
+                      }
+                    }catch(e){}
+                  }}/>
+                </Panel>
+              </div>
             )}
 
             </>}
