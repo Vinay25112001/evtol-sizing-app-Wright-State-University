@@ -1085,6 +1085,7 @@ function generateVSP3File(p, SR) {
   const xACw = Number(SR.xACwing)            || fL*0.39;
   const MAC  = Number(SR.MAC)               || 1.40;
   const Drot = Number(SR.Drotor)             || 3.0;
+  const Rrot = Drot / 2;                     // rotor radius (m)
   const MTOW = Number(SR.MTOW)              || 2721;
   const xCG  = Number(SR.xCGtotal)          || fL*0.35;
   const SM   = Number(SR.SM_vt||SR.SM)       || 0.22;
