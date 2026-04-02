@@ -8570,7 +8570,7 @@ export default function App(){
                     </div>
                   </div>
                   <div style={{marginLeft:"auto",display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
-                    {/* ── .vsp3 download button ── */
+                    {/* ── .vsp3 download button ── */}
                     <AuthGate user={user} onAuth={handleAuth}>
                     <button
                       onClick={()=>{
