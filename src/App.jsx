@@ -1129,7 +1129,7 @@ function generateVSP3File(p, SR) {
   const xRotAft    = xVtTipTE + Rrot + 0.2;    // ≈ 11.012m — aft rotor behind V-tail tip TE
   const boomDiam   = 0.25;
   const boomXFwd   = xWingLE - 1.7;            // 1.7m fwd of wing LE
-  const boomXAft   = xRotAft;                  // boom end = aft rotor position
+  const boomXAft   = xWingLE - 1.7;                  // boom end = aft rotor position
   const boomLen    = boomXAft - boomXFwd;
   const zBoom      = fD / 2;                   // flush with high-wing / top of fuselage
 
