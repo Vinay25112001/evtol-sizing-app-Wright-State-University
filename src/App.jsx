@@ -853,7 +853,7 @@ function runSizing(p) {
     lv:+lv.toFixed(3),
     fusSpanRatio,tailWingRatio,
     // Noise outputs
-    BPF:+BPF.toFixed(1), dBA_1m,dBA_25m:dBA_at_25m,dBA_50m:dBA_at_50m,
+    BPF:+BPF.toFixed(1), dBA_1m:+dBA_1m.toFixed(2),dBA_25m:dBA_at_25m,dBA_50m:dBA_at_50m,
     dBA_100m:dBA_at_100m,dBA_150m:dBA_at_150m,dBA_300m:dBA_at_300m,dBA_500m:dBA_at_500m,
     dist_55dBA,dist_65dBA,dist_70dBA,dist_75dBA,
     bpfHarmonics,noise_sensitivity,noise_validity,
@@ -7030,10 +7030,10 @@ export default function App(){
                     id:"FAA-N1", ref:"14 CFR Part 36 / AC 21.17-4",
                     category:"Noise (FAR Part 36)",
                     title:"Hover Noise Estimate (150m reference)",
-                    desc:"Estimated A-weighted hover noise at 150m. EASA UAM target: ≤ 65 dBA for urban operations. No specific FAA limit yet — evaluated case-by-case.",
-                    check: dBA_hover <= 75,
+                    desc:"Estimated A-weighted hover noise at 150m. EASA UAM community noise target: ≤ 65 dBA for urban integration acceptance. No specific FAA numeric limit yet — evaluated case-by-case under 14 CFR Part 36 / AC 21.17-4.",
+                    check: dBA_hover <= 65,
                     value: `~${dBA_hover.toFixed(1)} dBA (at ${r_ref}m)`,
-                    limit: "≤ 75 dBA (operational target)",
+                    limit: "≤ 65 dBA (EASA UAM / FAA advisory target)",
                     severity:"advisory",
                   },
                   {
@@ -7506,9 +7506,18 @@ export default function App(){
                   <Panel title="A-weighted SPL vs Distance from Aircraft">
                     <ResponsiveContainer width="100%" height={260}>
                       <LineChart
-                        data={[1,5,10,25,50,100,150,200,300,500].map(dist_r=>({
-                          r:dist_r, dBA:+(SR.dBA_1m-20*Math.log10(dist_r)).toFixed(1)
-                        }))}
+                        data={[
+                          {r:1,   dBA:SR.dBA_1m},
+                          {r:5,   dBA:+(SR.dBA_1m-20*Math.log10(5)-(1.8/1000*5)).toFixed(1)},
+                          {r:10,  dBA:+(SR.dBA_1m-20*Math.log10(10)-(1.8/1000*10)).toFixed(1)},
+                          {r:25,  dBA:SR.dBA_25m},
+                          {r:50,  dBA:SR.dBA_50m},
+                          {r:100, dBA:SR.dBA_100m},
+                          {r:150, dBA:SR.dBA_150m},
+                          {r:200, dBA:+(SR.dBA_1m-20*Math.log10(200)-(1.8/1000*200)+2.5).toFixed(1)},
+                          {r:300, dBA:SR.dBA_300m},
+                          {r:500, dBA:SR.dBA_500m},
+                        ]}
                         margin={{top:5,right:20,left:5,bottom:20}}>
                         <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
                         <XAxis dataKey="r" tick={{fontSize:9,fill:SC.muted}}
@@ -7610,10 +7619,10 @@ export default function App(){
                     const W=540,H=400,cx=W/2,cy=H/2;
                     const scale=0.38; // px per meter
                     const contours=[
-                      {dBA:85,col:"#ef4444",label:"85 dBA"},
-                      {dBA:75,col:"#f59e0b",label:"75 dBA"},
-                      {dBA:65,col:"#22c55e",label:"65 dBA"},
-                      {dBA:55,col:"#14b8a6",label:"55 dBA"},
+                      {dBA:85,col:"#ef4444",label:"85 dBA", dist:SR.dist_75dBA&&(SR.dBA_1m-85)>0?Math.pow(10,(SR.dBA_1m-85)/20):0},
+                      {dBA:75,col:"#f59e0b",label:"75 dBA", dist:SR.dist_75dBA},
+                      {dBA:65,col:"#22c55e",label:"65 dBA", dist:SR.dist_65dBA},
+                      {dBA:55,col:"#14b8a6",label:"55 dBA", dist:SR.dist_55dBA},
                     ];
                     return(
                       <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{maxHeight:380,background:darkMode?"#06090e":"#f0f4f8",borderRadius:8}}>
@@ -7624,15 +7633,16 @@ export default function App(){
                             <line x1={0} y1={cy+d*scale} x2={W} y2={cy+d*scale} stroke={darkMode?"#1c2333":"#cbd5e1"} strokeWidth={0.5}/>
                           </g>
                         ))}
-                        {/* Noise contour rings */}
-                        {contours.map(({dBA,col,label})=>{
-                          const r=(SR.dBA_1m-dBA)>0?Math.pow(10,(SR.dBA_1m-dBA)/20)*scale:0;
+                        {/* Noise contour rings — use SR.dist_*dBA (full propagation model) */}
+                        {contours.map(({dBA,col,label,dist})=>{
+                          const distM = dist || 0;
+                          const r = distM * scale;
                           if(r<=0||r>W) return null;
                           return(
                             <g key={dBA}>
                               <circle cx={cx} cy={cy} r={r} fill={col+"18"} stroke={col} strokeWidth={1.5} strokeDasharray="6 3"/>
                               <text x={cx+r+4} y={cy-4} fontSize={9} fill={col} fontFamily="DM Mono,monospace" fontWeight={700}>{label}</text>
-                              <text x={cx+r+4} y={cy+10} fontSize={8} fill={col} fontFamily="DM Mono,monospace">{Math.round(r/scale)}m</text>
+                              <text x={cx+r+4} y={cy+10} fontSize={8} fill={col} fontFamily="DM Mono,monospace">{Math.round(distM)}m</text>
                             </g>
                           );
                         })}
@@ -7750,8 +7760,8 @@ export default function App(){
                               <div style={{fontSize:10,fontWeight:700,color:SC.green,fontFamily:"'DM Mono',monospace",marginBottom:8}}>Calibration References</div>
                               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
                                 {[
-                                  ['Volocopter 2X (DLR 2020)','18 rotors, R=0.9m','~65 dBA at 100m','Model gives: '+SR.dBA_at_100m+' dBA at 100m'],
-                                  ['Joby S4 (Joby Aviation 2021)','6 rotors, R=1.52m (similar to our design)','~65 dBA at 150m, ~45 at 500m','Model gives: '+SR.dBA_at_500m+' dBA at 500m (K_cal fitted to this class)'],
+                                  ['Volocopter 2X (DLR 2020)','18 rotors, R=0.9m','~65 dBA at 100m','Model gives: '+SR.dBA_100m+' dBA at 100m'],
+                                  ['Joby S4 (Joby Aviation 2021)','6 rotors, R=1.52m (similar to our design)','~65 dBA at 150m, ~45 at 500m','Model gives: '+SR.dBA_500m+' dBA at 500m (K_cal fitted to this class)'],
                                 ].map(([name,config,measured,modelled])=>(
                                   <div key={name} style={{background:`${SC.panel}`,border:`1px solid ${SC.border}`,borderRadius:6,padding:'10px 12px'}}>
                                     <div style={{fontSize:10,fontWeight:700,color:SC.text,fontFamily:"'DM Mono',monospace"}}>{name}</div>
