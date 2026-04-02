@@ -1136,7 +1136,7 @@ function generateVSP3File(p, SR) {
   const boomXFwd = xWingLE - extension; 
 
   // Aft boom tip (must clear the absolute furthest point of the V-Tail)
-  const boomXAft = xVtTipTE + extension; 
+  const boomXAft = 2*xVtTipTE + extension; 
 
   // Total boom length
   const boomLen = boomXAft - boomXFwd;
