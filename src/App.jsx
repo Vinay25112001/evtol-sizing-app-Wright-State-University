@@ -1104,59 +1104,56 @@ function generateVSP3File(p, SR) {
   // ── HIGH-WING: Z raised to sit flush on TOP of fuselage ──────────────
   const zWing   = fD / 2;
 
-  // V-tail geometry (for Y-clearance calculation)
+  // V-tail geometry (for aft-X clearance calculation)
   const xVtLE  = Math.min(xACw + lv - 0.25*CrVT, fL - 0.05);
   const zVtRoot= 0;
 
   // ── LONGITUDINAL LIFT BOOMS ───────────────────────────────────────────
-  // FIX: Y-axis only approach — move boom outboard so the rotor disc
-  // clears the V-tail LATERALLY. This avoids any aft-length extension.
   //
-  // V-tail horizontal spread per panel: yVtSpan_h = bvt·cos(vtGamma) ≈ 2.666m
-  // For the inner rotor edge (at yBoom − Rrot) to clear the V-tail lateral tip:
-  //   yBoom − Rrot > yVtSpan_h  →  yBoom > yVtSpan_h + Rrot + 0.1m safety
-  //   yBoom = bvt·cos(vtGamma) + Rrot + 0.1  ≈ 4.27m
-  //
-  // Boom length: simple formula restored — 1.7m fwd of wing LE, 1.7m aft of wing TE.
-  // No aft extension needed because the boom now passes OUTBOARD of the V-tail.
-  const yVtSpan_h  = bvt * Math.cos(vtG * Math.PI / 180); // V-tail horizontal reach
-  const yBoom      = yVtSpan_h + Rrot + 0.1;  // ≈ 4.27m — inner rotor edge clears V-tail tip
+  // FIX 1 — EXACT INBOARD CLEARANCE FORMULA (Y-axis):
+  //   yBoom = (Fuselage_Width / 2) + Rotor_Radius + Safety_Clearance
+  //         = (fD / 2)             + Rrot          + 0.2
+  //         = (1.65 / 2)           + 1.5           + 0.2  = 2.525 m
+  // Fuselage max width = fD (from cross-section station p=0.380, W=fD=1.65m).
+  const yBoom      = (fD / 2) + Rrot + 0.2;   // = 2.525 m
+
+  // FIX 2 — AFT X EXTENSION TO CLEAR V-TAIL (X-axis):
+  // With yBoom=2.525m, the rotor disc spans y=1.025m to y=4.025m, overlapping
+  // the V-tail panel (horizontal span = bvt·cos(45°) = 2.666m).
+  // The V-tail TE sweeps aft with span; worst case (most aft TE) is at the
+  // V-tail tip: xVtTipTE = xVtLE + bvt·tan(swVT) + CtVT ≈ 9.312m.
+  // Aft rotor must sit BEHIND this + Rrot clearance + 0.2m safety:
+  //   xRotAft = xVtTipTE + Rrot + 0.2  ≈ 11.012m
+  const yVtSpan_h  = bvt * Math.cos(vtG * Math.PI / 180);    // V-tail horiz reach ≈ 2.666m
+  const xVtTipTE   = xVtLE + bvt * Math.tan(swVT * Math.PI / 180) + CtVT;  // ≈ 9.312m
+  const xRotAft    = xVtTipTE + Rrot + 0.2;    // ≈ 11.012m — aft rotor behind V-tail tip TE
   const boomDiam   = 0.25;
-  const boomXFwd   = xWingLE - 1.7;           // 1.7m fwd of wing LE
-  const boomXAft   = xWingTE + 1.7;           // 1.7m aft of wing TE (simple, no V-tail extension)
+  const boomXFwd   = xWingLE - 1.7;            // 1.7m fwd of wing LE
+  const boomXAft   = xRotAft;                  // boom end = aft rotor position
   const boomLen    = boomXAft - boomXFwd;
-  const zBoom      = fD / 2;                  // flush with high-wing / top of fuselage
+  const zBoom      = fD / 2;                   // flush with high-wing / top of fuselage
 
   // ── FOUR FIXED LIFT ROTORS (on boom tips) ────────────────────────────
-  const zLiftRotor = zBoom + boomDiam / 2;    // hub sits on top of boom surface
+  const zLiftRotor = zBoom + boomDiam / 2;     // hub sits on top of boom surface
   const xRotFwd    = boomXFwd;
-  const xRotAft    = boomXAft;
 
   // ── CENTER PUSHER ROTOR ───────────────────────────────────────────────
-  // Single prop at extreme aft tip of fuselage.
-  // YRot = 0 → disk plane perpendicular to X-axis → thrust in +X (pusher/forward).
-  const xPusher   = fL;          // fuselage tail X
-  const dPusher   = Drot * 0.75; // slightly smaller cruise prop (2.25m for Drot=3m)
+  const xPusher   = fL;
+  const dPusher   = Drot * 0.75;
 
   // ── WINGTIP NACELLES + TILTING ROTORS ────────────────────────────────
-  // yTipRot: enforce 1.7m blade-tip clearance from nearest boom rotor edge
-  //   yTipRot ≥ yBoom + Drot + 1.7  (rotor centres separated by 2 radii + 1.7m)
-  const yTipRot   = Math.max(bW / 2, yBoom + Drot + 1.7);
-  // Nacelle: slender pod at wingtip, length 0.8m, diam 0.30m
+  // FIX 3 — EXACT WINGTIP Y (Y-axis):
+  // Set nacelle Y = bW/2 — the absolute extreme half-span of the main wing.
+  // Tilting rotors share the same Y, keeping them attached to nacelle nose.
+  const yTipRot   = bW / 2;                    // = 6.385m — exact wingtip edge
   const nacLen    = 0.80;
   const nacDiam   = 0.30;
-  // Nacelle X: front face starts at wing LE; nacelle runs aft along +X
-  const xNacStart = xWingLE;
-  // FIX 2 — Nacelle Z: centre nacelle on the wing chord midline.
-  // Wing Z_Location = zWing = fD/2 (the root chord plane, bottom surface for high-wing).
-  // Wing half-thickness at root = tc·Cr/2. Chord midline = zWing + tc·Cr/2.
-  // Placing nacelle centre here makes it flush and symmetric about the wing section.
-  const zNac      = zWing + (Number(p.tc)||0.15) * Cr / 2;  // chord midline Z
-  // FIX 3 — Rotor X: place disc 5cm FORWARD of nacelle nose face.
-  // The disk geom in VSP has finite visual thickness; placing it exactly at xNacStart
-  // puts the disc inside the nacelle body. Moving it 0.05m forward clears the nose.
-  const xTipRot   = xNacStart - 0.05;   // 5cm fwd of nacelle leading face
-  const zTipRot   = zNac;               // same Z as nacelle centre (chord midline)
+  const xNacStart = xWingLE;                   // nacelle front at wing LE
+  // Z: nacelle centred on wing chord midline (unchanged from previous fix)
+  const zNac      = zWing + (Number(p.tc)||0.15) * Cr / 2;
+  // X: rotor disc 5cm forward of nacelle nose face (unchanged from previous fix)
+  const xTipRot   = xNacStart - 0.05;
+  const zTipRot   = zNac;
 
   // ─── TE-sweep helper ──────────────────────────────────────────────────
   const sweepTE = (swDeg, halfSpan, rC, tC) => {
@@ -1619,15 +1616,16 @@ ${tiltRotLeftXML}
        CONFIGURATION SUMMARY (9 components, 11 physical bodies with mirrors)
          1. Fuselage           — unchanged geometry
          2. MainWing           — shape unchanged, high-wing Z=${zWing.toFixed(3)} m
-         3. LiftBoom × 2      — straight horizontal pods at Y=±${yBoom.toFixed(3)} m
-              Y chosen so inner rotor edge (y=${(yBoom-Rrot).toFixed(3)} m) clears V-tail span (${yVtSpan_h.toFixed(3)} m)
+         3. LiftBoom × 2      — straight horizontal pods at Y=±${yBoom.toFixed(4)} m
+              Formula: fD/2 + Rrot + 0.2 = ${(fD/2).toFixed(4)} + ${Rrot} + 0.2 = ${yBoom.toFixed(4)} m
               Fwd X=${boomXFwd.toFixed(3)} m  |  Aft X=${boomXAft.toFixed(3)} m  |  L=${boomLen.toFixed(3)} m
+              Aft rotor behind V-tail tip TE (${xVtTipTE.toFixed(3)} m) + Rrot + 0.2m margin
          4. LiftRotor_Fwd × 2 — boom fwd tips, YRot=90 (thrust UP)
          5. LiftRotor_Aft × 2 — boom aft tips, YRot=90 (thrust UP)
          6. CruisePusher      — fuselage tail x=${xPusher.toFixed(3)} m, YRot=0 (thrust FWD +X)
          7. VTail             — unchanged geometry
-         8. TiltNacelle × 2  — wingtip pods at Y=±${yTipRot.toFixed(3)} m, Z=${zNac.toFixed(3)} m (chord midline)
-         9. TiltRotor × 2    — nacelle front X=${xTipRot.toFixed(3)} m (5cm fwd of nacelle nose), YRot=90
+         8. TiltNacelle × 2  — wingtip pods at Y=±${yTipRot.toFixed(4)} m (exact bW/2), Z=${zNac.toFixed(4)} m (chord midline)
+         9. TiltRotor × 2    — nacelle front X=${xTipRot.toFixed(4)} m (5cm fwd of nacelle nose), YRot=90
        ───────────────────────────────────────────────────────────────────
        TILT MECHANISM (wingtip rotors):
          RotY = 90°  →  disc horizontal  →  thrust UP   [HOVER — default]
