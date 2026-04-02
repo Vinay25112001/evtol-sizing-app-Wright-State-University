@@ -1050,16 +1050,12 @@ ${yVals.map((v,i)=>`    y[${i}] = ${v};`).join('\n')}
    All parm elements: <Name Value="sci_notation" ID="10_CHAR_ID"/>
    ═══════════════════════════════════════════════════════════════════════ */
 function generateVSP3File(p, SR) {
-
-  // ── Helpers ─────────────────────────────────────────────────────────
-  // sci(): matches joby_s2.vsp3 exact format  e.g. 1.600000000000000000e+001
+  // ── Helpers ──────────────────────────────────────────────────────────
   const sci = (v) => {
     const n = isFinite(Number(v)) ? Number(v) : 0;
     if (n === 0) return '0.000000000000000000e+000';
     return n.toExponential(18).replace(/e([+-])(\d+)$/, (_, s, e) => 'e' + s + e.padStart(3,'0'));
   };
-
-  // Simple deterministic ID from seed string (mimics VSP3 10-char IDs)
   let _idCounter = 1000;
   const makeID = () => {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
@@ -1067,67 +1063,67 @@ function generateVSP3File(p, SR) {
     for (let i = 0; i < 10; i++) { id = chars[n % 26] + id; n = Math.floor(n / 26); }
     return id;
   };
-  // Parm element matching joby_s2.vsp3 format exactly
-  const P = (name, val) => `                <${name} Value="${sci(val)}" ID="${makeID()}"/>`;
+  const P = (tag, val) => `                <${tag} Value="${sci(val)}" ID="${makeID()}"/>`;
 
-  // ── Sizing values from engine ─────────────────────────────────────────
-  const fL   = Number(p.fusLen)      || 6.5;
-  const fD   = Number(p.fusDiam)     || 1.65;
-  const bW   = Number(SR.bWing)      || 12.67;
-  const SW   = Number(SR.Swing)      || 17.83;
-  const Cr   = Number(SR.Cr_)        || 1.94;
-  const Ct   = Number(SR.Ct_)        || 0.87;
-  const swW  = Number(SR.sweep)      || 9.57;
-  const tc   = Number(p.tc)          || 0.12;
-  const xACw = Number(SR.xACwing)    || fL * 0.40;
-  const lv   = Number(SR.lv)         || fL * 0.50;
-  const bvt  = Number(SR.bvt_panel)  || 3.77;
-  const CrVT = Number(SR.Cr_vt)      || 2.15;
-  const CtVT = Number(SR.Ct_vt)      || 0.86;
-  const swVT = Number(SR.sweep_vt)   || 34.4;
-  const vtG  = Number(p.vtGamma)     || 45;
-  const Drot = Number(SR.Drotor)     || 3.0;
-  const nP   = Number(p.nPropHover)  || 6;
-  const nSide= Math.floor(nP / 2);
+  // ── Sizing values ────────────────────────────────────────────────────
+  const fL  = Number(p.fusLen)     || 6.5;
+  const fD  = Number(p.fusDiam)    || 1.65;
+  const bW  = Number(SR.bWing)     || 12.67;
+  const SW  = Number(SR.Swing)     || 17.83;
+  const Cr  = Number(SR.Cr_)       || 1.94;
+  const Ct  = Number(SR.Ct_)       || 0.87;
+  const swW = Number(SR.sweep)     || 9.57;
+  const tc  = Number(p.tc)         || 0.12;
+  const xACw = Number(SR.xACwing)  || fL * 0.40;
+  const MAC  = Number(SR.MAC)      || 1.40;
+  const lv   = Number(SR.lv)       || fL * 0.50;
+  const bvt  = Number(SR.bvt_panel) || 3.77;
+  const CrVT = Number(SR.Cr_vt)   || 2.15;
+  const CtVT = Number(SR.Ct_vt)   || 0.86;
+  const swVT = Number(SR.sweep_vt) || 34.4;
+  const vtG  = Number(p.vtGamma)   || 45;
+  const Drot = Number(SR.Drotor)   || 3.0;
+  const nP   = Number(p.nPropHover) || 6;
+  const nSide = Math.floor(nP / 2);
   const bH   = bW / 2;
-  const MTOW = Number(SR.MTOW)       || 2721;
-  const xCG  = Number(SR.xCGtotal)   || fL * 0.35;
+  const MTOW = Number(SR.MTOW)     || 2721;
+  const xCG  = Number(SR.xCGtotal) || fL * 0.35;
   const SM   = Number(SR.SM_vt || SR.SM) || 0.22;
-  const MAC  = Number(SR.MAC)        || 1.40;
 
-  // Geometry positions (matching joby convention: X=fwd, Y=right, Z=up)
-  // Wing: LE at xWingLE, fuselage centerline, Z = top of fuselage (high-wing eVTOL)
+  // Key geometry positions
   const xWingLE = xACw - 0.25 * Cr;
-  const zWing   = fD * 0.45;                      // high-wing: above fuselage centre
-  // V-tail: LE at xVtLE, Z just above fuselage centreline
-  const xVtLE   = xACw + lv - 0.25 * MAC;
+  const zWing   = fD * 0.45;               // high-wing (above fuselage)
+  const xVtLE   = xACw + lv - 0.25 * CrVT;
   const zVtRoot = fD * 0.45;
-  // Hover rotors: above wing, distributed spanwise, X ahead of wing AC
-  const rotX    = xWingLE + 0.25 * Cr;            // at wing AC (disk above LE)
-  const rotZ    = zWing + Drot * 0.55;             // rotor hub above wing
 
-  // Fuselage ellipse cross-section stations (5 stations as in joby)
-  // Scaled to our fusLen / fusDiam  — joby uses 16m / 3.0m (W) / 2.5m (H)
-  // Our eVTOL is much smaller: use fractional scaling
-  const maxW = fD * 1.00, maxH = fD * 0.88;       // max cabin cross-section
+  // Disk positions RELATIVE to wing parent (matching joby convention)
+  const rotXrel = Cr * 0.25;              // 25% chord forward of wing LE
+  const rotZrel = Drot * 0.55;            // above wing surface
+
+  // Absolute positions (needed in XForm X_Location / Y_Location)
+  const rotXabs = xWingLE + rotXrel;
+  const rotZabs = zWing   + rotZrel;
+
+  // Fuselage cross-sections (5 stations like joby, scaled to our fusDiam)
+  const maxW = fD;       // max ellipse width
+  const maxH = fD * 0.88;// max ellipse height
   const fusStations = [
-    { pct: 0.000, W: fD*0.01, H: fD*0.01, topAngle:  90, botAngle:  90, topStr: 0.4, botStr: 0.4, isEllipse: false },
-    { pct: 0.150, W: maxW*0.65, H: maxH*0.60, topAngle: 0, botAngle: 0, topStr: 1.0, botStr: 1.0, isEllipse: true  },
-    { pct: 0.380, W: maxW,      H: maxH,      topAngle: 0, botAngle: 0, topStr: 1.0, botStr: 1.0, isEllipse: true  },
-    { pct: 0.700, W: maxW*0.72, H: maxH*0.55, topAngle:-4, botAngle:-4, topStr: 1.0, botStr: 1.0, isEllipse: true  },
-    { pct: 1.000, W: fD*0.01, H: fD*0.01, topAngle: -90, botAngle: -90, topStr: 0.25, botStr: 0.25, isEllipse: false },
+    { pct: 0.000, W: fD*0.01, H: fD*0.01, topA:  90, botA:  90, topStr: 0.4, botStr: 0.4, isEll: false },
+    { pct: 0.150, W: maxW*0.60, H: maxH*0.55, topA: 0,  botA: 0,  topStr: 1.0, botStr: 1.0, isEll: true  },
+    { pct: 0.380, W: maxW,      H: maxH,      topA: 0,  botA: 0,  topStr: 1.0, botStr: 1.0, isEll: true  },
+    { pct: 0.700, W: maxW*0.72, H: maxH*0.60, topA:-4,  botA:-4,  topStr: 1.0, botStr: 1.0, isEll: true  },
+    { pct: 1.000, W: fD*0.01, H: fD*0.01, topA: -90, botA: -90, topStr: 0.25, botStr: 0.25, isEll: false },
   ];
 
-  // ── Helper: build a fuselage XSec block ─────────────────────────────
-  // Matches exact joby XSec structure: position block + XSecCurve block
-  const fuseXSec = (st) => `
+  // ── Fuselage XSec builder (exact joby structure) ──────────────────
+  const fusXSec = (st) => `
           <XSec>
             <ParmContainer>
               <ID>${makeID()}</ID>
               <n>Default</n>
               <XSec>
 ${P('AllSym', 0)}
-${P('BottomLAngle', st.botAngle)}
+${P('BottomLAngle', st.botA)}
 ${P('BottomLAngleSet', 1)}
 ${P('BottomLCurve', 0)}
 ${P('BottomLCurveSet', 0)}
@@ -1139,7 +1135,7 @@ ${P('BottomLSlew', 0)}
 ${P('BottomLSlewSet', 1)}
 ${P('BottomLStrength', st.botStr)}
 ${P('BottomLStrengthSet', 1)}
-${P('BottomRAngle', st.botAngle)}
+${P('BottomRAngle', st.botA)}
 ${P('BottomRAngleSet', 1)}
 ${P('BottomRCurve', 0)}
 ${P('BottomRCurveSet', 0)}
@@ -1151,7 +1147,7 @@ ${P('ContinuityBottom', 0)}
 ${P('ContinuityLeft', 0)}
 ${P('ContinuityRight', 0)}
 ${P('ContinuityTop', 0)}
-${P('LeftLAngle', st.topAngle)}
+${P('LeftLAngle', st.topA)}
 ${P('LeftLAngleSet', 1)}
 ${P('LeftLCurve', 0)}
 ${P('LeftLCurveSet', 0)}
@@ -1163,7 +1159,7 @@ ${P('LeftLSlew', 0)}
 ${P('LeftLSlewSet', 1)}
 ${P('LeftLStrength', st.topStr)}
 ${P('LeftLStrengthSet', 1)}
-${P('LeftRAngle', st.topAngle)}
+${P('LeftRAngle', st.topA)}
 ${P('LeftRAngleSet', 1)}
 ${P('LeftRCurve', 0)}
 ${P('LeftRCurveSet', 0)}
@@ -1173,7 +1169,7 @@ ${P('LeftRStrength', st.topStr)}
 ${P('LeftRStrengthSet', 1)}
 ${P('RLSym', 1)}
 ${P('RefLength', fL)}
-${P('RightLAngle', st.topAngle)}
+${P('RightLAngle', st.topA)}
 ${P('RightLAngleSet', 1)}
 ${P('RightLCurve', 0)}
 ${P('RightLCurveSet', 0)}
@@ -1185,7 +1181,7 @@ ${P('RightLSlew', 0)}
 ${P('RightLSlewSet', 1)}
 ${P('RightLStrength', st.topStr)}
 ${P('RightLStrengthSet', 1)}
-${P('RightRAngle', st.topAngle)}
+${P('RightRAngle', st.topA)}
 ${P('RightRAngleSet', 1)}
 ${P('RightRCurve', 0)}
 ${P('RightRCurveSet', 0)}
@@ -1196,7 +1192,7 @@ ${P('RightRStrengthSet', 1)}
 ${P('SectTess_U', 6)}
 ${P('Spin', 0)}
 ${P('TBSym', 1)}
-${P('TopLAngle', st.topAngle)}
+${P('TopLAngle', st.topA)}
 ${P('TopLAngleSet', 1)}
 ${P('TopLCurve', 0)}
 ${P('TopLCurveSet', 0)}
@@ -1208,7 +1204,7 @@ ${P('TopLSlew', 0)}
 ${P('TopLSlewSet', 1)}
 ${P('TopLStrength', st.topStr)}
 ${P('TopLStrengthSet', 1)}
-${P('TopRAngle', st.topAngle)}
+${P('TopRAngle', st.topA)}
 ${P('TopRAngleSet', 1)}
 ${P('TopRCurve', 0)}
 ${P('TopRCurveSet', 0)}
@@ -1234,69 +1230,134 @@ ${P('ZRotate', 0)}
                   <XSecCurve>
 ${P('DeltaX', 0)}
 ${P('DeltaY', 0)}
-${st.isEllipse ? P('Ellipse_Height', st.H) : ''}
-${st.isEllipse ? P('Ellipse_Width',  st.W) : ''}
+${st.isEll ? P('Ellipse_Height', st.H) : ''}
+${st.isEll ? P('Ellipse_Width',  st.W) : ''}
 ${P('Scale', 1)}
 ${P('ShiftLE', 0)}
 ${P('Theta', 0)}
                   </XSecCurve>
                 </ParmContainer>
                 <XSecCurve>
-                  <Type>${st.isEllipse ? 2 : 0}</Type>
+                  <Type>${st.isEll ? 2 : 0}</Type>
                 </XSecCurve>
               </XSecCurve>
             </XSec>
           </XSec>`;
 
-  // ── Helper: Wing XSec section (matches joby Wing XSec structure) ─────
-  const wingXSec = (idx, rChord, tChord, span, area, sweep, sweepLoc, dihedral, twist, tessU) => `
-            <XSec>
-              <ParmContainer>
-                <ID>${makeID()}</ID>
-                <n>XSec_${idx}</n>
-                <WingXSec>
-${P('Area',           area)}
-${P('Aspect',         span*span/Math.max(area,0.001))}
-${P('Avg_Chord',      area/Math.max(span,0.001))}
-${P('Dihedral',       dihedral)}
-${P('InCluster',      1)}
-${P('OutCluster',     1)}
-${P('Root_Chord',     rChord)}
-${P('SectTess_U',     tessU)}
-${P('Span',           span)}
-${P('Sweep',          sweep)}
-${P('Sweep_Location', sweepLoc)}
-${P('Taper',          tChord/Math.max(rChord,0.001))}
-${P('Tip_Chord',      tChord)}
-${P('Twist',          twist)}
-${P('Twist_Location', 0.25)}
-                </WingXSec>
-              </ParmContainer>
+  // ── Wing XSec builder (EXACT joby_s2.vsp3 structure) ─────────────────
+  // Critical: parms inside <XSec> tag (NOT <WingXSec>)
+  //           airfoil nested XSec: <Type>2</Type> + DriverGroup
+  //           XSecCurve final type: <Type>7</Type> = NACA 4-series
+  const wingXSecBlock = (rootCh, tipCh, span, area, sweep, sweepLoc, dihed, twist, tessU, choiceVec) => `
+          <XSec>
+            <ParmContainer>
+              <ID>${makeID()}</ID>
+              <n>Default</n>
               <XSec>
-                <Type>0</Type>
-                <GroupName>XSec</GroupName>
-                <XSecCurve>
-                  <ParmContainer>
-                    <ID>${makeID()}</ID>
-                    <n>Default</n>
-                    <XSecCurve>
-${P('Chord',       rChord)}
-${P('EqArcLenFlag', 1)}
-${P('FitDegree',   7)}
-${P('Scale',       1)}
-${P('ThickChord',  idx===0 ? tc : tc)}
-                    </XSecCurve>
-                  </ParmContainer>
-                  <XSecCurve>
-                    <Type>0</Type>
-                  </XSecCurve>
-                </XSecCurve>
+${P('Area',             area)}
+${P('Aspect',           span * span / Math.max(area, 1e-6))}
+${P('Avg_Chord',        area / Math.max(span, 1e-6))}
+${P('Dihedral',         dihed)}
+${P('InCluster',        1)}
+${P('InLEDihedral',    -dihed)}
+${P('InLEMode',         0)}
+${P('InLEStrength',     1)}
+${P('InLESweep',       -Math.abs(sweep))}
+${P('InTEDihedral',    -dihed)}
+${P('InTEMode',         0)}
+${P('InTEStrength',     1)}
+${P('InTESweep',       -Math.abs(sweep) * 1.82)}
+${P('OutCluster',       1)}
+${P('OutLEDihedral',    dihed)}
+${P('OutLEMode',        0)}
+${P('OutLEStrength',    1)}
+${P('OutLESweep',      -Math.abs(sweep))}
+${P('OutTEDihedral',    dihed)}
+${P('OutTEMode',        0)}
+${P('OutTEStrength',    1)}
+${P('OutTESweep',      -Math.abs(sweep) * 1.82)}
+${P('Root_Chord',       rootCh)}
+${P('Sec_Sweep',        sweep)}
+${P('Sec_Sweep_Location', 1)}
+${P('SectTess_U',       tessU)}
+${P('Span',             span)}
+${P('Sweep',            sweep)}
+${P('Sweep_Location',   sweepLoc)}
+${P('Taper',            tipCh / Math.max(rootCh, 1e-6))}
+${P('Tip_Chord',        tipCh)}
+${P('Twist',            twist)}
+${P('Twist_Location',   0.25)}
               </XSec>
-            </XSec>`;
+            </ParmContainer>
+            <XSec>
+              <Type>2</Type>
+              <GroupName>XSec</GroupName>
+              <DriverGroup>
+                <NumVar>8</NumVar>
+                <NumChoices>3</NumChoices>
+                <ChoiceVec>${choiceVec}</ChoiceVec>
+              </DriverGroup>
+              <XSecCurve>
+                <ParmContainer>
+                  <ID>${makeID()}</ID>
+                  <n>Default</n>
+                  <Cap>
+                    <LE_Cap_Length Value="${sci(1)}" ID="${makeID()}"/>
+                    <LE_Cap_Offset Value="${sci(0)}" ID="${makeID()}"/>
+                    <LE_Cap_Strength Value="${sci(0.5)}" ID="${makeID()}"/>
+                    <LE_Cap_Type Value="${sci(1)}" ID="${makeID()}"/>
+                    <TE_Cap_Length Value="${sci(1)}" ID="${makeID()}"/>
+                    <TE_Cap_Offset Value="${sci(0)}" ID="${makeID()}"/>
+                    <TE_Cap_Strength Value="${sci(0.5)}" ID="${makeID()}"/>
+                    <TE_Cap_Type Value="${sci(1)}" ID="${makeID()}"/>
+                  </Cap>
+                  <Close>
+                    <LE_Close_AbsRel Value="${sci(0)}" ID="${makeID()}"/>
+                    <LE_Close_Thick Value="${sci(0)}" ID="${makeID()}"/>
+                    <LE_Close_Thick_Chord Value="${sci(0)}" ID="${makeID()}"/>
+                    <LE_Close_Type Value="${sci(0)}" ID="${makeID()}"/>
+                    <TE_Close_AbsRel Value="${sci(0)}" ID="${makeID()}"/>
+                    <TE_Close_Thick Value="${sci(0)}" ID="${makeID()}"/>
+                    <TE_Close_Thick_Chord Value="${sci(0)}" ID="${makeID()}"/>
+                    <TE_Close_Type Value="${sci(0)}" ID="${makeID()}"/>
+                  </Close>
+                  <Trim>
+                    <LE_Trim_AbsRel Value="${sci(0)}" ID="${makeID()}"/>
+                    <LE_Trim_Thick Value="${sci(0)}" ID="${makeID()}"/>
+                    <LE_Trim_Thick_Chord Value="${sci(0)}" ID="${makeID()}"/>
+                    <LE_Trim_Type Value="${sci(0)}" ID="${makeID()}"/>
+                    <LE_Trim_X Value="${sci(0)}" ID="${makeID()}"/>
+                    <LE_Trim_X_Chord Value="${sci(0)}" ID="${makeID()}"/>
+                    <TE_Trim_AbsRel Value="${sci(0)}" ID="${makeID()}"/>
+                    <TE_Trim_Thick Value="${sci(0)}" ID="${makeID()}"/>
+                    <TE_Trim_Thick_Chord Value="${sci(0)}" ID="${makeID()}"/>
+                    <TE_Trim_Type Value="${sci(0)}" ID="${makeID()}"/>
+                    <TE_Trim_X Value="${sci(0)}" ID="${makeID()}"/>
+                    <TE_Trim_X_Chord Value="${sci(0)}" ID="${makeID()}"/>
+                  </Trim>
+                  <XSecCurve>
+                    <Camber Value="${sci(0)}" ID="${makeID()}"/>
+                    <CamberLoc Value="${sci(0.2)}" ID="${makeID()}"/>
+                    <Chord Value="${sci(tipCh)}" ID="${makeID()}"/>
+                    <DeltaX Value="${sci(0)}" ID="${makeID()}"/>
+                    <DeltaY Value="${sci(0)}" ID="${makeID()}"/>
+                    <EqArcLenFlag Value="${sci(1)}" ID="${makeID()}"/>
+                    <FitDegree Value="${sci(7)}" ID="${makeID()}"/>
+                    <Invert Value="${sci(0)}" ID="${makeID()}"/>
+                    <Scale Value="${sci(1)}" ID="${makeID()}"/>
+                    <ShiftLE Value="${sci(0)}" ID="${makeID()}"/>
+                    <Theta Value="${sci(0)}" ID="${makeID()}"/>
+                    <ThickChord Value="${sci(tc)}" ID="${makeID()}"/>
+                  </XSecCurve>
+                </ParmContainer>
+                <XSecCurve>
+                  <Type>7</Type>
+                </XSecCurve>
+              </XSecCurve>
+            </XSec>
+          </XSec>`;
 
-  // ── Helper: Disk geometry (CustomGeom with AngelScript, TypeID=9) ─────
-  // Copied VERBATIM from joby_s2.vsp3 disk geometry — this is what makes
-  // the disk render as a circular surface in OpenVSP.
+  // ── Disk (Custom) geom — verbatim AngelScript from joby_s2.vsp3 ──────
   const DISK_SCRIPT = `//==== Init Is Called Once During Each Custom Geom Construction  ============================//
 //==== Avoid Global Variables Unless You Want Shared With All Custom Geoms of This Type =====//
 void Init()
@@ -1364,9 +1425,8 @@ void Scale(double curr_scale )
 }
 `;
 
-  const diskGeom = (label, xRel, yRel, zRel, yRot, diameter, symFlag, parentID) => {
-    const cid = makeID(); // geom container ID
-    return `
+  // diskGeom: positions xAbs/yAbs/zAbs are absolute; xRel/yRel/zRel relative to parent
+  const diskGeom = (label, xAbs, yAbs, zAbs, xRel, yRel, zRel, yRot, diameter, symFlag, parentID) => `
       <Geom>
         <CustomGeom>
           <Diameter Value="${sci(diameter)}" ID="${makeID()}"/>
@@ -1374,11 +1434,11 @@ void Scale(double curr_scale )
           <ScriptFileContents>${DISK_SCRIPT}</ScriptFileContents>
         </CustomGeom>
         <ParmContainer>
-          <ID>${cid}</ID>
+          <ID>${makeID()}</ID>
           <n>${label}</n>
           <Attach>
             <Rots_Attach_Flag Value="${sci(0)}" ID="${makeID()}"/>
-            <Trans_Attach_Flag Value="${sci(symFlag>0?1:0)}" ID="${makeID()}"/>
+            <Trans_Attach_Flag Value="${sci(parentID==='NONE'?0:1)}" ID="${makeID()}"/>
             <U_Attach_Location Value="${sci(1e-6)}" ID="${makeID()}"/>
             <V_Attach_Location Value="${sci(1e-6)}" ID="${makeID()}"/>
           </Attach>
@@ -1402,15 +1462,15 @@ void Scale(double curr_scale )
             <Last_Scale Value="${sci(1)}" ID="${makeID()}"/>
             <Origin Value="${sci(0)}" ID="${makeID()}"/>
             <Scale Value="${sci(1)}" ID="${makeID()}"/>
-            <X_Location Value="${sci(xRel)}" ID="${makeID()}"/>
+            <X_Location Value="${sci(xAbs)}" ID="${makeID()}"/>
             <X_Rel_Location Value="${sci(xRel)}" ID="${makeID()}"/>
             <X_Rel_Rotation Value="${sci(0)}" ID="${makeID()}"/>
             <X_Rotation Value="${sci(0)}" ID="${makeID()}"/>
-            <Y_Location Value="${sci(yRel)}" ID="${makeID()}"/>
+            <Y_Location Value="${sci(yAbs)}" ID="${makeID()}"/>
             <Y_Rel_Location Value="${sci(yRel)}" ID="${makeID()}"/>
             <Y_Rel_Rotation Value="${sci(yRot)}" ID="${makeID()}"/>
             <Y_Rotation Value="${sci(yRot)}" ID="${makeID()}"/>
-            <Z_Location Value="${sci(zRel)}" ID="${makeID()}"/>
+            <Z_Location Value="${sci(zAbs)}" ID="${makeID()}"/>
             <Z_Rel_Location Value="${sci(zRel)}" ID="${makeID()}"/>
             <Z_Rel_Rotation Value="${sci(0)}" ID="${makeID()}"/>
             <Z_Rotation Value="${sci(0)}" ID="${makeID()}"/>
@@ -1442,26 +1502,151 @@ void Scale(double curr_scale )
           <SubSurfaces/>
         </Geom>
       </Geom>`;
+
+  // ── Wing Geom builder (full block) ───────────────────────────────────
+  const wingGeom = (name, color_r, color_g, color_b, xLoc, zLoc, span, area, rootCh, tipCh,
+                    sweep, sweepLoc, dihed, twist, totalChord, parentID, childIDsXML) => {
+    const gID = makeID();
+    // Section 0: root reference (span tiny, no geometry — joby pattern)
+    const sec0 = wingXSecBlock(1.0, rootCh, 1.0, rootCh*1.0, 0, 0.0, 0, 0, 6, '1, 5, 6, ');
+    // Section 1: main panel
+    const sec1 = wingXSecBlock(rootCh, tipCh, span/2, area/2, sweep, sweepLoc, dihed, twist, 6, '1, 3, 2, ');
+    return `
+    <Geom>
+      <ParmContainer>
+        <ID>${gID}</ID>
+        <n>${name}</n>
+        <Attach>
+          <Rots_Attach_Flag Value="${sci(0)}" ID="${makeID()}"/>
+          <Trans_Attach_Flag Value="${sci(0)}" ID="${makeID()}"/>
+          <U_Attach_Location Value="${sci(1e-6)}" ID="${makeID()}"/>
+          <V_Attach_Location Value="${sci(1e-6)}" ID="${makeID()}"/>
+        </Attach>
+        <Shape>
+          <Tess_U Value="${sci(16)}" ID="${makeID()}"/>
+          <Tess_W Value="${sci(33)}" ID="${makeID()}"/>
+          <Wake Value="${sci(0)}" ID="${makeID()}"/>
+        </Shape>
+        <Sym>
+          <Sym_Ancestor Value="${sci(1)}" ID="${makeID()}"/>
+          <Sym_Ancestor_Origin_Flag Value="${sci(1)}" ID="${makeID()}"/>
+          <Sym_Axial_Flag Value="${sci(0)}" ID="${makeID()}"/>
+          <Sym_Planar_Flag Value="${sci(2)}" ID="${makeID()}"/>
+          <Sym_Rot_N Value="${sci(2)}" ID="${makeID()}"/>
+        </Sym>
+        <WingGeom>
+          <LECluster Value="${sci(0.25)}" ID="${makeID()}"/>
+          <RelativeDihedralFlag Value="${sci(0)}" ID="${makeID()}"/>
+          <RelativeTwistFlag Value="${sci(0)}" ID="${makeID()}"/>
+          <RotateAirfoilMatchDideralFlag Value="${sci(0)}" ID="${makeID()}"/>
+          <TECluster Value="${sci(0.25)}" ID="${makeID()}"/>
+          <TotalArea Value="${sci(area)}" ID="${makeID()}"/>
+          <TotalChord Value="${sci(totalChord)}" ID="${makeID()}"/>
+          <TotalProjectedSpan Value="${sci(span)}" ID="${makeID()}"/>
+          <TotalSpan Value="${sci(span)}" ID="${makeID()}"/>
+        </WingGeom>
+        <XForm>
+          <Abs_Or_Relitive_flag Value="${sci(1)}" ID="${makeID()}"/>
+          <Last_Scale Value="${sci(1)}" ID="${makeID()}"/>
+          <Origin Value="${sci(0)}" ID="${makeID()}"/>
+          <Scale Value="${sci(1)}" ID="${makeID()}"/>
+          <X_Location Value="${sci(xLoc)}" ID="${makeID()}"/>
+          <X_Rel_Location Value="${sci(xLoc)}" ID="${makeID()}"/>
+          <X_Rel_Rotation Value="${sci(0)}" ID="${makeID()}"/>
+          <X_Rotation Value="${sci(0)}" ID="${makeID()}"/>
+          <Y_Location Value="${sci(0)}" ID="${makeID()}"/>
+          <Y_Rel_Location Value="${sci(0)}" ID="${makeID()}"/>
+          <Y_Rel_Rotation Value="${sci(0)}" ID="${makeID()}"/>
+          <Y_Rotation Value="${sci(0)}" ID="${makeID()}"/>
+          <Z_Location Value="${sci(zLoc)}" ID="${makeID()}"/>
+          <Z_Rel_Location Value="${sci(zLoc)}" ID="${makeID()}"/>
+          <Z_Rel_Rotation Value="${sci(0)}" ID="${makeID()}"/>
+          <Z_Rotation Value="${sci(0)}" ID="${makeID()}"/>
+        </XForm>
+      </ParmContainer>
+      <GeomBase>
+        <TypeName>Wing</TypeName>
+        <TypeID>5</TypeID>
+        <TypeFixed>0</TypeFixed>
+        <ParentID>${parentID}</ParentID>
+        <Child_List>${childIDsXML}</Child_List>
+      </GeomBase>
+      <Material><n>Default</n></Material>
+      <Wire_Color>
+        <ParmContainer>
+          <ID>${makeID()}</ID>
+          <n>Default</n>
+          <Color_Parm>
+            <Alpha Value="${sci(255)}" ID="${makeID()}"/>
+            <Blue Value="${sci(color_b)}" ID="${makeID()}"/>
+            <Green Value="${sci(color_g)}" ID="${makeID()}"/>
+            <Red Value="${sci(color_r)}" ID="${makeID()}"/>
+          </Color_Parm>
+        </ParmContainer>
+      </Wire_Color>
+      <Textures><Num_of_Tex>0</Num_of_Tex></Textures>
+      <Geom>
+        <Set_List>1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, </Set_List>
+        <SubSurfaces/>
+      </Geom>
+      <WingGeom>
+        <ParmContainer>
+          <ID>${makeID()}</ID>
+          <n>Default</n>
+        </ParmContainer>
+        <XSecSurf>${sec0}${sec1}
+        </XSecSurf>
+      </WingGeom>
+    </Geom>
+    [WING_ID:${gID}]`;
   };
 
-  // ── Wing geometry block ──────────────────────────────────────────────
-  const wingID = makeID();
+  // ── Generate disk ID placeholders, then build child list XML ─────────
+  const diskIDs = Array.from({length: nSide}, () => makeID());
 
-  // ── Build XML ────────────────────────────────────────────────────────
-  const xml = `<?xml version="1.0"?>
-<Vsp_Geometry>
-  <Version>4</Version>
-  <Vehicle>
-    <ParmContainer>
-      <ID>${makeID()}</ID>
-      <n>Vehicle</n>
-    </ParmContainer>
+  const childListXML = diskIDs.map(id => `
+          <Child><ID>${id}</ID></Child>`).join('');
 
-    <!-- ═══ FUSELAGE ═══════════════════════════════════════════════
-         L=${sci(fL)} m   Dmax=${sci(fD)} m
-         5 stations: nose(pct=0) → cabin shoulder → max → taper → tail(pct=1)
-         TypeID=4  (confirmed from joby_s2.vsp3)
-    ═══════════════════════════════════════════════════════════════ -->
+  // ── Build main wing (with child list of disk IDs) ────────────────────
+  const wingRaw = wingGeom(
+    'MainWing', 0, 0, 255,
+    xWingLE, zWing,
+    bW, SW, Cr, Ct,
+    swW, 0.0, 2.0, -1.5,
+    MAC, 'NONE', childListXML
+  );
+  // Extract the wing ID from the marker
+  const wingIDmatch = wingRaw.match(/\[WING_ID:([A-Z]+)\]/);
+  const wingID = wingIDmatch ? wingIDmatch[1] : 'UNKNOWN';
+  const wingXML = wingRaw.replace(/\[WING_ID:[A-Z]+\]/, '');
+
+  // ── Build hover disks (children of wing, relative positions) ─────────
+  const hoverDisksXML = Array.from({length: nSide}, (_, i) => {
+    const yOff = bH * (i + 0.5) / nSide;
+    const myID = diskIDs[i];
+    // Override the makeID for this disk to use our pre-assigned ID
+    // We'll patch the ID in the output
+    const disk = diskGeom(
+      `HoverRotor_${i*2}`,
+      rotXabs, yOff, rotZabs,       // absolute positions
+      rotXrel, yOff, rotZrel,       // relative to wing
+      90, Drot, 2, wingID           // Y_Rot=90 → disk horizontal → thrust up
+    );
+    // Replace the first makeID() call result (the geom container ID) with our pre-assigned ID
+    return disk.replace(/<ID>[A-Z]+<\/ID>(\s*\n\s*<n>HoverRotor)/, `<ID>${myID}</ID>$1`);
+  }).join('\n');
+
+  // ── Build V-tail ─────────────────────────────────────────────────────
+  const vtailXML = wingGeom(
+    'VTail', 255, 255, 0,
+    xVtLE, zVtRoot,
+    bvt, bvt*(CrVT+CtVT)/2, CrVT, CtVT,
+    swVT, 0.25, vtG, 0,
+    (CrVT+CtVT)/2, 'NONE', ''
+  ).replace(/\[WING_ID:[A-Z]+\]/, '');
+
+  // ── Fuselage ──────────────────────────────────────────────────────────
+  const fusXML = `
     <Geom>
       <ParmContainer>
         <ID>${makeID()}</ID>
@@ -1536,228 +1721,33 @@ void Scale(double curr_scale )
           <ID>${makeID()}</ID>
           <n>Default</n>
         </ParmContainer>
-        <XSecSurf>${fusStations.map(fuseXSec).join('')}
+        <XSecSurf>${fusStations.map(fusXSec).join('')}
         </XSecSurf>
       </FuselageGeom>
-    </Geom>
+    </Geom>`;
 
-    <!-- ═══ MAIN WING ══════════════════════════════════════════════
-         TypeID=5  (Wing, confirmed from joby_s2.vsp3)
-         High-wing layout: Z=${sci(zWing)} m above fuselage CL
-         b=${sci(bW)} m  S=${sci(SW)} m²  Λ_LE=${sci(swW)}°  t/c=${tc}
-         Hover rotors attach as children (ParentID = wingID)
-    ═══════════════════════════════════════════════════════════════ -->
-    <Geom>
-      <ParmContainer>
-        <ID>${wingID}</ID>
-        <n>MainWing</n>
-        <Attach>
-          <Rots_Attach_Flag Value="${sci(0)}" ID="${makeID()}"/>
-          <Trans_Attach_Flag Value="${sci(0)}" ID="${makeID()}"/>
-          <U_Attach_Location Value="${sci(1e-6)}" ID="${makeID()}"/>
-          <V_Attach_Location Value="${sci(1e-6)}" ID="${makeID()}"/>
-        </Attach>
-        <Shape>
-          <Tess_U Value="${sci(16)}" ID="${makeID()}"/>
-          <Tess_W Value="${sci(33)}" ID="${makeID()}"/>
-        </Shape>
-        <Sym>
-          <Sym_Ancestor Value="${sci(1)}" ID="${makeID()}"/>
-          <Sym_Ancestor_Origin_Flag Value="${sci(1)}" ID="${makeID()}"/>
-          <Sym_Axial_Flag Value="${sci(0)}" ID="${makeID()}"/>
-          <Sym_Planar_Flag Value="${sci(2)}" ID="${makeID()}"/>
-          <Sym_Rot_N Value="${sci(2)}" ID="${makeID()}"/>
-        </Sym>
-        <XForm>
-          <Abs_Or_Relitive_flag Value="${sci(1)}" ID="${makeID()}"/>
-          <Last_Scale Value="${sci(1)}" ID="${makeID()}"/>
-          <Origin Value="${sci(0)}" ID="${makeID()}"/>
-          <Scale Value="${sci(1)}" ID="${makeID()}"/>
-          <X_Location Value="${sci(xWingLE)}" ID="${makeID()}"/>
-          <X_Rel_Location Value="${sci(xWingLE)}" ID="${makeID()}"/>
-          <X_Rel_Rotation Value="${sci(0)}" ID="${makeID()}"/>
-          <X_Rotation Value="${sci(0)}" ID="${makeID()}"/>
-          <Y_Location Value="${sci(0)}" ID="${makeID()}"/>
-          <Y_Rel_Location Value="${sci(0)}" ID="${makeID()}"/>
-          <Y_Rel_Rotation Value="${sci(0)}" ID="${makeID()}"/>
-          <Y_Rotation Value="${sci(0)}" ID="${makeID()}"/>
-          <Z_Location Value="${sci(zWing)}" ID="${makeID()}"/>
-          <Z_Rel_Location Value="${sci(zWing)}" ID="${makeID()}"/>
-          <Z_Rel_Rotation Value="${sci(0)}" ID="${makeID()}"/>
-          <Z_Rotation Value="${sci(0)}" ID="${makeID()}"/>
-        </XForm>
-        <WingGeom>
-          <LECluster Value="${sci(0.25)}" ID="${makeID()}"/>
-          <RelativeDihedralFlag Value="${sci(0)}" ID="${makeID()}"/>
-          <RelativeTwistFlag Value="${sci(0)}" ID="${makeID()}"/>
-          <RotateAirfoilMatchDideralFlag Value="${sci(0)}" ID="${makeID()}"/>
-          <TECluster Value="${sci(0.25)}" ID="${makeID()}"/>
-          <TotalArea Value="${sci(SW)}" ID="${makeID()}"/>
-          <TotalChord Value="${sci(MAC)}" ID="${makeID()}"/>
-          <TotalSpan Value="${sci(bW)}" ID="${makeID()}"/>
-        </WingGeom>
-      </ParmContainer>
-      <GeomBase>
-        <TypeName>Wing</TypeName>
-        <TypeID>5</TypeID>
-        <TypeFixed>0</TypeFixed>
-        <ParentID>NONE</ParentID>
-        <Child_List/>
-      </GeomBase>
-      <Material><n>Default</n></Material>
-      <Wire_Color>
-        <ParmContainer>
-          <ID>${makeID()}</ID>
-          <n>Default</n>
-          <Color_Parm>
-            <Alpha Value="${sci(255)}" ID="${makeID()}"/>
-            <Blue Value="${sci(255)}" ID="${makeID()}"/>
-            <Green Value="${sci(0)}" ID="${makeID()}"/>
-            <Red Value="${sci(0)}" ID="${makeID()}"/>
-          </Color_Parm>
-        </ParmContainer>
-      </Wire_Color>
-      <Textures><Num_of_Tex>0</Num_of_Tex></Textures>
-      <Geom>
-        <Set_List>1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, </Set_List>
-        <SubSurfaces/>
-      </Geom>
-      <WingGeom>
-        <ParmContainer>
-          <ID>${makeID()}</ID>
-          <n>Default</n>
-        </ParmContainer>
-        <XSecSurf>
-          ${wingXSec(0, Cr, Cr, 0.001, 0.001*Cr, 0, 0.25, 0, 0, 6)}
-          ${wingXSec(1, Cr, Ct, bW/2, SW/2, swW, 0.25, 2.0, -1.5, 16)}
-        </XSecSurf>
-      </WingGeom>
-    </Geom>
-
-    <!-- ═══ HOVER ROTORS ════════════════════════════════════════════
-         ${nP} total  (${nSide} XZ-symmetric pairs)  D=${sci(Drot)} m
-         TypeID=9  CustomGeom/Disk  Y_Rel_Rotation=90° → disk horiz → thrust +Z
-         ParentID = wingID (children of wing, as in joby_s2)
-         X_Rel positions are relative to wing LE origin
-    ═══════════════════════════════════════════════════════════════ -->
-    ${Array.from({length: nSide}, (_, i) => {
-      const yOff  = bH * (i + 0.5) / nSide;  // spanwise position from CL
-      const xOff  = Cr * 0.25;                // at 25% chord (AC)
-      const zOff  = rotZ - zWing;             // relative to wing
-      return diskGeom(
-        `HoverRotor_${i*2}R`,
-        xOff, yOff, zOff,
-        90,        // Y_Rel_Rotation = 90 → disk horizontal (thrust up)
-        Drot, 2,   // Sym_Planar_Flag=2 → XZ mirror → creates pair
-        wingID
-      );
-    }).join('\n')}
-
-    <!-- ═══ V-TAIL (Ruddervator) ══════════════════════════════════
-         TypeID=5  Wing geometry
-         bPanel=${sci(bvt)} m  Γ=${sci(vtG)}°  NACA 0009
-         X_Location = xVtLE (absolute from nose)
-    ═══════════════════════════════════════════════════════════════ -->
-    <Geom>
-      <ParmContainer>
-        <ID>${makeID()}</ID>
-        <n>VTail</n>
-        <Attach>
-          <Rots_Attach_Flag Value="${sci(0)}" ID="${makeID()}"/>
-          <Trans_Attach_Flag Value="${sci(0)}" ID="${makeID()}"/>
-          <U_Attach_Location Value="${sci(1e-6)}" ID="${makeID()}"/>
-          <V_Attach_Location Value="${sci(1e-6)}" ID="${makeID()}"/>
-        </Attach>
-        <Shape>
-          <Tess_U Value="${sci(12)}" ID="${makeID()}"/>
-          <Tess_W Value="${sci(17)}" ID="${makeID()}"/>
-        </Shape>
-        <Sym>
-          <Sym_Ancestor Value="${sci(1)}" ID="${makeID()}"/>
-          <Sym_Ancestor_Origin_Flag Value="${sci(1)}" ID="${makeID()}"/>
-          <Sym_Axial_Flag Value="${sci(0)}" ID="${makeID()}"/>
-          <Sym_Planar_Flag Value="${sci(2)}" ID="${makeID()}"/>
-          <Sym_Rot_N Value="${sci(2)}" ID="${makeID()}"/>
-        </Sym>
-        <XForm>
-          <Abs_Or_Relitive_flag Value="${sci(1)}" ID="${makeID()}"/>
-          <Last_Scale Value="${sci(1)}" ID="${makeID()}"/>
-          <Origin Value="${sci(0)}" ID="${makeID()}"/>
-          <Scale Value="${sci(1)}" ID="${makeID()}"/>
-          <X_Location Value="${sci(xVtLE)}" ID="${makeID()}"/>
-          <X_Rel_Location Value="${sci(xVtLE)}" ID="${makeID()}"/>
-          <X_Rel_Rotation Value="${sci(0)}" ID="${makeID()}"/>
-          <X_Rotation Value="${sci(0)}" ID="${makeID()}"/>
-          <Y_Location Value="${sci(0)}" ID="${makeID()}"/>
-          <Y_Rel_Location Value="${sci(0)}" ID="${makeID()}"/>
-          <Y_Rel_Rotation Value="${sci(0)}" ID="${makeID()}"/>
-          <Y_Rotation Value="${sci(0)}" ID="${makeID()}"/>
-          <Z_Location Value="${sci(zVtRoot)}" ID="${makeID()}"/>
-          <Z_Rel_Location Value="${sci(zVtRoot)}" ID="${makeID()}"/>
-          <Z_Rel_Rotation Value="${sci(0)}" ID="${makeID()}"/>
-          <Z_Rotation Value="${sci(0)}" ID="${makeID()}"/>
-        </XForm>
-        <WingGeom>
-          <LECluster Value="${sci(0.25)}" ID="${makeID()}"/>
-          <RelativeDihedralFlag Value="${sci(0)}" ID="${makeID()}"/>
-          <RelativeTwistFlag Value="${sci(0)}" ID="${makeID()}"/>
-          <RotateAirfoilMatchDideralFlag Value="${sci(0)}" ID="${makeID()}"/>
-          <TECluster Value="${sci(0.25)}" ID="${makeID()}"/>
-          <TotalArea Value="${sci(bvt*(CrVT+CtVT)/2)}" ID="${makeID()}"/>
-          <TotalChord Value="${sci((CrVT+CtVT)/2)}" ID="${makeID()}"/>
-          <TotalSpan Value="${sci(bvt)}" ID="${makeID()}"/>
-        </WingGeom>
-      </ParmContainer>
-      <GeomBase>
-        <TypeName>Wing</TypeName>
-        <TypeID>5</TypeID>
-        <TypeFixed>0</TypeFixed>
-        <ParentID>NONE</ParentID>
-        <Child_List/>
-      </GeomBase>
-      <Material><n>Default</n></Material>
-      <Wire_Color>
-        <ParmContainer>
-          <ID>${makeID()}</ID>
-          <n>Default</n>
-          <Color_Parm>
-            <Alpha Value="${sci(255)}" ID="${makeID()}"/>
-            <Blue Value="${sci(255)}" ID="${makeID()}"/>
-            <Green Value="${sci(255)}" ID="${makeID()}"/>
-            <Red Value="${sci(0)}" ID="${makeID()}"/>
-          </Color_Parm>
-        </ParmContainer>
-      </Wire_Color>
-      <Textures><Num_of_Tex>0</Num_of_Tex></Textures>
-      <Geom>
-        <Set_List>1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, </Set_List>
-        <SubSurfaces/>
-      </Geom>
-      <WingGeom>
-        <ParmContainer>
-          <ID>${makeID()}</ID>
-          <n>Default</n>
-        </ParmContainer>
-        <XSecSurf>
-          ${wingXSec(0, CrVT, CrVT, 0.001, 0.001*CrVT, 0, 0.25, 0, 0, 4)}
-          ${wingXSec(1, CrVT, CtVT, bvt, bvt*(CrVT+CtVT)/2, swVT, 0.25, vtG, 0, 12)}
-        </XSecSurf>
-      </WingGeom>
-    </Geom>
-
+  const xml = `<?xml version="1.0"?>
+<Vsp_Geometry>
+  <Version>4</Version>
+  <Vehicle>
+    <ParmContainer>
+      <ID>${makeID()}</ID>
+      <n>Vehicle</n>
+    </ParmContainer>
+${fusXML}
+${wingXML}
+${hoverDisksXML}
+${vtailXML}
   </Vehicle>
-  <!-- ════════════════════════════════════════════════════════════
-       Trail-1 eVTOL — Wright State University / Dr. Darryl K. Ahner
-       Reference geometry: joby_s2.vsp3 (eVTOL-master, MIT)
-       Our configuration: Lift+Cruise, high-wing, V-tail, ${nP} hover rotors
-       MTOW: ${MTOW.toFixed(1)} kg  |  b: ${bW.toFixed(2)} m  |  S: ${SW.toFixed(2)} m²
-       CG: ${xCG.toFixed(3)} m from nose  |  SM: ${(SM*100).toFixed(1)}% MAC
-  ════════════════════════════════════════════════════════════════ -->
+  <!-- Trail-1 eVTOL  |  Wright State University  |  Dr. D.K. Ahner
+       MTOW=${MTOW.toFixed(1)} kg  b=${bW.toFixed(2)} m  S=${SW.toFixed(2)} m²
+       CG=${xCG.toFixed(3)} m  SM=${(SM*100).toFixed(1)}% MAC
+       Config: Lift+Cruise, high-wing, V-tail, ${nP} hover rotors (${nSide} pairs)
+       Reference: joby_s2.vsp3 (eVTOL-master MIT) -->
 </Vsp_Geometry>`;
 
   return xml;
 }
-
 
 function generateReport(p, SR, branding={}) {
   const fmt = (v, d=3) => (typeof v==="number" && isFinite(v)) ? v.toFixed(d) : "—";
