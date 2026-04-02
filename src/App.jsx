@@ -1126,27 +1126,25 @@ function generateVSP3File(p, SR) {
   //   xRotAft = xVtTipTE + Rrot + 0.2  ≈ 11.012m
   const yVtSpan_h  = bvt * Math.cos(vtG * Math.PI / 180);    // V-tail horiz reach ≈ 2.666m
   const xVtTipTE   = xVtLE + bvt * Math.tan(swVT * Math.PI / 180) + CtVT;
-  // ── V-TAIL CLEARANCE → sets AFT BOOM LIMIT (not rotor position directly) ──
-  // This value drives boomXAft; the aft ROTOR is then derived from the boom tip.
-  const vtClearAft = xVtTipTE + Rrot + 0.2;   // minimum x the aft boom tip must reach
   const boomDiam   = 0.25;
 
-  // ── SYMMETRIC BOOM ABOUT AIRCRAFT CG — NOSE-ANCHORED ────────────────
-  // Design intent (top-down):
-  //   • boomXFwd = 0            → boom starts at nose  (OpenVSP XForm X_Loc = 0)
-  //   • boomXAft = 2·xCG        → boom ends at 2× CG   (OpenVSP XForm X_Loc = 2·xCG)
-  //   • boomLen  = 2·xCG        → ≈6 m when xCG≈3 m from sizing engine
-  //   • Rotors sit exactly at boom tips — boom defines rotor location.
-  //   • vtClearAft is a SAFETY CHECK only: logged below, not used for placement.
-  const boomXFwd = 0;                         // front tip at nose  → X_Loc = 0
-  const boomXAft = 2 * xCG;                   // aft  tip at 2·CG  → X_Loc = 2·xCG
-  const boomLen  = boomXAft - boomXFwd;       // = 2·xCG  (≈6 m)
-  const zBoom    = fD / 2;                     // flush with high-wing / top of fuselage
+  // ── SYMMETRIC BOOM ABOUT THE WING ────────────────────────────────────
+  // 1. Calculate aft tip to safely clear the V-Tail
+  const boomXAft = xVtTipTE + Rrot + 0.2;
+
+  // 2. Calculate how far back the boom extends from the wing trailing edge
+  const aftExtension = boomXAft - xWingTE;
+
+  // 3. Force the front of the boom to extend the exact same distance forward from the wing leading edge
+  const boomXFwd = xWingLE - aftExtension;
+
+  const boomLen  = boomXAft - boomXFwd;
+  const zBoom    = fD / 2;                    // flush with high-wing / top of fuselage
 
   // ── LIFT ROTOR POSITIONS — DERIVED FROM BOOM TIPS ────────────────────
-  const zLiftRotor = zBoom + boomDiam / 2;    // hub sits on top of boom surface
-  const xRotFwd    = boomXFwd;                // = 0       → front disk X_Loc = 0
-  const xRotAft    = boomXAft;                // = 2·xCG   → aft   disk X_Loc = 2·xCG
+  const zLiftRotor = zBoom + boomDiam / 2;   // hub sits on top of boom surface
+  const xRotFwd    = boomXFwd;               // forward rotor AT forward boom tip
+  const xRotAft    = boomXAft;               // aft rotor AT aft boom tip
 
   // ── CENTER PUSHER ROTOR ───────────────────────────────────────────────
   const xPusher   = fL;
@@ -1631,7 +1629,7 @@ ${tiltRotLeftXML}
               Formula: fD/2 + Rrot + 0.2 = ${(fD/2).toFixed(4)} + ${Rrot} + 0.2 = ${yBoom.toFixed(4)} m
               Fwd X=${boomXFwd.toFixed(3)} m  |  Aft X=${boomXAft.toFixed(3)} m  |  L=${boomLen.toFixed(3)} m
               Fwd arm from CG=${(xCG-boomXFwd).toFixed(3)} m  |  Aft arm from CG=${(boomXAft-xCG).toFixed(3)} m  |  Symmetric=${Math.abs((xCG-boomXFwd)-(boomXAft-xCG))<0.001?'YES':'NO'}
-              V-tail clearance check: vtClearAft=${vtClearAft.toFixed(3)} m ${vtClearAft<=boomXAft?'≤':'>'} boomXAft=${boomXAft.toFixed(3)} m → ${vtClearAft<=boomXAft?'OK ✓':'⚠ V-tail may collide with aft rotor!'}
+              boomXFwd=${boomXFwd.toFixed(3)} m = xWingLE(${xWingLE.toFixed(3)}) − aftExt(${aftExtension.toFixed(3)})  |  boomXAft=${boomXAft.toFixed(3)} m = xVtTipTE(${xVtTipTE.toFixed(3)}) + Rrot + 0.2  |  Symmetric ✓
          4. LiftRotor_Fwd × 2 — boom fwd tips, YRot=90 (thrust UP)
          5. LiftRotor_Aft × 2 — boom aft tips, YRot=90 (thrust UP)
          6. CruisePusher      — fuselage tail x=${xPusher.toFixed(3)} m, YRot=0 (thrust FWD +X)
