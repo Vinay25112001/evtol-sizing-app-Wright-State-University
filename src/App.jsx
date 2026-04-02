@@ -118,7 +118,8 @@ function runSizing(p) {
     // Battery C-rate derating: SED drops at high discharge rates (hover peaks 3–5C)
     // Approximate: SED_eff = sedCell × (1 - cRateDerate); default 8% for ~3-4C hover
     const sedEff=p.sedCell*(1-(p.cRateDerate||0.08));
-    Wbat=Etot*1000*(1+p.socMin)/(sedEff*p.etaBat);
+    // FIX: only (1-SoCmin) fraction of pack is usable → pack must be E/(1-SoCmin)
+    Wbat=Etot*1000/((1-p.socMin)*sedEff*p.etaBat);
     const mn=p.payload+Wempty+Wbat;
     const residual=Math.abs(mn-MTOW);
     energyH.push(+Etot.toFixed(3)); mtowH.push(+mn.toFixed(2));
@@ -134,7 +135,9 @@ function runSizing(p) {
   const Cr_=2*Swing/(bWing*(1+p.taper)),Ct_=Cr_*p.taper;
   const MAC=(2/3)*Cr_*(1+p.taper+p.taper**2)/(1+p.taper);
   const Ymac=(bWing/6)*(1+2*p.taper)/(1+p.taper);
-  const Xac=Cr_-MAC+0.25*MAC;
+  // Xac: distance from MAC leading edge to aerodynamic centre = 0.25 × MAC
+  // (The MAC LE offset from fuselage nose is handled separately via fL*0.2589)
+  const Xac=0.25*MAC;
   const sweep=Math.atan((Cr_-Ct_)/(bWing/2))*180/Math.PI;  // LE sweep: semi-span in denominator
   const Re_=rhoCr*p.vCruise*MAC/muCr;
 
@@ -232,10 +235,15 @@ function runSizing(p) {
   // Wing form factor — Raymer §12.5: FF = (1 + 0.6/(x/c)*t/c + 100*(t/c)⁴) × 1.05
   // x/c = chordwise position of max thickness ≈ 0.30 (NACA 4-digit series default)
   // NOTE: fully turbulent assumption — laminar flow effects neglected (conservative)
-  const xc_maxthick = 0.30;   // position of max thickness; 0.30 for NACA 4-digit, ~0.40 for 6-series
+  // x/c position of max thickness: 0.30 for NACA 4/5-digit; 0.40 for 6-series laminar (NASA TN-D series)
+  // Applied AFTER airfoil selection so it matches the actual selected section
+  const xc_maxthick = (selAF.category === "6-series") ? 0.40 : 0.30;
   const FFw=(1+(0.6/xc_maxthick)*p.tc+100*p.tc**4)*1.05;  // Raymer Eq 12.35
   const FFf=1+60/(fL/fD)**3+(fL/fD)/400;
   const CD0w=Cfw*FFw*Sww/Swing,CD0f=Cff*FFf*Swf/Swing;
+  // NOTE: CD0h and CD0v (placeholder tail areas) are NOT used in CD0tot —
+  // the actual V-tail drag CD0vt is computed from volume-coefficient sizing below
+  // and added to CD0tot after the V-tail block. Kept here only for drag pie chart.
   const CD0h=Cfw*1.05*Swhs/Swing,CD0v=Cfw*1.05*Swvs/Swing;
   const CD0n=Cfw*1.30*Swn/Swing;
   // Landing gear drag: eVTOL with retractable/folding gear uses CD0g ≈ 0.003
@@ -243,33 +251,26 @@ function runSizing(p) {
   // Winged lift+cruise eVTOL (Joby, Archer) use folding/retractable gear → 0.003
   const CD0g=0.003;  // retractable/folded gear — Raymer Table 12.6
   const CD0m=0.002;
-  const CD0tot=CD0w+CD0f+CD0h+CD0v+CD0n+CD0g+CD0m;
+  // CD0tot_noTail: drag WITHOUT tail (V-tail CD0vt added after sizing below)
+  const CD0tot_noTail=CD0w+CD0f+CD0n+CD0g+CD0m;
   // Induced drag — Oswald efficiency method (Raymer §12.6)
   // NOTE: rotor-wing aerodynamic interference not modelled (can add 5-15% to CDi for eVTOL)
   // Non-planar lift effects (winglets, distributed lift) also neglected
   const CDi=p.clDesign**2/(Math.PI*p.AR*p.eOsw);
-  const CDtot=CD0tot+CDi,LDact=p.clDesign/CDtot;
+  // CD0tot and LDact are finalised AFTER V-tail sizing adds CD0vt (see below).
+  // Temporary placeholder keeps Stability block references valid; overwritten below.
+  let CD0tot=CD0tot_noTail;   // updated after V-tail block
+  let CDtot=CD0tot+CDi, LDact=p.clDesign/CDtot;  // updated after V-tail block
 
-  /* Stability — corrected per Raymer §12 & §16 */
-  // CG positions: wing structural CG at 40% MAC (Raymer §15), not at AC (25% MAC)
-  // Avionics CG scales with fusLen (18% ≈ forward instrument bay), not hardcoded 0.8 m
-  const xCGfus=fL*0.42;
-  const xCGwing=fL*0.2589+0.40*MAC;   // FIX 1.3: structural CG at 40% MAC (not 25%)
-  const xCGbat=fL*0.38,xCGpay=fL*0.40;
-  const xCGavc=fL*0.18;               // FIX 1.4: scales with fusLen (was hardcoded 0.8 m)
+  /* Stability */
+  const xCGfus=fL*0.42,xCGwing=fL*0.2589+Xac,xCGbat=fL*0.38,xCGpay=fL*0.40;  // wing LE = 25.9% fL
   const Wfusc=Wempty*0.35,Wwingc=Wempty*0.18,Wmotc=Wempty*0.22,Wavc=Wempty*0.04,Wothc=Wempty*0.21;
-  const xCGempty=(Wfusc*xCGfus+Wwingc*xCGwing+Wmotc*xCGfus+Wavc*xCGavc+Wothc*xCGfus)/Wempty;
+  const xCGempty=(Wfusc*xCGfus+Wwingc*xCGwing+Wmotc*xCGfus+Wavc*0.8+Wothc*xCGfus)/Wempty;
   const xCGtotal=(Wempty*xCGempty+Wbat*xCGbat+p.payload*xCGpay)/MTOW;
-  const xACwing=fL*0.2589+Xac;
-  // FIX 1.5: tail moment arm = tail AC to wing AC, not fuselage tip to wing AC
-  // Tail AC is at ~88% fusLen (same reference used for V-tail arm lv below)
-  const lh=fL*0.88-xACwing;           // FIX 1.5: was fL-xACwing (too long by ~0.12*fL)
-  const Sh=Swing*0.18;
-  // FIX 1.1: CLa finite-wing — Raymer Eq. 12.6 (subsonic, sweep≈0)
-  // Old formula 2π(1+0.77·t/c) is a 2D thickness correction, not finite-wing slope
-  const CLaW=2*Math.PI*p.AR/(2+Math.sqrt(p.AR**2+4));   // Raymer Eq.12.6: ≈4.9/rad at AR=8
-  // FIX 1.2: downwash gradient — use correct CLaW in dε/dα = 2·CLα/(π·AR)
-  // (Anderson Eq.5.39 for elliptic wing; CLaW now the correct finite-wing value)
+  const xACwing=fL*0.2589+Xac,lh=fL*0.88-xACwing,Sh=Swing*0.18;  // tail AC ≈ 88% fL (consistent with lv)
+  // CLα: DATCOM 2D → 3D correction before downwash (avoids double-counting finite-span effect)
+  const CLa_2D=2*Math.PI*(1+0.77*p.tc);                        // 2D section slope with thickness
+  const CLaW=CLa_2D/(1+CLa_2D/(Math.PI*p.AR));                // 3D finite-wing slope (DATCOM)
   const dw=2*CLaW/(Math.PI*p.AR);
   const xNP=xACwing+(Sh/Swing)*0.9*(1-dw)*lh;
   const SM=(xNP-xCGtotal)/MAC;
@@ -357,6 +358,10 @@ function runSizing(p) {
   const Cfvt=0.455/Math.log10(Revt)**2.58/(1+0.144*Mach**2)**0.65;
   const FFvt=(1+0.6/0.3*0.09+100*0.09**4)*1.05;
   const CD0vt=Cfvt*FFvt*Swvt/Swing;
+  // FIX: CD0tot now uses the properly sized V-tail drag (not placeholder fixed-fraction areas)
+  CD0tot = CD0tot_noTail + CD0vt;
+  CDtot  = CD0tot + CDi;
+  LDact  = p.clDesign / CDtot;
 
   // Updated NP with correct V-tail pitch contribution (cos²Γ component)
   const eta_vt=0.90;
@@ -408,8 +413,11 @@ function runSizing(p) {
   const Nseries=Math.round(Vpack/Vcell),PackAhReq=Etot*1000/Vpack;
   const Npar=Math.ceil(PackAhReq/Ahcell),PackV=Nseries*Vcell,PackAh=Npar*Ahcell;
   const Ncells=Nseries*Npar;
-  // FIX: PackkWh from Wbat (ground truth), not integer cell count
-  const PackkWh=Wbat*p.sedCell*p.etaBat/1000;
+  // PackkWh: total stored energy in pack (Wbat already sized for full reserve)
+  // Wbat = E_mission / ((1-SoCmin) * sedEff * etaBat)  →  E_pack_total = Wbat * sedEff * etaBat
+  // Usable fraction = (1-SoCmin) * PackkWh_total
+  const sedEff_pack=p.sedCell*(1-(p.cRateDerate||0.08));
+  const PackkWh=Wbat*sedEff_pack*p.etaBat/1000;        // total stored energy [kWh]
   const CrateHov=(Phov*1000/PackV)/PackAh,CrateCr=(Pcr*1000/PackV)/PackAh;
   const Rint=0.030*Nseries/Npar,Pheat=(Phov*1000/PackV)**2*Rint;
 
@@ -426,7 +434,7 @@ function runSizing(p) {
   const rpData=Array.from({length:60},(_,i)=>{
     const pay=(MTOW-Wempty-50)*i/59,Wavail=MTOW-Wempty-pay;
     if(Wavail<=0)return{payload:+pay.toFixed(0),range:0};
-    const Eavail=Wavail*p.sedCell*p.etaBat/(1000*(1+p.socMin));  // usable fraction = 1/(1+SoCmin)
+    const Eavail=Wavail*p.sedCell*p.etaBat*(1-p.socMin)/1000;  // usable energy = (1-SoCmin) × total
     return{payload:+pay.toFixed(0),range:+Math.max(0,((Eavail-Eto-Eld)/Efl_design)*p.range).toFixed(1)};
   });
 
@@ -448,7 +456,7 @@ function runSizing(p) {
     const t=Tend*i/N;
     let ph=5; for(let j=0;j<6;j++)if(t>=tPhases[j]&&t<tPhases[j+1]){ph=j;break;}
     const Ec=Ecum_ph[ph]+phPow[ph]*((t-tPhases[ph])/3600);
-    const socFloor=p.socMin/(1+p.socMin);
+    const socFloor=p.socMin;  // FIX: SoCmin IS the floor fraction (e.g. 0.20 = 20% min SoC)
     const soc=Math.max(socFloor,(1-Ec/PackkWh))*100;
     powerSteps.push({t:+t.toFixed(0),P:+phPow[ph].toFixed(1),ph:["TO","Climb","Cruise","Desc","Land","Res"][ph]});
     socSteps.push({t:+t.toFixed(0),SoC:+soc.toFixed(2)});
@@ -488,7 +496,7 @@ function runSizing(p) {
       const ttrans2=45,Ptrans2=0.65*Ph2;
       const Et2=(Ph2*(hvtol/0.5)+Ptrans2*ttrans2)/3600+Pc2*tcl/3600+Pcr2*tcr/3600+Pd2*tdc/3600+Ph2*tld/3600+Pr2*tres_s/3600;
       const sedEff2=p.sedCell*(1-(p.cRateDerate||0.08));
-      const Wb2=Et2*1000*(1+p.socMin)/(sedEff2*p.etaBat);
+      const Wb2=Et2*1000/((1-p.socMin)*sedEff2*p.etaBat);
       const mn=p.payload+p.ewf*m2+Wb2;
       if(Math.abs(mn-m2)<t){m2=mn;break;}
       m2=mn;
@@ -511,7 +519,7 @@ function runSizing(p) {
       const ttrans_tw=45,Ptrans_tw=0.65*Phov_tw;
       const Etot_tw=(Phov_tw*(hvtol/0.5)+Ptrans_tw*ttrans_tw)/3600+Pcl_tw*tcl/3600+Pcr_tw*tcr/3600+Pdc_tw*tdc/3600+Phov_tw*tld/3600+Pres_tw*tres_s/3600;
       const sedEff_tw=p.sedCell*(1-(p.cRateDerate||0.08));
-      const Wbat_tw=Etot_tw*1000*(1+p.socMin)/(sedEff_tw*p.etaBat);
+      const Wbat_tw=Etot_tw*1000/((1-p.socMin)*sedEff_tw*p.etaBat);
       const mn=p.payload+p.ewf*m+Wbat_tw;
       if(Math.abs(mn-m)<1e-4){m=mn;break;}
       m=mn;
@@ -539,7 +547,7 @@ function runSizing(p) {
     {label:"SM 5–25% MAC",ok:SM_vt>=0.05&&SM_vt<=0.25,val:`${(SM_vt*100).toFixed(1)}%`},
     {label:"Tip Mach < 0.70",ok:TipMach<0.70,val:`M${TipMach.toFixed(3)}`},
     {label:"Battery Frac < 55%",ok:Wbat/MTOW<0.55,val:`${(Wbat/MTOW*100).toFixed(1)}%`},
-    {label:"Final SoC ≥ SoCmin",ok:(1-Etot/PackkWh)>=(p.socMin/(1+p.socMin))-0.01,val:`${((1-Etot/PackkWh)*100).toFixed(1)}% (floor ${(p.socMin/(1+p.socMin)*100).toFixed(1)}%)`},
+    {label:"Final SoC ≥ SoCmin",ok:(1-Etot/PackkWh)>=(p.socMin)-0.01,val:`${((1-Etot/PackkWh)*100).toFixed(1)}% (floor ${(p.socMin*100).toFixed(1)}%)`},
     {label:"Actual L/D > 10",ok:LDact>10,val:LDact.toFixed(2)},
     {label:"V-tail pitch auth.",ok:pitch_ratio>=1.0,val:`${(pitch_ratio*100).toFixed(0)}%`},
     {label:"V-tail yaw auth.",ok:yaw_ratio>=1.0,val:`${(yaw_ratio*100).toFixed(0)}%`},
@@ -639,25 +647,10 @@ function runSizing(p) {
   const K_B       = -1.5 * (N_bl - B_ref);                                // more blades → lower K
   const K_cal     = K_base + K_DL + K_Mt + K_B;
 
-  // ── 5. GUTIN FUNDAMENTAL (with directivity + Bessel + compressibility) ──
-  // Gutin (1948) NACA TM-1195 full expression includes Bessel function J_{mB}(x):
-  //   x = mB·Ω·R_eff·sin(θ)/c₀  (argument at in-plane observer, m=1 fundamental)
-  //   R_eff = 0.8·R (effective radius — Gutin 1948, Leishman §8.3)
-  // For eVTOL: x ≈ B·Ω·R·sin(90°)/c₀ ≈ 1.1 — NOT << 1, so Bessel matters.
-  // FIX 2.1: include first-harmonic Bessel factor instead of bare loading term.
-  // J1 approximation: valid to ±0.4 dB for x ≤ 3 (covers all practical eVTOL rotors).
-  //   J1(x) ≈ x/2·(1 − x²/8)   for x < 2.4
-  //   J1(x) ≈ sqrt(2/(π·x))·cos(x − 3π/4)  for x ≥ 2.4
-  const R_eff       = 0.8 * R_rotor;                               // effective radius (Gutin)
-  const bessel_x    = (N_bl * Omega * R_eff) / c0;                 // argument at θ=90° (sin=1)
-  const J1_bessel   = bessel_x < 2.4
-    ? (bessel_x / 2) * (1 - bessel_x * bessel_x / 8)
-    : Math.sqrt(2 / (Math.PI * bessel_x)) * Math.cos(bessel_x - 3 * Math.PI / 4);
-  // Bare Gutin loading pressure (no Bessel — used as reference, corrected below)
+  // ── 5. GUTIN FUNDAMENTAL (with directivity + compressibility) ────
+  // p_rms = D(θ) × B·Ω·T / (4π·r₀·ρ·c₀²·√2)
   const p_rms_gutin = D_direct * (N_bl * Omega * T_r) / (4.0 * Math.PI * r0 * rho0 * c0 * c0 * Math.SQRT2);
-  // Apply Bessel modulation: J1 scales the loading contribution
-  const p_rms_bessel = p_rms_gutin * Math.max(1e-6, Math.abs(J1_bessel));
-  const SPL_1_gutin = 20 * Math.log10(Math.max(p_rms_bessel, 1e-10) / 2e-5);
+  const SPL_1_gutin = 20 * Math.log10(Math.max(p_rms_gutin, 1e-10) / 2e-5);
   const SPL_1       = SPL_1_gutin + K_cal + C_comp_dB;  // calibrated + compressibility-corrected
 
   // ── 6. ADAPTIVE HARMONIC DECAY α = f(Mtip, DL) ───────────────────
@@ -672,19 +665,12 @@ function runSizing(p) {
   // At Mtip=0.65: K_decay ≈ 3.65 dB/harm (slower — more high-harmonic energy)
 
   // ── 7. MULTI-HARMONIC A-WEIGHTED SUM (extended to n=10) ──────────
-  // FIX 2.4: Removed unphysical "+20·log10(n)" term.
-  // Gutin (1948) Eq.(8): loading-noise pressure amplitude of m-th harmonic
-  //   ∝ Jm·B(mB·Ω·R·sin θ / c) — the Bessel function DECREASES with m for
-  //   arguments < mB (subsonic tip), so higher harmonics are QUIETER, not louder.
-  // Correct spectral roll-off for eVTOL hover measured by Fleming et al. (2022):
-  //   SPL_n = SPL_1 − K_decay × (n−1)   [monotonically decreasing]
-  // The old "+20log10(n)" caused n=2 to be 6 dB above fundamental — physically wrong.
+  // Extended from n=8 to n=10 for improved A-weighted high-frequency tail accuracy.
   const N_harmonics = 10;
   let tonal_lin     = 0;
   const harmonicData = [];
   for (let n = 1; n <= N_harmonics; n++) {
-    // Correct: harmonics decay from SPL_1, no unphysical amplitude growth
-    const SPL_n = SPL_1 - K_decay * (n - 1);
+    const SPL_n = SPL_1 + 20 * Math.log10(n) - K_decay * (n - 1);
     const f_n   = N_bl * n * Omega / (2 * Math.PI);  // harmonic frequency (Hz)
     const Aw_n  = Aweight(f_n);                        // IEC 61672 A-weight at this freq
     const dBA_n = SPL_n + Aw_n;
@@ -708,37 +694,10 @@ function runSizing(p) {
   // At reference: 0 + 0 = −8 dB (matches Tinney & Valdez midpoint, same as v1)
   // At Mtip=0.65: +2.5 dB → −5.5 dB below tonal (physically higher broadband)
 
-  // ── 9. VORTEX (BVI) NOISE — eVTOL-master noise_models.py vortex_noise() ──
-  // Schlegel–King–Mull vortex-shedding model, as implemented in the reference
-  // eVTOL-master/models/noise_models.py vortex_noise() function.
-  // Dominant in low-hover and transition flight for eVTOL.
-  // p_ratio = k2 × V₀.₇ / (ρ·δ_S) × sqrt((T·N/σ) × DL)
-  // k2 = 1.206×10⁻² s³/m³  (Schlegel et al. empirical, SI conversion)
-  // V₀.₇ = 0.7·V_tip  (70% radius representative blade speed)
-  // σ = rotor solidity;  DL = disk loading;  δ_S = observer distance (1m reference)
-  const k2_vortex     = 1.206e-2;                   // empirical constant (SI)
-  const V07_vortex    = 0.7 * TipSpd;               // blade speed at 70% radius
-  const sigma_vortex  = sigma;                       // rotor solidity (already computed above)
-  const T_total_vortex = MTOW * g0;                  // total thrust = weight in hover
-  const T_perRotor_vortex = T_r;                     // thrust per rotor (already computed)
-  // Guard against zero/near-zero values
-  const vortex_arg    = Math.max(1e-30,
-      (T_total_vortex * N_rot / Math.max(1e-6, sigma_vortex)) * DL_hover);
-  const p_ratio_vortex = k2_vortex * (V07_vortex / (rho0 * r0)) * Math.sqrt(vortex_arg);
-  const dBA_vortex_single = 20 * Math.log10(Math.max(p_ratio_vortex, 1e-10) / 2e-5);
-  // Apply A-weighting at the peak vortex frequency (f_peak = St·V₀.₇/t_proj)
-  // St = 0.28 (Strouhal), t_proj = chord × sin(AoA) + t_avg·cos(AoA) ≈ 0.12·chord
-  const AoA_blade   = 0.067;   // ~3.8° mean (Cl_mean=0.6 / 2π)
-  const t_proj_v    = ChordBl * (0.09 * Math.cos(AoA_blade) + Math.sin(AoA_blade));
-  const f_vortex_Hz = 0.28 * V07_vortex / Math.max(1e-3, t_proj_v);
-  const Aw_vortex   = Aweight(f_vortex_Hz);
-  const dBA_vortex  = dBA_vortex_single + Aw_vortex;
-
-  // ── 10. SINGLE-ROTOR TOTAL (tonal + broadband + vortex) ──────────
+  // ── 9. SINGLE-ROTOR TOTAL ─────────────────────────────────────────
   const dBA_single = 10 * Math.log10(
-    Math.pow(10, dBA_tonal_single      / 10) +
-    Math.pow(10, dBA_broadband_single  / 10) +
-    Math.pow(10, dBA_vortex            / 10)
+    Math.pow(10, dBA_tonal_single  / 10) +
+    Math.pow(10, dBA_broadband_single / 10)
   );
 
   // ── 10. MULTI-ROTOR: incoherent sum + interaction correction ─────
@@ -930,671 +889,79 @@ void main()
     // ── Fuselage ──────────────────────────────────────────────────
     string fus = AddGeom( "FUSELAGE", "" );
     SetParmVal( fus, "Length", "Design", ${fL} );
-    SetParmVal( fus, "Tess_W", "Shape",  49 );
 
     string surf = GetXSecSurf( fus, 0 );
 
+    // Set XSec 1 to ellipse and size it
+    ChangeXSecShape( surf, 1, XS_ELLIPSE );
     string xsec1 = GetXSec( surf, 1 );
-    SetParmVal( xsec1, "Width",  "XSecCurve", ${w1} );
-    SetParmVal( xsec1, "Height", "XSecCurve", ${h1} );
+    SetParmVal( xsec1, "Ellipse_Width",  "XSecCurve", ${w1} );
+    SetParmVal( xsec1, "Ellipse_Height", "XSecCurve", ${h1} );
 
+    // Set XSec 2 to ellipse and size it (max cross-section)
+    ChangeXSecShape( surf, 2, XS_ELLIPSE );
     string xsec2 = GetXSec( surf, 2 );
-    SetParmVal( xsec2, "Width",  "XSecCurve", ${w2} );
-    SetParmVal( xsec2, "Height", "XSecCurve", ${h2} );
-
-    // FIX 4.2: Apply XSec continuity and tangent smoothing — reference Fuselage.vspscript
-    // SetXSecContinuity=1 (G1 continuous), nose tangent=+90°, tail tangent=−90°
-    int num_xsecs_fus = GetNumXSec( surf );
-    for ( int ix = 0; ix < num_xsecs_fus; ix++ )
-    {
-        string xs = GetXSec( surf, ix );
-        SetXSecContinuity( xs, 1 );
-        SetXSecTanAngles( xs, XSEC_BOTH_SIDES, 0 );
-        SetXSecTanStrengths( xs, XSEC_BOTH_SIDES, 0.5 );
-    }
-    SetXSecTanAngles( GetXSec( surf, 0 ),                 XSEC_BOTH_SIDES,  90 );
-    SetXSecTanAngles( GetXSec( surf, num_xsecs_fus - 1 ), XSEC_BOTH_SIDES, -90 );
+    SetParmVal( xsec2, "Ellipse_Width",  "XSecCurve", ${w2} );
+    SetParmVal( xsec2, "Ellipse_Height", "XSecCurve", ${h2} );
 
     Update();
 
     // ── Main Wing (high-wing, XZ symmetry) ────────────────────────
     //    S=${Swing} m2  b=${bWing} m  LE at x=${xWingLE} m  z=${zWing} m
     string wing = AddGeom( "WING", fus );
-    SetParmVal( wing, "Sym_Planar_Flag", "Sym",     2.0 );
-    SetParmVal( wing, "X_Rel_Location",  "XForm",   ${xWingLE} );
-    SetParmVal( wing, "Z_Rel_Location",  "XForm",   ${zWing} );
-    // FIX 4.1: Set driver group before wing geometry params (ref Wing.vspscript line 12)
-    // AREA + ROOTC + TIPC driver group is the correct VSP API method for planform sizing
-    SetDriverGroup( wing, 1, AREA_WSECT_DRIVER, ROOTC_WSECT_DRIVER, TIPC_WSECT_DRIVER );
-    SetParmVal( wing, "TotalSpan",       "WingGeom", ${bWing} );
-    SetParmVal( wing, "TotalArea",       "WingGeom", ${Swing} );
-    SetParmVal( wing, "Root_Chord",      "XSec_1",   ${Cr_} );
-    SetParmVal( wing, "Tip_Chord",       "XSec_1",   ${Ct_} );
-    SetParmVal( wing, "Sweep",           "XSec_1",   ${sw} );
-    SetParmVal( wing, "Dihedral",        "XSec_1",   2.0 );
+    SetParmVal( wing, "Sym_Planar_Flag", "Sym",    2.0 );
+    SetParmVal( wing, "X_Rel_Location",  "XForm",  ${xWingLE} );
+    SetParmVal( wing, "Z_Rel_Location",  "XForm",  ${zWing} );
+    // Use SPAN + ROOT_CHORD + TIP_CHORD driver group (most reliable in VSP API)
+    SetDriverGroup( wing, 1, SPAN_WSECT_DRIVER, ROOTC_WSECT_DRIVER, TIPC_WSECT_DRIVER );
+    SetParmVal( wing, "Span",       "XSec_1", ${bWing} );
+    SetParmVal( wing, "Root_Chord", "XSec_1", ${Cr_} );
+    SetParmVal( wing, "Tip_Chord",  "XSec_1", ${Ct_} );
+    SetParmVal( wing, "Sweep",      "XSec_1", ${sw} );
+    SetParmVal( wing, "Dihedral",   "XSec_1", 2.0 );
     Update();
 
     // ── V-Tail (XZ symmetry, dihedral = Gamma) ────────────────────
     //    bPanel=${bvt} m  Gamma=${vtG} deg  LE at x=${xVtLE} m
     string vtail = AddGeom( "WING", fus );
-    SetParmVal( vtail, "Sym_Planar_Flag", "Sym",     2.0 );
-    SetParmVal( vtail, "X_Rel_Location",  "XForm",   ${xVtLE} );
-    SetParmVal( vtail, "Z_Rel_Location",  "XForm",   ${zVtRoot} );
-    SetParmVal( vtail, "TotalSpan",       "WingGeom", ${bvt} );
-    SetParmVal( vtail, "Root_Chord",      "XSec_1",   ${Cr_vt} );
-    SetParmVal( vtail, "Tip_Chord",       "XSec_1",   ${Ct_vt} );
-    SetParmVal( vtail, "Sweep",           "XSec_1",   ${sw_vt} );
-    SetParmVal( vtail, "Dihedral",        "XSec_1",   ${vtG} );
+    SetParmVal( vtail, "Sym_Planar_Flag", "Sym",    2.0 );
+    SetParmVal( vtail, "X_Rel_Location",  "XForm",  ${xVtLE} );
+    SetParmVal( vtail, "Z_Rel_Location",  "XForm",  ${zVtRoot} );
+    SetDriverGroup( vtail, 1, SPAN_WSECT_DRIVER, ROOTC_WSECT_DRIVER, TIPC_WSECT_DRIVER );
+    SetParmVal( vtail, "Span",       "XSec_1", ${bvt} );
+    SetParmVal( vtail, "Root_Chord", "XSec_1", ${Cr_vt} );
+    SetParmVal( vtail, "Tip_Chord",  "XSec_1", ${Ct_vt} );
+    SetParmVal( vtail, "Sweep",      "XSec_1", ${sw_vt} );
+    SetParmVal( vtail, "Dihedral",   "XSec_1", ${vtG} );
     Update();
 
     // ── Hover Rotors (${p.nPropHover||6} total, D=${Drot} m) ──────────────────────
     //    Y_Rel_Rotation=-90 => disk horizontal => thrust +Z (up)
-    //    FIX 4.3: Set PropMode=PROP_DISK for VSPAERO actuator-disk analysis
-    //             (ref VSPAERO_ActuatorDisk_CSGroup.vspscript line 65)
     array<double> y( ${nSide} );
 ${yVals.map((v,i)=>`    y[${i}] = ${v};`).join('\n')}
 
     for ( int i = 0; i < ${nSide}; i++ )
     {
         string r1 = AddGeom( "PROP", fus );
-        SetParmVal( r1, "PropMode",        "Design",  PROP_DISK );
-        SetParmVal( r1, "X_Rel_Location",  "XForm",   ${rotX} );
-        SetParmVal( r1, "Y_Rel_Location",  "XForm",   y[i] );
-        SetParmVal( r1, "Z_Rel_Location",  "XForm",   ${rotZ} );
-        SetParmVal( r1, "Y_Rel_Rotation",  "XForm",  -90.0 );
-        SetParmVal( r1, "Diameter",        "Design",  ${Drot} );
+        SetParmVal( r1, "X_Rel_Location", "XForm",  ${rotX} );
+        SetParmVal( r1, "Y_Rel_Location", "XForm",  y[i] );
+        SetParmVal( r1, "Z_Rel_Location", "XForm",  ${rotZ} );
+        SetParmVal( r1, "Y_Rel_Rotation", "XForm", -90.0 );
+        SetParmVal( r1, "Diameter",       "Design",  ${Drot} );
 
         string r2 = AddGeom( "PROP", fus );
-        SetParmVal( r2, "PropMode",        "Design",  PROP_DISK );
-        SetParmVal( r2, "X_Rel_Location",  "XForm",   ${rotX} );
-        SetParmVal( r2, "Y_Rel_Location",  "XForm",  -y[i] );
-        SetParmVal( r2, "Z_Rel_Location",  "XForm",   ${rotZ} );
-        SetParmVal( r2, "Y_Rel_Rotation",  "XForm",  -90.0 );
-        SetParmVal( r2, "Diameter",        "Design",  ${Drot} );
+        SetParmVal( r2, "X_Rel_Location", "XForm",  ${rotX} );
+        SetParmVal( r2, "Y_Rel_Location", "XForm", -y[i] );
+        SetParmVal( r2, "Z_Rel_Location", "XForm",  ${rotZ} );
+        SetParmVal( r2, "Y_Rel_Rotation", "XForm", -90.0 );
+        SetParmVal( r2, "Diameter",       "Design",  ${Drot} );
     }
-
-    // ── Cruise Propeller (lift+cruise: 1 pusher at fuselage tail) ────
-    // FIX 4.4: Cruise prop Y_Rel_Rotation=0 (disk vertical, thrust +X forward/pusher).
-    //          All hover rotors above use -90° (disk horizontal, thrust +Z).
-    //          These are DIFFERENT orientations and must NOT share the same rotation.
-    string cprop = AddGeom( "PROP", fus );
-    SetParmVal( cprop, "PropMode",       "Design",  PROP_DISK );
-    SetParmVal( cprop, "X_Rel_Location", "XForm",   ${fL} );
-    SetParmVal( cprop, "Y_Rel_Location", "XForm",   0.0 );
-    SetParmVal( cprop, "Z_Rel_Location", "XForm",   ${zWing} );
-    SetParmVal( cprop, "Y_Rel_Rotation", "XForm",   0.0 );
-    SetParmVal( cprop, "Diameter",       "Design",  ${Drot} );
-
     Update();
 
     WriteVSPFile( "Trail1_evtol.vsp3", SET_ALL );
     Print( "MTOW=${MTOW} kg  b=${bWing} m  CG=${xCG} m  SM=${SM_}%" );
-
-    // FIX 4.5: API error check loop (ref: all StructuresParmContainerTest scripts)
-    while ( GetNumTotalErrors() > 0 )
-    {
-        ErrorObj err = PopLastError();
-        Print( err.GetErrorString() );
-    }
-
     Print( "Model Created" );
 }`;
-}
-
-
-/* ═══════════════════════════════════════════════════════════════════════
-   OPENVSP VSP3 FILE GENERATOR
-   Produces a native .vsp3 XML file that OpenVSP opens directly —
-   no script execution needed: File → Open → Trail1_eVTOL.vsp3
-   Reference: joby_s2.vsp3 from eVTOL-master (MIT).
-   Geometry types confirmed from reference file:
-     • Fuselage   — 5-station ellipse XSecs, tangent-smooth nose/tail
-     • Wing       — WING type, XZ symmetry, NACA 4-series airfoil
-     • V-Tail     — WING type, XZ symmetry, dihedral=Γ, NACA 0009
-     • Rotors     — Disk type (PROP), Y_Rel_Rotation=90° (disk horizontal)
-     • Cruise Prop— Disk type (PROP), Y_Rel_Rotation=0°  (disk vertical)
-   VSP3 parm format: <ElementName Value="X.XX" ID="UNIQUEID"/>
-   IDs: deterministic from component+parm name hash (8 uppercase chars).
-   ═══════════════════════════════════════════════════════════════════════ */
-function generateVSP3File(p, SR) {
-
-  // ── sci(): VSP3 scientific notation format (validated against joby_s2.vsp3)
-  // All parm values in VSP3 use 18-digit scientific notation: 1.600000000000000000e+001
-  const sci = (v) => {
-    const n = isFinite(Number(v)) ? Number(v) : 0;
-    if (n === 0) return '0.000000000000000000e+000';
-    return n.toExponential(18).replace(/e([+-])(\d+)$/, (_, sign, exp) =>
-      'e' + sign + exp.padStart(3, '0'));
-  };
-
-  // Simple deterministic ID from seed string (mimics VSP3 10-char IDs)
-  let _idCounter = 1000;
-  const makeID = () => {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-    let id = '';
-    let n = _idCounter++;
-    for (let i = 0; i < 10; i++) { id = chars[n % 26] + id; n = Math.floor(n / 26); }
-    return id;
-  };
-
-  // Parm element: <Name Value="..." ID="..."/>
-  const parm = (name, val) => `          <${name} Value="${sci(val)}" ID="${makeID()}"/>`;
-
-  // Full XForm block for a geometry
-  const xform = (x, y, z, rx=0, ry=0, rz=0, ox=0, oy=0, oz=0) => `
-        <XForm>
-          <ParmContainer>
-            <ID>${makeID()}</ID>
-            <n>XForm</n>
-            <XForm>
-${parm('X_Location', x)}
-${parm('Y_Location', y)}
-${parm('Z_Location', z)}
-${parm('X_Rel_Location', x)}
-${parm('Y_Rel_Location', y)}
-${parm('Z_Rel_Location', z)}
-${parm('X_Rotation', rx)}
-${parm('Y_Rotation', ry)}
-${parm('Z_Rotation', rz)}
-${parm('X_Rel_Rotation', rx)}
-${parm('Y_Rel_Rotation', ry)}
-${parm('Z_Rel_Rotation', rz)}
-${parm('Origin', 0)}
-${parm('Scale', 1)}
-            </XForm>
-          </ParmContainer>
-        </XForm>`;
-
-  // Sym block
-  const symBlock = (planarFlag=2) => `
-        <Sym>
-          <ParmContainer>
-            <ID>${makeID()}</ID>
-            <n>Sym</n>
-            <Sym>
-${parm('Sym_Ancestor', 1)}
-${parm('Sym_Ancestor_Origin_Flag', 1)}
-${parm('Sym_Planar_Flag', planarFlag)}
-${parm('Sym_Axial_Flag', 0)}
-${parm('Sym_Rot_N', 2)}
-            </Sym>
-          </ParmContainer>
-        </Sym>`;
-
-  // ── Sizing values ────────────────────────────────────────────────────
-  const fL      = Number(p.fusLen)   || 6.5;
-  const fD      = Number(p.fusDiam)  || 1.65;
-  const bWing   = Number(SR.bWing)   || 12.67;
-  const Swing   = Number(SR.Swing)   || 17.83;
-  const Cr_     = Number(SR.Cr_)     || 1.94;
-  const Ct_     = Number(SR.Ct_)     || 0.87;
-  const sw      = Number(SR.sweep)   || 9.57;
-  const tc      = Number(p.tc)       || 0.12;
-  const xACw    = Number(SR.xACwing) || fL * 0.40;
-  const MAC     = Number(SR.MAC)     || 1.40;
-  const lv      = Number(SR.lv)      || fL * 0.63;
-  const bvt     = Number(SR.bvt_panel) || 3.77;
-  const Cr_vt   = Number(SR.Cr_vt)   || 2.15;
-  const Ct_vt   = Number(SR.Ct_vt)   || 0.86;
-  const sw_vt   = Number(SR.sweep_vt)|| 34.4;
-  const vtGamma = Number(p.vtGamma)  || 45;
-  const Drot    = Number(SR.Drotor)  || 3.0;
-  const nProp   = Number(p.nPropHover) || 6;
-  const nSide   = Math.floor(nProp / 2);
-  const bHalf   = bWing / 2;
-
-  // Key positions
-  const xWingLE = xACw - 0.25 * Cr_;
-  const zWing   = -(fD * 0.10);                  // low-wing (matches joby_s2: z below centreplane)
-  const xVtLE   = (xACw + lv) - 0.25 * (Cr_vt * 2 / 3 + Ct_vt / 3); // tail LE
-  const zVtRoot = fD * 0.05;                     // tail at fuselage centreline
-  const rotX    = xWingLE + 0.20 * Cr_;          // rotor hub X
-  const rotZ    = zWing + Drot * 0.12;           // hover rotor Z (slightly above wing)
-
-  // Fuselage XSec stations (5-station like joby_s2 reference):
-  // Station 0 (nose): point  — tangent 90°
-  // Station 1 (10%):  0.55×fD wide, 0.50×fD tall  — nose shoulder
-  // Station 2 (35%):  0.95×fD wide, 0.88×fD tall  — cabin max
-  // Station 3 (70%):  0.85×fD wide, 0.78×fD tall  — tail fairing
-  // Station 4 (tail): 0.30×fD wide, 0.25×fD tall  — tail point
-  const fusXSecs = [
-    { pct: 0.000, w: 0.01*fD, h: 0.01*fD },  // nose (near-point)
-    { pct: 0.100, w: 0.55*fD, h: 0.50*fD },
-    { pct: 0.350, w: 1.00*fD, h: 0.92*fD },  // max section
-    { pct: 0.700, w: 0.85*fD, h: 0.75*fD },
-    { pct: 1.000, w: 0.10*fD, h: 0.08*fD },  // tail (near-point)
-  ];
-
-  // Build a fuselage XSec element
-  const fusXSec = (st, idx, isNose=false, isTail=false) => `
-          <XSec>
-            <ParmContainer>
-              <ID>${makeID()}</ID>
-              <n>XSec_${idx}</n>
-              <XSec>
-${parm('XLocPercent', st.pct)}
-${parm('ZLocPercent', 0)}
-${parm('XRotate', 0)}
-${parm('YRotate', 0)}
-${parm('ZRotate', 0)}
-${parm('Spin', 0)}
-${parm('AllSym', 0)}
-${parm('TBSym', 1)}
-${parm('TopLAngle', isNose ? 90 : (isTail ? -90 : 0))}
-${parm('TopLAngleSet', 1)}
-${parm('TopLStrength', isNose||isTail ? 0.4 : 1.0)}
-${parm('TopLStrengthSet', 1)}
-${parm('BottomLAngle', isNose ? 90 : (isTail ? -90 : 0))}
-${parm('BottomLAngleSet', 1)}
-${parm('BottomLStrength', isNose||isTail ? 0.4 : 1.0)}
-${parm('BottomLStrengthSet', 1)}
-              </XSec>
-              <XSecCurve>
-                <ParmContainer>
-                  <ID>${makeID()}</ID>
-                  <n>XSecCurve</n>
-                  <XSecCurve>
-${parm('XSecCurveType', 2)}
-${parm('Ellipse_Width',  st.w)}
-${parm('Ellipse_Height', st.h)}
-                  </XSecCurve>
-                </ParmContainer>
-              </XSecCurve>
-            </ParmContainer>
-          </XSec>`;
-
-  // Wing XSec (NACA 4-digit, Section_1 only — span driver)
-  const wingXSec = (sectionIdx, rootChord, tipChord, span, sweepDeg, dihedralDeg, camber=0.02, camberLoc=0.4) => `
-          <XSec>
-            <ParmContainer>
-              <ID>${makeID()}</ID>
-              <n>XSec_${sectionIdx}</n>
-              <WingXSec>
-${parm('Span',     span)}
-${parm('Area',     span * (rootChord + tipChord) / 2)}
-${parm('Chord',    rootChord)}
-${parm('Taper',    tipChord / Math.max(rootChord, 1e-4))}
-${parm('Sweep',    sweepDeg)}
-${parm('Sweep_Location', 0.25)}
-${parm('Dihedral', dihedralDeg)}
-${parm('Twist',    0)}
-${parm('Twist_Location', 0.25)}
-${parm('SectTess_U', 8)}
-              </WingXSec>
-              <XSecCurve>
-                <ParmContainer>
-                  <ID>${makeID()}</ID>
-                  <n>XSecCurve</n>
-                  <XSecCurve>
-${parm('XSecCurveType', 0)}
-${parm('ThickChord', tc)}
-${parm('Camber', camber)}
-${parm('CamberLoc', camberLoc)}
-                  </XSecCurve>
-                </ParmContainer>
-              </XSecCurve>
-            </ParmContainer>
-          </XSec>`;
-
-  // Disk (PROP actuator disk) geometry
-  const diskGeom = (name, x, y, z, yRot, diameter, symFlag=2) => `
-      <Geom>
-        <GeomBase>
-          <TypeName>Disk</TypeName>
-          <TypeID>11</TypeID>
-          <ParentID>NONE</ParentID>
-        </GeomBase>
-        <ParmContainer>
-          <ID>${makeID()}</ID>
-          <n>${name}</n>
-        </ParmContainer>
-        ${xform(x, y, z, 0, yRot, 0)}
-        ${symBlock(symFlag)}
-        <PropGeom>
-          <ParmContainer>
-            <ID>${makeID()}</ID>
-            <n>Design</n>
-            <Design>
-${parm('Diameter', diameter)}
-${parm('PropMode', 0)}
-${parm('Tess_U', 8)}
-${parm('Tess_W', 9)}
-            </Design>
-          </ParmContainer>
-        </PropGeom>
-      </Geom>`;
-
-  // ── Build full XML ────────────────────────────────────────────────────
-  const vID = makeID();
-
-  const xml = `<?xml version="1.0"?>
-<Vsp_Geometry>
-  <Version>4</Version>
-  <Vehicle>
-    <ParmContainer>
-      <ID>${vID}</ID>
-      <n>Vehicle</n>
-    </ParmContainer>
-    <GeomContainer>
-
-      <!-- ═══════════════════════════════════════════════════════
-           FUSELAGE — 5-station ellipse XSecs (ref: joby_s2.vsp3)
-           Length=${sci(fL)} m   Max diameter=${sci(fD)} m
-           ═══════════════════════════════════════════════════════ -->
-      <Geom>
-        <GeomBase>
-          <TypeName>Fuselage</TypeName>
-          <TypeID>4</TypeID>
-          <ParentID>NONE</ParentID>
-        </GeomBase>
-        <ParmContainer>
-          <ID>${makeID()}</ID>
-          <n>Fuselage</n>
-        </ParmContainer>
-        ${xform(0, 0, 0)}
-        ${symBlock(0)}
-        <FuselageGeom>
-          <ParmContainer>
-            <ID>${makeID()}</ID>
-            <n>Design</n>
-            <Design>
-${parm('Length', fL)}
-${parm('Tess_W', 17)}
-${parm('Tess_U', 16)}
-            </Design>
-          </ParmContainer>
-          <XSecSurf>
-            ${fusXSecs.map((st, i) =>
-              fusXSec(st, i, i===0, i===fusXSecs.length-1)
-            ).join('\n')}
-          </XSecSurf>
-        </FuselageGeom>
-      </Geom>
-
-      <!-- ═══════════════════════════════════════════════════════
-           MAIN WING — low-wing, XZ symmetry
-           b=${sci(bWing)} m  S=${sci(Swing)} m²  Λ_LE=${sci(sw)}°
-           t/c=${tc}  x_LE=${sci(xWingLE)} m  z=${sci(zWing)} m
-           ═══════════════════════════════════════════════════════ -->
-      <Geom>
-        <GeomBase>
-          <TypeName>Wing</TypeName>
-          <TypeID>2</TypeID>
-          <ParentID>NONE</ParentID>
-        </GeomBase>
-        <ParmContainer>
-          <ID>${makeID()}</ID>
-          <n>MainWing</n>
-        </ParmContainer>
-        ${xform(xWingLE, 0, zWing)}
-        ${symBlock(2)}
-        <WingGeom>
-          <ParmContainer>
-            <ID>${makeID()}</ID>
-            <n>WingGeom</n>
-            <WingGeom>
-${parm('TotalSpan', bWing)}
-${parm('TotalArea', Swing)}
-${parm('RotateAirfoilMatchDideralFlag', 1)}
-${parm('Tess_W', 33)}
-${parm('Tess_U', 16)}
-            </WingGeom>
-          </ParmContainer>
-          <XSecSurf>
-            <XSec>
-              <ParmContainer>
-                <ID>${makeID()}</ID>
-                <n>XSec_0</n>
-                <WingXSec>
-${parm('Root_Chord', Cr_)}
-${parm('Tip_Chord', Cr_)}
-${parm('Span', 0.001)}
-${parm('Sweep', 0)}
-${parm('Dihedral', 0)}
-${parm('Twist', 0)}
-${parm('SectTess_U', 6)}
-                </WingXSec>
-                <XSecCurve>
-                  <ParmContainer>
-                    <ID>${makeID()}</ID>
-                    <n>XSecCurve</n>
-                    <XSecCurve>
-${parm('XSecCurveType', 0)}
-${parm('ThickChord', tc)}
-${parm('Camber', 0.02)}
-${parm('CamberLoc', 0.40)}
-                    </XSecCurve>
-                  </ParmContainer>
-                </XSecCurve>
-              </ParmContainer>
-            </XSec>
-            <XSec>
-              <ParmContainer>
-                <ID>${makeID()}</ID>
-                <n>XSec_1</n>
-                <WingXSec>
-${parm('Root_Chord', Cr_)}
-${parm('Tip_Chord', Ct_)}
-${parm('Span', bWing / 2)}
-${parm('Area', Swing / 2)}
-${parm('Sweep', sw)}
-${parm('Sweep_Location', 0.25)}
-${parm('Dihedral', 2.0)}
-${parm('Twist', -1.5)}
-${parm('Twist_Location', 0.25)}
-${parm('SectTess_U', 16)}
-                </WingXSec>
-                <XSecCurve>
-                  <ParmContainer>
-                    <ID>${makeID()}</ID>
-                    <n>XSecCurve</n>
-                    <XSecCurve>
-${parm('XSecCurveType', 0)}
-${parm('ThickChord', tc)}
-${parm('Camber', 0.02)}
-${parm('CamberLoc', 0.40)}
-                    </XSecCurve>
-                  </ParmContainer>
-                </XSecCurve>
-              </ParmContainer>
-            </XSec>
-          </XSecSurf>
-        </WingGeom>
-      </Geom>
-
-      <!-- ═══════════════════════════════════════════════════════
-           V-TAIL — XZ symmetry, dihedral = Γ=${vtGamma}°
-           b_panel=${sci(bvt)} m  Cr=${sci(Cr_vt)} m  Ct=${sci(Ct_vt)} m
-           x_LE=${sci(xVtLE)} m  NACA 0009
-           ═══════════════════════════════════════════════════════ -->
-      <Geom>
-        <GeomBase>
-          <TypeName>Wing</TypeName>
-          <TypeID>2</TypeID>
-          <ParentID>NONE</ParentID>
-        </GeomBase>
-        <ParmContainer>
-          <ID>${makeID()}</ID>
-          <n>VTail</n>
-        </ParmContainer>
-        ${xform(xVtLE, 0, zVtRoot)}
-        ${symBlock(2)}
-        <WingGeom>
-          <ParmContainer>
-            <ID>${makeID()}</ID>
-            <n>WingGeom</n>
-            <WingGeom>
-${parm('TotalSpan', bvt)}
-${parm('RotateAirfoilMatchDideralFlag', 1)}
-${parm('Tess_W', 17)}
-${parm('Tess_U', 12)}
-            </WingGeom>
-          </ParmContainer>
-          <XSecSurf>
-            <XSec>
-              <ParmContainer>
-                <ID>${makeID()}</ID>
-                <n>XSec_0</n>
-                <WingXSec>
-${parm('Root_Chord', Cr_vt)}
-${parm('Tip_Chord', Cr_vt)}
-${parm('Span', 0.001)}
-${parm('Sweep', 0)}
-${parm('Dihedral', 0)}
-${parm('Twist', 0)}
-${parm('SectTess_U', 4)}
-                </WingXSec>
-                <XSecCurve>
-                  <ParmContainer>
-                    <ID>${makeID()}</ID>
-                    <n>XSecCurve</n>
-                    <XSecCurve>
-${parm('XSecCurveType', 0)}
-${parm('ThickChord', 0.09)}
-${parm('Camber', 0)}
-${parm('CamberLoc', 0.20)}
-                    </XSecCurve>
-                  </ParmContainer>
-                </XSecCurve>
-              </ParmContainer>
-            </XSec>
-            <XSec>
-              <ParmContainer>
-                <ID>${makeID()}</ID>
-                <n>XSec_1</n>
-                <WingXSec>
-${parm('Root_Chord', Cr_vt)}
-${parm('Tip_Chord', Ct_vt)}
-${parm('Span', bvt)}
-${parm('Area', bvt * (Cr_vt + Ct_vt) / 2)}
-${parm('Sweep', sw_vt)}
-${parm('Sweep_Location', 0.25)}
-${parm('Dihedral', vtGamma)}
-${parm('Twist', 0)}
-${parm('SectTess_U', 12)}
-                </WingXSec>
-                <XSecCurve>
-                  <ParmContainer>
-                    <ID>${makeID()}</ID>
-                    <n>XSecCurve</n>
-                    <XSecCurve>
-${parm('XSecCurveType', 0)}
-${parm('ThickChord', 0.09)}
-${parm('Camber', 0)}
-${parm('CamberLoc', 0.20)}
-                    </XSecCurve>
-                  </ParmContainer>
-                </XSecCurve>
-              </ParmContainer>
-            </XSec>
-          </XSecSurf>
-        </WingGeom>
-      </Geom>
-
-      <!-- ═══════════════════════════════════════════════════════
-           HOVER ROTORS — ${nProp} total (${nSide} pairs, XZ symmetry)
-           D=${sci(Drot)} m  Y_Rot=90° → disk horizontal → thrust +Z
-           Ref: joby_s2.vsp3 small-rotor pattern (Y_Rel_Rotation=90)
-           ═══════════════════════════════════════════════════════ -->
-      ${Array.from({length: nSide}, (_, i) => {
-        const y = bHalf * (i + 0.5) / nSide;
-        return `
-      <!-- Rotor pair ${i*2} / ${i*2+1} at y=±${y.toFixed(3)} m -->
-      <Geom>
-        <GeomBase>
-          <TypeName>Disk</TypeName>
-          <TypeID>11</TypeID>
-          <ParentID>NONE</ParentID>
-        </GeomBase>
-        <ParmContainer>
-          <ID>${makeID()}</ID>
-          <n>HoverRotor_${i*2}R</n>
-        </ParmContainer>
-        ${xform(rotX, y, rotZ, 0, 90, 0)}
-        ${symBlock(2)}
-        <PropGeom>
-          <ParmContainer>
-            <ID>${makeID()}</ID>
-            <n>Design</n>
-            <Design>
-${parm('Diameter', Drot)}
-${parm('PropMode', 0)}
-${parm('Tess_U', 8)}
-${parm('Tess_W', 9)}
-            </Design>
-          </ParmContainer>
-        </PropGeom>
-      </Geom>`;
-      }).join('\n')}
-
-      <!-- ═══════════════════════════════════════════════════════
-           CRUISE PROPELLER — pusher at fuselage tail
-           D=${sci(Drot)} m  Y_Rot=0° → disk vertical → thrust +X
-           (lift+cruise: separate from hover rotors, not symmetric)
-           ═══════════════════════════════════════════════════════ -->
-      <Geom>
-        <GeomBase>
-          <TypeName>Disk</TypeName>
-          <TypeID>11</TypeID>
-          <ParentID>NONE</ParentID>
-        </GeomBase>
-        <ParmContainer>
-          <ID>${makeID()}</ID>
-          <n>CruiseProp</n>
-        </ParmContainer>
-        ${xform(fL, 0, zWing, 0, 0, 0)}
-        ${symBlock(0)}
-        <PropGeom>
-          <ParmContainer>
-            <ID>${makeID()}</ID>
-            <n>Design</n>
-            <Design>
-${parm('Diameter', Drot)}
-${parm('PropMode', 0)}
-${parm('Tess_U', 8)}
-${parm('Tess_W', 9)}
-            </Design>
-          </ParmContainer>
-        </PropGeom>
-      </Geom>
-
-    </GeomContainer>
-
-    <!-- ═══════════════════════════════════════════════════════════
-         MASS PROPERTIES — CG and NP from sizing engine
-         MTOW=${sci(SR.MTOW||0)} kg   CG=${sci(SR.xCGtotal||0)} m   NP=${sci(SR.xNP||0)} m
-         SM=${sci((SR.SM||0)*100)}% MAC
-         ═══════════════════════════════════════════════════════════ -->
-    <MassProperties>
-      <ParmContainer>
-        <ID>${makeID()}</ID>
-        <n>MassProperties</n>
-        <MassProperties>
-${parm('Xcg', SR.xCGtotal || 0)}
-${parm('Ycg', 0)}
-${parm('Zcg', (fD * 0.10))}
-${parm('Mass', SR.MTOW || 0)}
-${parm('Ixx', 1.0)}
-${parm('Iyy', 1.0)}
-${parm('Izz', 1.0)}
-${parm('Ixy', 0)}
-${parm('Ixz', 0)}
-${parm('Iyz', 0)}
-        </MassProperties>
-      </ParmContainer>
-    </MassProperties>
-
-  </Vehicle>
-  <!-- ================================================================
-       Generated by eVTOL Sizer — Wright State University
-       Dr. Darryl K. Ahner | Reference: joby_s2.vsp3 (eVTOL-master MIT)
-       MTOW: ${(SR.MTOW||0).toFixed(1)} kg  |  Span: ${(SR.bWing||0).toFixed(2)} m
-       CG:   ${(SR.xCGtotal||0).toFixed(3)} m  |  NP: ${(SR.xNP||0).toFixed(3)} m
-       SM:   ${((SR.SM||0)*100).toFixed(1)}% MAC
-  ================================================================ -->
-</Vsp_Geometry>`;
-
-  return xml;
 }
 
 
@@ -1985,14 +1352,12 @@ function generateReport(p, SR, branding={}) {
   const xCGbatd=p.fusLen*0.38, xCGpayd=p.fusLen*0.40;
   const Wfuscd=SR.Wempty*0.35,Wwingcd=SR.Wempty*0.18;
   const Wmotcd=SR.Wempty*0.22,Wavcd=SR.Wempty*0.04,Wothcd=SR.Wempty*0.21;
-  // FIX 1.3: wing structural CG at 40% MAC; FIX 1.4: avionics CG scales with fusLen
-  const xCGavcD = p.fusLen*0.18;                              // avionics: 18% fusLen (forward bay)
-  const xCGwingd_corr = p.fusLen*0.2589 + 0.40*SR.MAC;       // FIX 1.3: structural CG at 40% MAC
-  const xCGemptyd=(Wfuscd*xCGfusd+Wwingcd*xCGwingd_corr+Wmotcd*xCGfusd+Wavcd*xCGavcD+Wothcd*xCGfusd)/SR.Wempty;
+  const xCGemptyd=(Wfuscd*xCGfusd+Wwingcd*xCGwingd+Wmotcd*xCGfusd+Wavcd*0.8+Wothcd*xCGfusd)/SR.Wempty;
   const xACwingd=p.fusLen*0.2589+Xacd;
-  const lhd=p.fusLen*0.88-xACwingd;                          // FIX 1.5: tail arm = 88%·L - xAC_wing
-  const CLaWd=2*Math.PI*p.AR/(2+Math.sqrt(p.AR**2+4));       // FIX 1.1: Raymer Eq.12.6 finite-wing
-  const dwd=2*CLaWd/(Math.PI*p.AR);                          // FIX 1.2: consistent with corrected CLaWd
+  const lhd=p.fusLen*0.88-xACwingd;  // FIX: consistent with lv (tail AC at 88% fL)
+  const CLa_2Dd=2*Math.PI*(1+0.77*p.tc);
+  const CLaWd=CLa_2Dd/(1+CLa_2Dd/(Math.PI*p.AR));  // FIX: 3D finite-wing correction (DATCOM)
+  const dwd=2*CLaWd/(Math.PI*p.AR);
   const Shd=SR.Swing*0.18;
   const DLd=SR.MTOW*g0d/(Math.PI*Math.pow(p.propDiam/2,2)*p.nPropHover);
 
@@ -2147,7 +1512,7 @@ function generateReport(p, SR, branding={}) {
     `<tr><td>Fuselage struct. (35% W<sub>e</sub>)</td><td>${fmt(Wfuscd,2)}</td><td>${fmt(xCGfusd,3)}  = 0.42 × L<sub>fus</sub></td><td>${fmt(Wfuscd*xCGfusd,2)}</td></tr>`,
     `<tr><td>Wing + attach. (18% W<sub>e</sub>)</td><td>${fmt(Wwingcd,2)}</td><td>${fmt(xCGwingd,3)}</td><td>${fmt(Wwingcd*xCGwingd,2)}</td></tr>`,
     `<tr><td>Motors (22% W<sub>e</sub>)</td><td>${fmt(Wmotcd,2)}</td><td>${fmt(xCGfusd,3)}</td><td>${fmt(Wmotcd*xCGfusd,2)}</td></tr>`,
-    `<tr><td>Avionics (4% W<sub>e</sub>)</td><td>${fmt(Wavcd,2)}</td><td>${fmt(xCGavcD,3)} = 0.18 × L<sub>fus</sub></td><td>${fmt(Wavcd*xCGavcD,2)}</td></tr>`,
+    `<tr><td>Avionics (4% W<sub>e</sub>)</td><td>${fmt(Wavcd,2)}</td><td>0.800</td><td>${fmt(Wavcd*0.8,2)}</td></tr>`,
     `<tr><td>Other (21% W<sub>e</sub>)</td><td>${fmt(Wothcd,2)}</td><td>${fmt(xCGfusd,3)}</td><td>${fmt(Wothcd*xCGfusd,2)}</td></tr>`,
     `<tr style="font-weight:700"><td>Empty W<sub>e</sub></td><td>${fmt(SR.Wempty,2)}</td><td>${fmt(xCGemptyd,3)}</td><td>${fmt(SR.Wempty*xCGemptyd,2)}</td></tr>`,
     `<tr><td>Battery</td><td>${fmt(SR.Wbat,2)}</td><td>${fmt(xCGbatd,3)}  = 0.38 × L<sub>fus</sub></td><td>${fmt(SR.Wbat*xCGbatd,2)}</td></tr>`,
@@ -2156,8 +1521,8 @@ function generateReport(p, SR, branding={}) {
   ])}
   ${eq("x_{CG} = \\frac{W_e\\,x_{CG,e}+W_{bat}\\,x_{CG,bat}+m_{pay}\\,x_{CG,pay}}{\\text{MTOW}} = \\frac{"+fmt(SR.Wempty*xCGemptyd,1)+"+"+fmt(SR.Wbat*xCGbatd,1)+"+"+fmt(p.payload*xCGpayd,1)+"}{"+fmt(SR.MTOW,2)+"} = "+fmt(SR.xCGtotal,3)+"\\text{ m}","Total CG from nose")}
   ${eq("x_{AC,wing} = L_{fus}\\times 0.2589+X_{ac} = "+fmt(p.fusLen*0.2589,3)+"+"+fmt(Xacd,3)+" = "+fmt(xACwingd,3)+"\\text{ m}","Wing aerodynamic centre")}
-  ${eq("C_{L_{\\alpha,w}} = \\frac{2\\pi AR}{2+\\sqrt{AR^2+4}} = "+fmt(CLaWd,4)+"\\text{ rad}^{-1},\\; \\frac{d\\varepsilon}{d\\alpha} = \\frac{2C_{L_{\\alpha,w}}}{\\pi AR} = "+fmt(dwd,4),"Lift-curve slope (Raymer Eq.12.6 finite-wing) and downwash gradient (Anderson Eq.5.39)")}
-  ${eq("l_h = 0.88 L_{fus}-x_{AC,wing} = "+fmt(p.fusLen*0.88,3)+"-"+fmt(xACwingd,3)+" = "+fmt(lhd,3)+"\\text{ m}","Tail moment arm — FIX: tail AC at 88% fusLen (not fuselage tip)")}
+  ${eq("C_{L_\\alpha,w} = 2\\pi(1+0.77\\times "+p.tc+") = "+fmt(CLaWd,4)+"\\text{ rad}^{-1}, \\quad \\frac{d\\varepsilon}{d\\alpha} = \\frac{2C_{L_\\alpha,w}}{\\pi AR} = "+fmt(dwd,4),"Lift-curve slope and downwash gradient")}
+  ${eq("l_h = L_{fus}-x_{AC,wing} = "+p.fusLen+"-"+fmt(xACwingd,3)+" = "+fmt(lhd,3)+"\\text{ m}","Tail moment arm")}
   ${eq("x_{NP} = x_{AC,wing}+\\frac{S_h}{S_w}\\eta_h(1-\\frac{d\\varepsilon}{d\\alpha})l_h = "+fmt(xACwingd,3)+"+\\frac{"+fmt(Shd,3)+"}{"+fmt(SR.Swing,2)+"}\\times 0.9\\times(1-"+fmt(dwd,4)+")\\times "+fmt(lhd,3)+" = "+fmt(SR.xNP,3)+"\\text{ m}","Neutral point")}
   ${eq("SM = \\frac{x_{NP}-x_{CG}}{\\bar{c}} = \\frac{"+fmt(SR.xNP,3)+"-"+fmt(SR.xCGtotal,3)+"}{"+fmt(SR.MAC,3)+"} = "+fmt(SR.SM*100,2)+"\\%\\;\\text{MAC}","Static margin (target 5–25% MAC)")}
   `);
@@ -2189,17 +1554,14 @@ function generateReport(p, SR, branding={}) {
     row("ΔInt",delta_int_n,"dB","Rotor interaction shielding"),
   ])}
   <h3 style="font-size:10.5pt;font-weight:700;margin:10px 0 4px">Step 3 — Tonal SPL Fundamental</h3>
-  ${eq("p_{rms} = \\frac{D\\cdot B\\cdot\\Omega\\cdot T_r}{4\\pi r_0 \\rho c_0^2 \\sqrt{2}}\\cdot J_1\\!\\left(\\frac{B\\Omega R_{eff}}{c_0}\\right) \\quad\\Rightarrow\\quad SPL_1 = 20\\log_{10}\\!\\left(\\frac{p_{rms}}{20\\,\\mu\\text{Pa}}\\right)+K_{cal}+C_{comp}","Gutin (1948) with Bessel function J₁(x), x=BΩR_eff/c₀ (FIX 2.1)")}
+  ${eq("p_{rms} = \\frac{D\\cdot B\\cdot\\Omega\\cdot T_r}{4\\pi r_0 \\rho c_0^2 \\sqrt{2}} \\quad\\Rightarrow\\quad SPL_1 = 20\\log_{10}\\!\\left(\\frac{p_{rms}}{20\\,\\mu\\text{Pa}}\\right)+K_{cal}+C_{comp}","Gutin (1948) with directivity")}
   <h3 style="font-size:10.5pt;font-weight:700;margin:10px 0 4px">Step 4 — Harmonic Series (n=1…10, A-weighted)</h3>
-  ${eq("SPL_n = SPL_1 - \\alpha(n-1) \\quad\\text{dBA}_n = SPL_n + A(f_n)","FIX 2.4: Harmonics decrease from SPL₁ (Gutin: p_m ∝ 1/m); removed unphysical +20log₁₀(n) growth term")}
+  ${eq("SPL_n = SPL_1 + 20\\log_{10}(n) - \\alpha(n-1) \\quad\\text{dBA}_n = SPL_n + A(f_n)","A-weighting per IEC 61672 at each harmonic frequency")}
   ${table(["n","f_n (Hz)","SPL_n (dB)","A(f) (dB)","dBA_n"],[
     ...(SR.bpfHarmonics||[]).map(h=>`<tr><td>${h.harmonic}</td><td>${h.freq}</td><td>—</td><td>—</td><td>${h.SPL}</td></tr>`)
   ])}
   <h3 style="font-size:10.5pt;font-weight:700;margin:10px 0 4px">Step 5 — Broadband (BPM Mtip⁵ scaling)</h3>
   ${eq("\\text{dBA}_{BB} = \\text{dBA}_{tonal} - 8 + 50\\log_{10}\\!\\left(\\frac{M_{tip}}{0.58}\\right) - 2\\log_{10}\\!\\left(\\frac{Re_{tip}}{1.5\\times10^6}\\right)","Brooks, Pope & Marcolini 1989")}
-  <h3 style="font-size:10.5pt;font-weight:700;margin:10px 0 4px">Step 5b — Vortex (BVI) Noise (NEW — FIX 2.3)</h3>
-  ${eq("p_{vortex} = k_2\\,\\frac{V_{0.7}}{\\rho\\,\\delta_S}\\sqrt{\\frac{T\\cdot N}{\\sigma}\\cdot DL} \\quad k_2=1.206\\times10^{-2}\\,\\text{s}^3/\\text{m}^3","Schlegel–King–Mull vortex noise; ref eVTOL-master noise_models.py vortex_noise()")}
-  ${eq("\\text{Total}_{single} = 10\\log_{10}\\!\\left(10^{\\text{dBA}_{tonal}/10}+10^{\\text{dBA}_{BB}/10}+10^{\\text{dBA}_{vortex}/10}\\right)","Energy sum of tonal + broadband + vortex")}
   <h3 style="font-size:10.5pt;font-weight:700;margin:10px 0 4px">Step 6 — Multi-Rotor + Propagation</h3>
   ${eq("\\text{dBA}_{multi} = \\text{dBA}_{single}+10\\log_{10}(N_{rot})+\\Delta_{int} = "+fmt(SR.dBA_1m,1)+"\\text{ dBA at 1 m}","Incoherent sum + shielding")}
   ${eq("\\text{dBA}(r) = \\text{dBA}_{1m} - 20\\log_{10}(r) - \\alpha_{atm}\\cdot r + \\Delta_{Gr}","ISO 9613-1 propagation + image-source ground reflection")}
@@ -2222,8 +1584,7 @@ function generateReport(p, SR, branding={}) {
   const CrateHov_c=SR.CrateHov||3.0;
   const eta_bat_d_c=Math.max(0.80,0.97-0.025*CrateHov_c);
   const eta_ch_c=Math.max(0.85,0.97-0.030*CrateHov_c);
-  // FIX 3.1 (report): SR.Etot already includes discharge losses — only charger η needed
-  const eGrid_c=SR.Etot/eta_ch_c;
+  const eGrid_c=SR.Etot/(eta_bat_d_c*eta_ch_c);
   const eCost_c=eGrid_c*0.16;
   const cellCostKwh_c=149*Math.pow(300/Math.max(100,p.sedCell),0.3);
   const battCostKwh_c=(cellCostKwh_c+55)*2.0;
@@ -2238,9 +1599,7 @@ function generateReport(p, SR, branding={}) {
   const motorReplCost_c=(SR.PmotKW*100*p.nPropHover)/Math.floor(3000/Math.max(0.1,fltHr_c));
   const insCost_c=(SR.MTOW*800*0.10)/flightsPerYear_c;
   const opCost_c=(82000/(4*300*8))*(fltHr_c+0.25);
-  // FIX 3.3 (report): $1M was STC budget — FAA Part 21 type cert is $50–200M
-  // $75M amortised over 50 aircraft × 10 years × 3000 flights/yr
-  const certCost_c=75000000/(50*flightsPerYear_c*10);
+  const certCost_c=1000000/(flightsPerYear_c*10);
   const totalDOC_c=eCost_c+battCost_c+maintCost_c+motorReplCost_c+insCost_c+35+opCost_c+certCost_c;
   const cpkm_c=totalDOC_c/p.range;
   const sd11 = sec("costcalc","D11. Direct Operating Cost (DOC) Model v3",`
@@ -2249,10 +1608,11 @@ function generateReport(p, SR, branding={}) {
     row("Flight duration T<sub>end</sub>",fmt(SR.Tend/60,2),"min","Mission sizing"),
     row("Flights/year",flightsPerYear_c.toString(),"","10/day × 300 days (Joby ops model)"),
     row("Hover C-rate",fmt(CrateHov_c,2),"C","P<sub>hov</sub>/(V<sub>pack</sub>×Q<sub>pack</sub>)"),
-    row("η<sub>charger</sub>",eta_ch_c.toFixed(3),"","0.97 − 0.030×C  (SAE ARP6504) — charger roundtrip only"),
+    row("η<sub>bat,discharge</sub>",eta_bat_d_c.toFixed(3),"","0.97 − 0.025×C  (Waldmann 2014)"),
+    row("η<sub>charger</sub>",eta_ch_c.toFixed(3),"","0.97 − 0.030×C  (SAE ARP6504)"),
   ])}
   <h3 style="font-size:10.5pt;font-weight:700;margin:10px 0 4px">Energy Cost</h3>
-  ${eq("E_{grid} = \\frac{E_{tot}}{\\eta_{charger}} = \\frac{"+fmt(SR.Etot,2)+"}{"+eta_ch_c.toFixed(3)+"} = "+eGrid_c.toFixed(2)+"\\text{ kWh}","FIX 3.1: SR.Etot already includes discharge losses — only charger η added (SAE ARP6504)")}
+  ${eq("E_{grid} = \\frac{E_{tot}}{\\eta_{bat,d}\\cdot\\eta_{charger}} = \\frac{"+fmt(SR.Etot,2)+"}{"+eta_bat_d_c.toFixed(3)+"\\times "+eta_ch_c.toFixed(3)+"} = "+eGrid_c.toFixed(2)+"\\text{ kWh}","Full discharge-charge efficiency chain")}
   ${eq("C_{energy} = E_{grid}\\times\\$0.16/\\text{kWh} = \\$"+eCost_c.toFixed(2)+"/\\text{flight}","EIA 2024 base + EPRI demand charge")}
   <h3 style="font-size:10.5pt;font-weight:700;margin:10px 0 4px">Battery Replacement</h3>
   ${eq("\\$/\\text{kWh}_{pack} = (\\$"+cellCostKwh_c.toFixed(0)+"_{cell}+\\$55_{overhead})\\times 2_{cert} = \\$"+battCostKwh_c.toFixed(0)+"/\\text{kWh}","BNEF EVO 2024 + Fraunhofer ISE 2023 pack OH")}
@@ -2270,7 +1630,7 @@ function generateReport(p, SR, branding={}) {
     row("Insurance",fmt(insCost_c,2),fmt(insCost_c/p.range,3),fmt(insCost_c/totalDOC_c*100,1)+"%"),
     row("Vertiport fee","35.00",fmt(35/p.range,3),fmt(35/totalDOC_c*100,1)+"%"),
     row("Operator (RPIC)",fmt(opCost_c,2),fmt(opCost_c/p.range,3),fmt(opCost_c/totalDOC_c*100,1)+"%"),
-    row("Cert amortisation",fmt(certCost_c,2),fmt(certCost_c/p.range,3),fmt(certCost_c/totalDOC_c*100,1)+"% (FIX: $75M÷50ac÷10yr)"),
+    row("Cert amortisation",fmt(certCost_c,2),fmt(certCost_c/p.range,3),fmt(certCost_c/totalDOC_c*100,1)+"%"),
     `<tr style="font-weight:700;background:#dbeafe"><td><b>Total DOC</b></td><td><b>$${totalDOC_c.toFixed(2)}</b></td><td><b>$${cpkm_c.toFixed(2)}/km</b></td><td>100%</td></tr>`,
   ])}
   `);
@@ -6962,7 +6322,7 @@ export default function App(){
               const MTOW_lb  = MTOW_kg * 2.20462;
               const nPax     = Math.floor(params.payload / 90);
               const batFrac  = SR.Wbat / MTOW_kg;
-              const socFloor = params.socMin / (1 + params.socMin);
+              const socFloor = params.socMin;  // FIX: socMin is the floor fraction directly
               const reserve_pct = (1 - SR.Etot / SR.PackkWh) * 100;
 
               // Use noise values computed in physics engine (BPF + broadband model)
@@ -7884,22 +7244,22 @@ export default function App(){
               const tripDist_km       = params.range;
               const nSeats            = Math.max(1, Math.round(params.payload / 90));
 
-              // ── 2. ENERGY COST — charger round-trip efficiency only ─────────
-              // SR.Etot = electrical energy drawn from the battery pack [kWh].
-              // Battery discharge losses (Joule heating in pack) are already captured
-              // inside the physics engine via etaBat (discharge η in Wbat formula).
-              // Adding eta_bat_discharge here would double-count those losses.
+              // ── 2. ENERGY COST — full discharge + charge efficiency chain ──
+              // SR.Etot = electrical energy demanded from battery (motor/inverter
+              //   losses already absorbed in etaSys/etaHov inside the physics engine).
+              // Grid draw = SR.Etot / (η_bat_discharge × η_charger)
               //
-              // What IS missing from SR.Etot: the ground-side charger losses
-              // (AC grid → onboard battery), governed by charger efficiency η_charger.
-              // Grid draw = SR.Etot / η_charger  (FIX 3.1: removed eta_bat_discharge)
+              // η_bat_discharge: Joule heating in pack during discharge.
+              //   At low C-rate (1C): ~0.97; at 3C hover: ~0.90; at 5C: ~0.83
+              //   Formula: η_d = max(0.80, 0.97 - 0.025×C)  (Waldmann et al. 2014)
+              //   C-rate during hover is worst-case draw on pack.
               //
-              // η_charger: ground-side AC/DC round-trip (SAE ARP6504)
+              // η_charger: ground-side AC/DC round-trip efficiency (SAE ARP6504)
               //   At 1C recharge: ~0.95; at 3C fast-charge: ~0.88
               const CrateHov         = SR.CrateHov || 3.0;
+              const eta_bat_discharge = Math.max(0.80, 0.97 - 0.025 * CrateHov);
               const eta_charger       = Math.max(0.85, 0.97 - 0.030 * CrateHov);
-              // FIX 3.1: energyPerFlight = SR.Etot / η_charger  (NOT ÷ eta_bat_discharge too)
-              const energyPerFlight_kWh = SR.Etot / eta_charger;
+              const energyPerFlight_kWh = SR.Etot / (eta_bat_discharge * eta_charger);
               // Time-of-use: EIA 2024 base + vertiport demand charge (EPRI 2023)
               const electricityRate_base = 0.12;
               const demandCharge         = 0.04;
@@ -7993,17 +7353,9 @@ export default function App(){
               const operatorCost_per_flight = rpicCostPerHour * (flightDuration_hr + turnaroundTime_hr);
 
               // ── 9. TYPE CERTIFICATION & AIRWORTHINESS AMORTIZATION ────────
-              // FIX 3.3: $1M was a software bug — FAA Part 21 type cert for a novel
-              // eVTOL category costs $50M–$200M (Joby ~$100M, Archer estimate similar).
-              // Reference: FAA AC 21.17-4 (powered-lift cert), Congressional testimony
-              // Joby Aviation S-1 (2021), NASA UAM Ecosystem (Vascik 2020).
-              // Amortized over a 50-aircraft fleet × 10 operating years:
-              //   certCost_per_flight = $75M / (50 × 3000 flights/yr × 10 yr) ≈ $0.50/flight
-              // (Previously $1M / (3000 × 10) ≈ $0.033/flight — factor of 75× too low.)
-              const certCost_total    = 75_000_000;  // $75M conservative type cert (FAA Part 21)
-              const certFleetSize     = 50;           // aircraft over which cert is amortised
+              const certCost_total    = 1000000;
               const aircraftLifeYears = 10;
-              const certCost_per_flight = certCost_total / (certFleetSize * flightsPerYear * aircraftLifeYears);
+              const certCost_per_flight = certCost_total / (flightsPerYear * aircraftLifeYears);
 
               // ── 10. TOTAL DOC ──────────────────────────────────────────────
               const totalCost_per_flight = energyCost_per_flight
@@ -8676,13 +8028,12 @@ export default function App(){
                   display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
                   <div>
                     <div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace",letterSpacing:"0.15em",marginBottom:4}}>GEOMETRY EXPORT</div>
-                    <div style={{fontSize:22,fontWeight:800,color:SC.amber,letterSpacing:"-0.03em"}}>OpenVSP Export</div>
+                    <div style={{fontSize:22,fontWeight:800,color:SC.amber,letterSpacing:"-0.03em"}}>OpenVSP Script Generator</div>
                     <div style={{fontSize:10,color:SC.muted,marginTop:2,fontFamily:"'DM Mono',monospace"}}>
-                      Two formats: .vspscript (run via File→Script) · .vsp3 (open directly, ref joby_s2.vsp3)
+                      Generates a .vspscript that builds fuselage · wing · V-tail · {params.nPropHover} hover rotors · CG & NP  inside your OpenVSP
                     </div>
                   </div>
                   <div style={{marginLeft:"auto",display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
-                    {/* ── Button 1: .vspscript ── */}
                     <AuthGate user={user} onAuth={handleAuth}>
                     <button
                       onClick={()=>{
@@ -8692,32 +8043,13 @@ export default function App(){
                         const a=document.createElement("a");
                         a.href=url; a.download="Trail1_eVTOL.vspscript"; a.click();
                         URL.revokeObjectURL(url);
-                        if(user) addNotif(user.id,{title:"VSP Script Downloaded",body:`Trail1_eVTOL.vspscript — MTOW=${SR.MTOW} kg`,type:"success"});
+                        if(user) addNotif(user.id,{title:"VSP Script Downloaded",body:`Trail1_eVTOL.vspscript generated — MTOW=${SR.MTOW} kg, b=${SR.bWing} m.`,type:"success"});
                       }}
-                      style={{padding:"10px 20px",background:`linear-gradient(135deg,${SC.amber},#f97316)`,
-                        border:"none",borderRadius:6,color:"#07090f",fontSize:12,fontWeight:800,
-                        cursor:"pointer",letterSpacing:"0.04em",fontFamily:"'DM Mono',monospace",
-                        boxShadow:`0 0 18px ${SC.amber}44`,display:"flex",alignItems:"center",gap:6}}>
-                      {!user&&<span>🔒</span>}⬇ .vspscript
-                    </button>
-                    </AuthGate>
-                    {/* ── Button 2: .vsp3 native file ── */}
-                    <AuthGate user={user} onAuth={handleAuth}>
-                    <button
-                      onClick={()=>{
-                        const xml=generateVSP3File(params,SR);
-                        const blob=new Blob([xml],{type:"application/xml"});
-                        const url=URL.createObjectURL(blob);
-                        const a=document.createElement("a");
-                        a.href=url; a.download="Trail1_eVTOL.vsp3"; a.click();
-                        URL.revokeObjectURL(url);
-                        if(user) addNotif(user.id,{title:"VSP3 File Downloaded",body:`Trail1_eVTOL.vsp3 — MTOW=${SR.MTOW} kg, b=${SR.bWing} m`,type:"success"});
-                      }}
-                      style={{padding:"10px 20px",background:`linear-gradient(135deg,#3b82f6,#6366f1)`,
-                        border:"none",borderRadius:6,color:"#ffffff",fontSize:12,fontWeight:800,
-                        cursor:"pointer",letterSpacing:"0.04em",fontFamily:"'DM Mono',monospace",
-                        boxShadow:"0 0 18px #3b82f644",display:"flex",alignItems:"center",gap:6}}>
-                      {!user&&<span>🔒</span>}⬇ .vsp3
+                      style={{padding:"10px 22px",background:`linear-gradient(135deg,${SC.amber},#f97316)`,
+                        border:"none",borderRadius:6,color:"#07090f",fontSize:13,fontWeight:800,
+                        cursor:"pointer",letterSpacing:"0.05em",fontFamily:"'DM Mono',monospace",
+                        boxShadow:`0 0 20px ${SC.amber}55`,display:"flex",alignItems:"center",gap:6}}>
+                      {!user&&<span>🔒</span>}⬇  Download .vspscript
                     </button>
                     </AuthGate>
                   </div>
@@ -8851,15 +8183,13 @@ export default function App(){
 
                   <Panel title="How to Run the .vspscript in OpenVSP 3.48">
                     {[
-                      ["1","Download",`Click the amber button for .vspscript or the blue button for .vsp3.`],
-                      ["2","Open VSP","Open OpenVSP 3.28+ (incl. 3.48.2)."],
-                      [".vspscript","Run Script","File → Run Script → select Trail1_eVTOL.vspscript → Execute.  Model builds in ~2 s."],
-                      [".vsp3","Open Direct","File → Open → select Trail1_eVTOL.vsp3.  Geometry loads immediately — no script needed."],
-                      ["3","Verify","Check fuselage (5-station ellipse), wing (S="+SR.Swing+" m², b="+SR.bWing+" m), V-tail (Γ="+params.vtGamma+"°), "+params.nPropHover+" hover rotors + 1 cruise prop."],
-                      ["4","CG / NP","MassProperties block carries CG="+SR.xCGtotal+" m, SM="+((SR.SM_vt||SR.SM)*100).toFixed(1)+"% MAC.  View via Model → Edit → MassProperties."],
-                      ["5","Rotors","Hover rotors: Y_Rot=90° (disk horizontal, thrust +Z).  Cruise prop: Y_Rot=0° (disk vertical, thrust +X pusher)."],
-                      ["6","V-Tail","Two-panel V-tail: XZ symmetry + dihedral Γ. Ruddervators: symmetric=elevator, differential=rudder."],
-                      ["7","Iterate","Change any slider → re-download → re-open. Each download regenerates from current sizing."],
+                      ["1","Download","Click Download above — saves Trail1_eVTOL.vspscript to your computer."],
+                      ["2","Open","Open OpenVSP 3.28+ (incl. 3.48.2) — go to  File → Run Script  (or Ctrl+Shift+S)."],
+                      ["3","Inspect","Browse to Trail1_eVTOL.vspscript and click  Execute. Model builds in seconds."],
+                      ["4","CG / NP","File is auto-saved as Trail1_eVTOL.vsp3 in your OpenVSP working directory."],
+                      ["5","Rotors","Rotors use Y_Rot=−90° → disk horizontal → thrust +Z. Use Analysis Manager to adjust blade pitch."],
+                      ["6","V-Tail","V-tail uses XZ symmetry + dihedral Γ for both panels. CG/NP are set as vehicle mass properties."],
+                      ["7","Iterate","Slider change in sidebar → re-download → re-run script. Each run rebuilds the model exactly."],
                     ].map(([n,title,text])=>(
                       <div key={n} style={{display:"flex",gap:8,marginBottom:8}}>
                         <div style={{width:18,height:18,borderRadius:"50%",background:SC.amber,flexShrink:0,
@@ -8874,44 +8204,24 @@ export default function App(){
                   </Panel>
                 </div>
 
-                {/* Bottom download buttons — two side by side */}
-                <div style={{display:"flex",justifyContent:"center",gap:12,paddingTop:4,paddingBottom:8,flexWrap:"wrap"}}>
-                  {/* Bottom .vspscript */}
+                {/* Second download button at bottom */}
+                <div style={{display:"flex",justifyContent:"center",paddingTop:4,paddingBottom:8}}>
                   <AuthGate user={user} onAuth={handleAuth}>
                   <button
                     onClick={()=>{
                       const xml=generateVSPScript(params,SR);
-                      const blob=new Blob([xml],{type:"text/plain"});
+                      const blob=new Blob([xml],{type:"application/xml"});
                       const url=URL.createObjectURL(blob);
                       const a=document.createElement("a");
                       a.href=url; a.download="Trail1_eVTOL.vspscript"; a.click();
                       URL.revokeObjectURL(url);
-                      if(user) addNotif(user.id,{title:"VSP Script Downloaded",body:`Trail1_eVTOL.vspscript — MTOW=${SR.MTOW} kg`,type:"success"});
+                      if(user) addNotif(user.id,{title:"VSP Script Downloaded",body:`Trail1_eVTOL.vspscript generated — MTOW=${SR.MTOW} kg, b=${SR.bWing} m.`,type:"success"});
                     }}
-                    style={{padding:"12px 36px",background:`linear-gradient(135deg,${SC.amber},#f97316)`,
-                      border:"none",borderRadius:6,color:"#07090f",fontSize:13,fontWeight:800,
+                    style={{padding:"12px 40px",background:`linear-gradient(135deg,${SC.amber},#f97316)`,
+                      border:"none",borderRadius:6,color:"#07090f",fontSize:14,fontWeight:800,
                       cursor:"pointer",letterSpacing:"0.06em",fontFamily:"'DM Mono',monospace",
-                      boxShadow:`0 0 28px ${SC.amber}44`,display:"flex",alignItems:"center",gap:8}}>
+                      boxShadow:`0 0 30px ${SC.amber}44`,display:"flex",alignItems:"center",gap:8}}>
                     {!user&&<span>🔒</span>}⬇  Download Trail1_eVTOL.vspscript
-                  </button>
-                  </AuthGate>
-                  {/* Bottom .vsp3 */}
-                  <AuthGate user={user} onAuth={handleAuth}>
-                  <button
-                    onClick={()=>{
-                      const xml=generateVSP3File(params,SR);
-                      const blob=new Blob([xml],{type:"application/xml"});
-                      const url=URL.createObjectURL(blob);
-                      const a=document.createElement("a");
-                      a.href=url; a.download="Trail1_eVTOL.vsp3"; a.click();
-                      URL.revokeObjectURL(url);
-                      if(user) addNotif(user.id,{title:"VSP3 Downloaded",body:`Trail1_eVTOL.vsp3 — MTOW=${SR.MTOW} kg, b=${SR.bWing} m`,type:"success"});
-                    }}
-                    style={{padding:"12px 36px",background:`linear-gradient(135deg,#3b82f6,#6366f1)`,
-                      border:"none",borderRadius:6,color:"#ffffff",fontSize:13,fontWeight:800,
-                      cursor:"pointer",letterSpacing:"0.06em",fontFamily:"'DM Mono',monospace",
-                      boxShadow:"0 0 28px #3b82f644",display:"flex",alignItems:"center",gap:8}}>
-                    {!user&&<span>🔒</span>}⬇  Download Trail1_eVTOL.vsp3
                   </button>
                   </AuthGate>
                 </div>
