@@ -1104,41 +1104,33 @@ function generateVSP3File(p, SR) {
   // ── HIGH-WING: Z raised to sit flush on TOP of fuselage ──────────────
   const zWing   = fD / 2;
 
-  // V-tail geometry (needed for boom collision check)
+  // V-tail geometry (for Y-clearance calculation)
   const xVtLE  = Math.min(xACw + lv - 0.25*CrVT, fL - 0.05);
   const zVtRoot= 0;
-  // V-tail TE at the lateral position of the boom (y=1.7m) — determines
-  // how far aft the boom rotor must be to clear the V-tail surface.
-  // V-tail horizontal spread: yVtSpan = bvt·cos(vtGamma)
-  // At y=yBoom, fraction t=yBoom/yVtSpan; chord(t)=CrVT+(CtVT-CrVT)·t
-  // TE_x(t) = xVtLE + t·bvt·tan(swVT) + chord(t)
-  // Worst case is the INNER rotor edge (y≈0.2m, t≈0.075) since V-tail root TE
-  // is furthest fwd, so we take the maximum TE across the rotor sweep.
-  const yBoom       = 1.7;                  // lateral: min fuselage clearance
-  const yVtSpan_h   = bvt * Math.cos(vtG * Math.PI / 180);   // horizontal spread per panel
-  const t_boomInner = Math.max(0, (yBoom - Drot/2)) / Math.max(yVtSpan_h, 0.01);
-  const t_boomCtr   = yBoom                            / Math.max(yVtSpan_h, 0.01);
-  const vtTEat = (t) => xVtLE + t*bvt*Math.tan(swVT*Math.PI/180)
-                        + CrVT + (CtVT-CrVT)*t;
-  // The critical (most-aft) V-tail TE within the rotor sweep
-  const xVtTE_critical = Math.max(vtTEat(Math.min(t_boomInner,1)), vtTEat(Math.min(t_boomCtr,1)));
 
   // ── LONGITUDINAL LIFT BOOMS ───────────────────────────────────────────
-  // Forward: 1.7m ahead of wing LE (unchanged).
-  // Aft FIX: must place aft rotor BEHIND the V-tail TE at yBoom,
-  //          with at least Rrot (1.5m) clearance so the disc clears the panel.
-  //          xRotAft = xVtTE_critical + Rrot + 0.2m safety → boom extends to this X.
-  const boomDiam  = 0.25;
-  const boomXFwd  = xWingLE - 1.7;
-  const xRotAft   = xVtTE_critical + Rrot + 0.2;   // aft rotor X (clears V-tail)
-  const boomXAft  = xRotAft;                        // boom ends at aft rotor hub
-  const boomLen   = boomXAft - boomXFwd;
-  const zBoom     = fD / 2;
+  // FIX: Y-axis only approach — move boom outboard so the rotor disc
+  // clears the V-tail LATERALLY. This avoids any aft-length extension.
+  //
+  // V-tail horizontal spread per panel: yVtSpan_h = bvt·cos(vtGamma) ≈ 2.666m
+  // For the inner rotor edge (at yBoom − Rrot) to clear the V-tail lateral tip:
+  //   yBoom − Rrot > yVtSpan_h  →  yBoom > yVtSpan_h + Rrot + 0.1m safety
+  //   yBoom = bvt·cos(vtGamma) + Rrot + 0.1  ≈ 4.27m
+  //
+  // Boom length: simple formula restored — 1.7m fwd of wing LE, 1.7m aft of wing TE.
+  // No aft extension needed because the boom now passes OUTBOARD of the V-tail.
+  const yVtSpan_h  = bvt * Math.cos(vtG * Math.PI / 180); // V-tail horizontal reach
+  const yBoom      = yVtSpan_h + Rrot + 0.1;  // ≈ 4.27m — inner rotor edge clears V-tail tip
+  const boomDiam   = 0.25;
+  const boomXFwd   = xWingLE - 1.7;           // 1.7m fwd of wing LE
+  const boomXAft   = xWingTE + 1.7;           // 1.7m aft of wing TE (simple, no V-tail extension)
+  const boomLen    = boomXAft - boomXFwd;
+  const zBoom      = fD / 2;                  // flush with high-wing / top of fuselage
 
   // ── FOUR FIXED LIFT ROTORS (on boom tips) ────────────────────────────
-  const zLiftRotor = zBoom + boomDiam / 2;
-  const xRotFwd    = boomXFwd;   // forward rotor at boom fwd tip
-  // xRotAft already computed above (boom aft tip, behind V-tail)
+  const zLiftRotor = zBoom + boomDiam / 2;    // hub sits on top of boom surface
+  const xRotFwd    = boomXFwd;
+  const xRotAft    = boomXAft;
 
   // ── CENTER PUSHER ROTOR ───────────────────────────────────────────────
   // Single prop at extreme aft tip of fuselage.
@@ -1149,18 +1141,22 @@ function generateVSP3File(p, SR) {
   // ── WINGTIP NACELLES + TILTING ROTORS ────────────────────────────────
   // yTipRot: enforce 1.7m blade-tip clearance from nearest boom rotor edge
   //   yTipRot ≥ yBoom + Drot + 1.7  (rotor centres separated by 2 radii + 1.7m)
-  const yTipRot   = Math.max(bW / 2, yBoom + Drot + 1.7);  // ≥ 6.4m
-  // Nacelle: slender pod flush with wingtip, length ~0.8m, diam ~0.30m
-  // Front of nacelle (rotor attachment point) at wing LE so the prop disc
-  // sits just forward of the wing leading edge — aero + structural standard.
-  const nacLen    = 0.80;              // nacelle length (m)
-  const nacDiam   = 0.30;             // nacelle diameter (m)
-  const xNacFront = xWingLE;          // nacelle front = wing LE (rotor disc here)
-  const xNacStart = xNacFront;        // Fuselage geom origin at its fwd tip
-  const zNac      = zWing;            // flush with high-wing surface
-  // Rotor disc: at nacelle front face, same Y and Z as nacelle
-  const xTipRot   = xNacFront;        // disc at nacelle nose
-  const zTipRot   = zNac;
+  const yTipRot   = Math.max(bW / 2, yBoom + Drot + 1.7);
+  // Nacelle: slender pod at wingtip, length 0.8m, diam 0.30m
+  const nacLen    = 0.80;
+  const nacDiam   = 0.30;
+  // Nacelle X: front face starts at wing LE; nacelle runs aft along +X
+  const xNacStart = xWingLE;
+  // FIX 2 — Nacelle Z: centre nacelle on the wing chord midline.
+  // Wing Z_Location = zWing = fD/2 (the root chord plane, bottom surface for high-wing).
+  // Wing half-thickness at root = tc·Cr/2. Chord midline = zWing + tc·Cr/2.
+  // Placing nacelle centre here makes it flush and symmetric about the wing section.
+  const zNac      = zWing + (Number(p.tc)||0.15) * Cr / 2;  // chord midline Z
+  // FIX 3 — Rotor X: place disc 5cm FORWARD of nacelle nose face.
+  // The disk geom in VSP has finite visual thickness; placing it exactly at xNacStart
+  // puts the disc inside the nacelle body. Moving it 0.05m forward clears the nose.
+  const xTipRot   = xNacStart - 0.05;   // 5cm fwd of nacelle leading face
+  const zTipRot   = zNac;               // same Z as nacelle centre (chord midline)
 
   // ─── TE-sweep helper ──────────────────────────────────────────────────
   const sweepTE = (swDeg, halfSpan, rC, tC) => {
@@ -1498,20 +1494,19 @@ void Scale(double curr_scale )
   );
 
   // ── 3. LONGITUDINAL LIFT BOOMS (fixed, V-tail collision resolved) ──────
-  // Aft X of boom is set so the aft rotor disc clears the V-tail surface.
-  // V-tail TE at yBoom lateral = xVtTE_critical; rotor placed Rrot+0.2m behind it.
-  // boomLen now fully computed from geometry (not a fixed 1.7m aft offset).
+  // Straight boom cross-section: tiny nose/tail tapers, full diameter in between.
+  // p:0.08/0.92 gives a long cylindrical mid-section — the original clean shape.
   // XZ symmetry (sym=2) mirrors to −yBoom automatically.
   const boomSt = [
     {p:0.00, W:boomDiam*0.15, H:boomDiam*0.15, tA: 90, bA: 90, tS:0.4, bS:0.4, ell:false, refLen:boomLen},
-    {p:0.04, W:boomDiam,      H:boomDiam,       tA:0,  bA:0,   tS:1.0, bS:1.0, ell:true,  refLen:boomLen},
-    {p:0.96, W:boomDiam,      H:boomDiam,       tA:0,  bA:0,   tS:1.0, bS:1.0, ell:true,  refLen:boomLen},
+    {p:0.08, W:boomDiam,      H:boomDiam,       tA:0,  bA:0,   tS:1.0, bS:1.0, ell:true,  refLen:boomLen},
+    {p:0.92, W:boomDiam,      H:boomDiam,       tA:0,  bA:0,   tS:1.0, bS:1.0, ell:true,  refLen:boomLen},
     {p:1.00, W:boomDiam*0.15, H:boomDiam*0.15, tA:-90, bA:-90, tS:0.25,bS:0.25,ell:false, refLen:boomLen},
   ];
   const boomXML = fusGeom(
     'LiftBoom', 200,200,200,
-    boomXFwd, yBoom, zBoom,   // forward tip X, Y=1.7m lateral, Z=wing surface
-    0,                         // yRot=0 → boom runs along +X axis
+    boomXFwd, yBoom, zBoom,   // fwd tip X, Y=yBoom lateral (clears V-tail), Z=wing surface
+    0,                         // yRot=0 → boom runs perfectly parallel to X-axis
     boomLen, 2, boomSt, 8, 9
   );
 
@@ -1527,7 +1522,7 @@ void Scale(double curr_scale )
   );
   const liftRotAftXML = diskGeom(
     'LiftRotor_Aft', 255,80,0,
-    xRotAft, yBoom, zLiftRotor,  // xRotAft = xVtTE_critical + Rrot + 0.2 (clears V-tail)
+    xRotAft, yBoom, zLiftRotor,  // aft boom tip — boom passes outboard of V-tail (y=yBoom > V-tail span)
     90, Drot, 2
   );
 
@@ -1553,7 +1548,7 @@ void Scale(double curr_scale )
 
   // ── 7. WINGTIP NACELLES (tilt mechanism housings) ─────────────────────
   // Two small pods, one at each wingtip, running along +X.
-  // Front face of nacelle = xNacFront = wing LE (rotor disc mounts here).
+  // Front face of nacelle at xNacStart = xWingLE; rotor disc at xTipRot = xNacStart − 0.05m.
   // Z = zNac = zWing (flush with high-wing surface).
   // Y = ±yTipRot: guarantees ≥1.7m blade-tip clearance from boom rotors.
   // XZ symmetry NOT used — left and right nacelles are separate geoms so
@@ -1578,7 +1573,7 @@ void Scale(double curr_scale )
   );
 
   // ── 8. TWO TILTING WINGTIP ROTORS — MOUNTED AT NACELLE NOSE ──────────
-  // Disc at xTipRot = xNacFront = wing LE (front face of nacelle).
+  // Disc at xTipRot = xNacStart − 0.05m (5cm forward of nacelle nose, clears body).
   // TILT MECHANISM — RotY encodes tilt angle:
   //   RotY = 90°  → disc horizontal → thrust UP (+Z)  [HOVER — default]
   //   RotY =  0°  → disc vertical   → thrust FWD (+X) [CRUISE]
@@ -1624,15 +1619,15 @@ ${tiltRotLeftXML}
        CONFIGURATION SUMMARY (9 components, 11 physical bodies with mirrors)
          1. Fuselage           — unchanged geometry
          2. MainWing           — shape unchanged, high-wing Z=${zWing.toFixed(3)} m
-         3. LiftBoom × 2      — horizontal pods at Y=±${yBoom.toFixed(2)} m
+         3. LiftBoom × 2      — straight horizontal pods at Y=±${yBoom.toFixed(3)} m
+              Y chosen so inner rotor edge (y=${(yBoom-Rrot).toFixed(3)} m) clears V-tail span (${yVtSpan_h.toFixed(3)} m)
               Fwd X=${boomXFwd.toFixed(3)} m  |  Aft X=${boomXAft.toFixed(3)} m  |  L=${boomLen.toFixed(3)} m
-              Aft tip placed behind V-tail critical TE (x=${xVtTE_critical.toFixed(3)} m) + ${Rrot}+0.2 m margin
          4. LiftRotor_Fwd × 2 — boom fwd tips, YRot=90 (thrust UP)
-         5. LiftRotor_Aft × 2 — boom aft tips, YRot=90 (thrust UP, behind V-tail)
+         5. LiftRotor_Aft × 2 — boom aft tips, YRot=90 (thrust UP)
          6. CruisePusher      — fuselage tail x=${xPusher.toFixed(3)} m, YRot=0 (thrust FWD +X)
          7. VTail             — unchanged geometry
-         8. TiltNacelle × 2  — wingtip pods at Y=±${yTipRot.toFixed(3)} m, L=${nacLen} m
-         9. TiltRotor × 2    — nacelle nose X=${xTipRot.toFixed(3)} m, YRot=90 (hover default)
+         8. TiltNacelle × 2  — wingtip pods at Y=±${yTipRot.toFixed(3)} m, Z=${zNac.toFixed(3)} m (chord midline)
+         9. TiltRotor × 2    — nacelle front X=${xTipRot.toFixed(3)} m (5cm fwd of nacelle nose), YRot=90
        ───────────────────────────────────────────────────────────────────
        TILT MECHANISM (wingtip rotors):
          RotY = 90°  →  disc horizontal  →  thrust UP   [HOVER — default]
@@ -8742,33 +8737,48 @@ export default function App(){
                     <div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace",letterSpacing:"0.15em",marginBottom:4}}>GEOMETRY EXPORT</div>
                     <div style={{fontSize:22,fontWeight:800,color:SC.amber,letterSpacing:"-0.03em"}}>OpenVSP Export</div>
                     <div style={{fontSize:10,color:SC.muted,marginTop:2,fontFamily:"'DM Mono',monospace"}}>
-                      Native .vsp3 — open directly in OpenVSP 3.28+ (File → Open)
+                      Two formats: .vspscript (run via File→Script) · .vsp3 (open directly, ref joby_s2.vsp3)
                     </div>
                   </div>
                   <div style={{marginLeft:"auto",display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
-                    {/* ── Single download button: .vsp3 only ── */}
+                    {/* ── Button 1: .vspscript ── */}
+                    <AuthGate user={user} onAuth={handleAuth}>
                     <button
                       onClick={()=>{
-                        try {
-                          const xml=generateVSP3File(params,SR);
-                          const blob=new Blob([xml],{type:"text/xml;charset=utf-8"});
-                          const url=URL.createObjectURL(blob);
-                          const a=document.createElement("a");
-                          a.href=url;
-                          a.download="Trail1_eVTOL.vsp3";
-                          document.body.appendChild(a);
-                          a.click();
-                          document.body.removeChild(a);
-                          setTimeout(()=>URL.revokeObjectURL(url),2000);
-                          if(user) addNotif(user.id,{title:"VSP3 Downloaded",body:`Trail1_eVTOL.vsp3 — MTOW=${SR.MTOW} kg, b=${SR.bWing} m`,type:"success"});
-                        } catch(e) { alert("Download error: "+e.message); }
+                        const xml=generateVSPScript(params,SR);
+                        const blob=new Blob([xml],{type:"text/plain"});
+                        const url=URL.createObjectURL(blob);
+                        const a=document.createElement("a");
+                        a.href=url; a.download="Trail1_eVTOL.vspscript"; a.click();
+                        URL.revokeObjectURL(url);
+                        if(user) addNotif(user.id,{title:"VSP Script Downloaded",body:`Trail1_eVTOL.vspscript — MTOW=${SR.MTOW} kg`,type:"success"});
                       }}
-                      style={{padding:"10px 24px",background:`linear-gradient(135deg,#3b82f6,#6366f1)`,
-                        border:"none",borderRadius:6,color:"#ffffff",fontSize:13,fontWeight:800,
+                      style={{padding:"10px 20px",background:`linear-gradient(135deg,${SC.amber},#f97316)`,
+                        border:"none",borderRadius:6,color:"#07090f",fontSize:12,fontWeight:800,
+                        cursor:"pointer",letterSpacing:"0.04em",fontFamily:"'DM Mono',monospace",
+                        boxShadow:`0 0 18px ${SC.amber}44`,display:"flex",alignItems:"center",gap:6}}>
+                      {!user&&<span>🔒</span>}⬇ .vspscript
+                    </button>
+                    </AuthGate>
+                    {/* ── Button 2: .vsp3 native file ── */}
+                    <AuthGate user={user} onAuth={handleAuth}>
+                    <button
+                      onClick={()=>{
+                        const xml=generateVSP3File(params,SR);
+                        const blob=new Blob([xml],{type:"application/xml"});
+                        const url=URL.createObjectURL(blob);
+                        const a=document.createElement("a");
+                        a.href=url; a.download="Trail1_eVTOL.vsp3"; a.click();
+                        URL.revokeObjectURL(url);
+                        if(user) addNotif(user.id,{title:"VSP3 File Downloaded",body:`Trail1_eVTOL.vsp3 — MTOW=${SR.MTOW} kg, b=${SR.bWing} m`,type:"success"});
+                      }}
+                      style={{padding:"10px 20px",background:`linear-gradient(135deg,#3b82f6,#6366f1)`,
+                        border:"none",borderRadius:6,color:"#ffffff",fontSize:12,fontWeight:800,
                         cursor:"pointer",letterSpacing:"0.04em",fontFamily:"'DM Mono',monospace",
                         boxShadow:"0 0 18px #3b82f644",display:"flex",alignItems:"center",gap:6}}>
-                      ⬇ Download .vsp3
+                      {!user&&<span>🔒</span>}⬇ .vsp3
                     </button>
+                    </AuthGate>
                   </div>
                 </div>
 
@@ -8796,7 +8806,7 @@ export default function App(){
                     <table style={{width:"100%",borderCollapse:"collapse",fontSize:10,fontFamily:"'DM Mono',monospace"}}>
                       <thead>
                         <tr style={{borderBottom:`1px solid ${SC.border}`}}>
-                          {["Component","x_LE (m)","y (m)","z (m)","Note"].map(hdr=>(
+                          {["Component","x_LE (m)","y (m)","z (m)","Dihedral"].map(hdr=>(
                             <th key={hdr} style={{textAlign:"left",padding:"3px 6px",fontSize:8,color:SC.muted,
                               textTransform:"uppercase",letterSpacing:"0.08em"}}>{hdr}</th>
                           ))}
@@ -8804,18 +8814,23 @@ export default function App(){
                       </thead>
                       <tbody>
                         {(()=>{
-                          const xWLE=SR.xACwing&&SR.Cr_?(SR.xACwing-0.25*SR.Cr_).toFixed(3):"—";
-                          const xVtLE_=SR.xACwing&&SR.lv&&SR.Cr_vt?((SR.xACwing+SR.lv)-0.25*SR.Cr_vt).toFixed(3):"—";
+                          const xWingLE_=(SR.xACwing-0.25*SR.Cr_).toFixed(3);
+                          const zWing_=(-params.fusDiam*0.10).toFixed(3);
+                          const xVtLE_=((SR.xACwing+SR.lv)-0.25*SR.MAC_vt).toFixed(3);
+                          const zVt_=(params.fusDiam*0.05).toFixed(3);
+                          const nSide=Math.floor(params.nPropHover/2);
                           const rows=[
-                            ["Fuselage","0.000","0.000","0.000","CL, nose at origin"],
-                            ["MainWing",xWLE,"0.000 (root)",(params.fusDiam/2).toFixed(3),"High-wing, top of fuselage"],
-                            ["LiftBoom ×2",xWLE+" −1.7","±1.700",(params.fusDiam/2).toFixed(3),"Flush with wing, XZ mirrored"],
-                            ["LiftRotor_Fwd ×2",xWLE+" −1.7","±1.700","wing+","YRot=90° thrust UP"],
-                            ["LiftRotor_Aft ×2","behind V-tail TE","±1.700","wing+","YRot=90° thrust UP"],
-                            ["CruisePusher",params.fusLen.toFixed(1),"0.000","0.000","YRot=0° thrust FWD"],
-                            ["VTail",xVtLE_,"0.000 (root)","0.000","Γ="+params.vtGamma+"°, XZ mirrored"],
-                            ["TiltNacelle ×2",xWLE,"±"+(Math.max(SR.bWing/2,1.7+SR.Drotor+1.7)).toFixed(3),(params.fusDiam/2).toFixed(3),"Wingtip pods"],
-                            ["TiltRotor ×2",xWLE,"±"+(Math.max(SR.bWing/2,1.7+SR.Drotor+1.7)).toFixed(3),(params.fusDiam/2).toFixed(3),"RotY=90° hover default"],
+                            ["Fuselage","0.000","0.000","0.000","0°"],
+                            ["Main Wing",xWingLE_,"0.000 (root)",zWing_,"2° (low-wing)"],
+                            ["V-Tail",xVtLE_,"0.000 (root)",zVt_,params.vtGamma+"° (panel)"],
+                            ...Array.from({length:nSide},(_,i)=>{
+                              const y=((SR.bWing/2)*(i+0.5)/nSide).toFixed(3);
+                              const x=((SR.xACwing-0.25*SR.Cr_)-0.30).toFixed(3);
+                              const z=((-params.fusDiam*0.10)+SR.Drotor*0.55).toFixed(3);
+                              return["Rotor "+(2*i)+" / "+(2*i+1),x,"±"+y,z,"—"];
+                            }),
+                            ["CG Marker",SR.xCGtotal.toFixed(3),"0","fD×0.55","—"],
+                            ["NP Marker",SR.xNP.toFixed(3),"0","fD×0.65","—"],
                           ];
                           return rows.map((rowItem,i)=>(
                             <tr key={i} style={{background:i%2===0?SC.bg:"transparent",
@@ -8833,19 +8848,20 @@ export default function App(){
                   </Panel>
 
                   <Panel title="Parent–Child Tree & Design Values">
+                    {/* Tree view */}
                     <div style={{fontFamily:"'DM Mono',monospace",fontSize:10,lineHeight:1.8}}>
                       {[
-                        {indent:0,icon:"🏗️",label:"Fuselage",detail:`L=${params.fusLen}m  Ø=${params.fusDiam}m`,col:"#94a3b8"},
-                        {indent:1,icon:"✈️",label:"MainWing (high-wing)",detail:`b=${SR.bWing}m  S=${SR.Swing}m²  AR=${params.AR}`,col:SC.blue},
-                        {indent:1,icon:"📦",label:"LiftBoom ×2 (XZ mirror)",detail:`Y=±1.70m  L=${SR.bWing?"~10m":"—"}`,col:"#94a3b8"},
-                        {indent:2,icon:"🟠",label:"LiftRotor_Fwd ×2",detail:`D=${SR.Drotor}m  YRot=90° (thrust UP)`,col:"#f97316"},
-                        {indent:2,icon:"🟠",label:"LiftRotor_Aft ×2",detail:`D=${SR.Drotor}m  YRot=90° (thrust UP, behind V-tail)`,col:"#f97316"},
-                        {indent:1,icon:"🟢",label:"CruisePusher",detail:`D=${SR.Drotor?+(SR.Drotor*0.75).toFixed(2):"—"}m  x=${params.fusLen}m  YRot=0° (thrust FWD)`,col:SC.green},
-                        {indent:1,icon:"🦋",label:"VTail (XZ mirror)",detail:`Γ=${params.vtGamma}°  S=${SR.Svt_panel}m²  Λ=${SR.sweep_vt}°`,col:"#8b5cf6"},
-                        {indent:1,icon:"💠",label:"TiltNacelle_Right",detail:`Y=+${(Math.max(SR.bWing/2||6.4,1.7+(SR.Drotor||3)+1.7)).toFixed(3)}m  L=0.80m`,col:SC.teal},
-                        {indent:2,icon:"🔵",label:"TiltRotor_Right",detail:`D=${SR.Drotor}m  RotY=90° hover / 0° cruise`,col:SC.blue},
-                        {indent:1,icon:"💠",label:"TiltNacelle_Left",detail:`Y=−${(Math.max(SR.bWing/2||6.4,1.7+(SR.Drotor||3)+1.7)).toFixed(3)}m  L=0.80m`,col:SC.teal},
-                        {indent:2,icon:"🔵",label:"TiltRotor_Left",detail:`D=${SR.Drotor}m  RotY=90° hover / 0° cruise`,col:SC.blue},
+                        {indent:0,icon:"🏗️",label:"Fuselage (FUSELAGE_GEOM)",detail:`L=${params.fusLen}m  Ø=${params.fusDiam}m`,col:"#94a3b8"},
+                        {indent:1,icon:"✈️",label:"Main Wing (WING_GEOM)",detail:`b=${SR.bWing}m  S=${SR.Swing}m²  AR=${params.AR}  λ=${params.taper}`,col:SC.blue},
+                        {indent:1,icon:"🦋",label:"V-Tail (WING_GEOM · XZ sym)",detail:`Γ=${params.vtGamma}°  S_panel=${SR.Svt_panel}m²  AR=${params.vtAR}`,col:"#8b5cf6"},
+                        {indent:1,icon:"🟢",label:"CG Marker (FUSELAGE_GEOM)",detail:`x=${SR.xCGtotal}m  SM=${((SR.SM)*100).toFixed(1)}% MAC`,col:SC.green},
+                        {indent:1,icon:"🔵",label:"NP Marker (FUSELAGE_GEOM)",detail:`x=${SR.xNP}m from nose`,col:SC.teal},
+                        ...Array.from({length:Math.floor(params.nPropHover/2)},(_,i)=>({
+                          indent:1,icon:"🔧",
+                          label:`Rotor pair ${i} (PROP_GEOM × 2)`,
+                          detail:`D=${SR.Drotor}m  ${SR.Nbld||3} blades  @y=±${((SR.bWing/2)*(i+0.5)/Math.floor(params.nPropHover/2)).toFixed(2)}m`,
+                          col:SC.amber,
+                        })),
                       ].map((node_item,i)=>(
                         <div key={i} style={{display:"flex",alignItems:"flex-start",gap:4,
                           paddingLeft:node_item.indent*18,paddingTop:1,paddingBottom:1}}>
@@ -8861,27 +8877,27 @@ export default function App(){
                   </Panel>
                 </div>
 
-                {/* Design values + instructions */}
+                {/* Airfoil / tail note + key design values table */}
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-                  <Panel title="Design Values Written to .vsp3">
+                  <Panel title="Design Values Written to Script">
                     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4}}>
                       {[
                         ["MTOW",SR.MTOW+" kg"],
-                        ["Wing LE (from nose)",SR.xACwing&&SR.Cr_?(SR.xACwing-0.25*SR.Cr_).toFixed(3)+" m":"—"],
+                        ["Wing LE (from nose)",(SR.xACwing-0.25*SR.Cr_).toFixed(3)+" m"],
                         ["Wing root chord",SR.Cr_+" m"],
                         ["Wing tip chord",SR.Ct_+" m"],
-                        ["Wing half-span",SR.bWing?(SR.bWing/2).toFixed(3)+" m":"—"],
+                        ["Wing half-span",(SR.bWing/2).toFixed(3)+" m"],
                         ["Wing sweep (LE)",SR.sweep+"°"],
-                        ["Wing config","High-wing (Z="+(params.fusDiam/2).toFixed(3)+" m)"],
-                        ["Lift boom Y","±1.700 m (cabin clearance)"],
-                        ["Aft rotor X","Behind V-tail TE + 1.5+0.2m"],
-                        ["Cruise pusher x",params.fusLen+" m (fuse tail)"],
-                        ["V-tail root LE",SR.xACwing&&SR.lv&&SR.Cr_vt?((SR.xACwing+SR.lv)-0.25*SR.Cr_vt).toFixed(3)+" m":"—"],
-                        ["V-tail dihedral",params.vtGamma+"°"],
+                        ["Wing t/c",params.tc],
+                        ["V-tail root LE",((SR.xACwing+SR.lv)-0.25*SR.MAC_vt).toFixed(3)+" m"],
+                        ["V-tail panel span",SR.bvt_panel+" m"],
+                        ["V-tail root chord",SR.Cr_vt+" m"],
+                        ["V-tail sweep (LE)",SR.sweep_vt+"°"],
                         ["Rotor diameter",SR.Drotor+" m"],
+                        ["Blade chord",SR.ChordBl.toFixed(4)+" m"],
                         ["CG from nose",SR.xCGtotal+" m"],
                         ["NP from nose",SR.xNP+" m"],
-                        ["Static margin",SR.SM_vt?(SR.SM_vt*100).toFixed(1)+"% MAC":"—"],
+                        ["Static margin",(SR.SM*100).toFixed(1)+"% MAC"],
                       ].map(([k,v])=>(
                         <div key={k} style={{display:"flex",justifyContent:"space-between",
                           padding:"3px 6px",background:SC.bg,borderRadius:3}}>
@@ -8892,19 +8908,22 @@ export default function App(){
                     </div>
                   </Panel>
 
-                  <Panel title="How to Open the .vsp3 in OpenVSP">
+                  <Panel title="How to Run the .vspscript in OpenVSP 3.48">
                     {[
-                      ["1","Download","Click the blue ⬇ Download .vsp3 button above."],
-                      ["2","Open VSP","Open OpenVSP 3.28 or newer (including 3.48.2)."],
-                      ["3","Open File","File → Open → select Trail1_eVTOL.vsp3. Geometry loads immediately — no script needed."],
-                      ["4","Verify","Check: high-wing fuselage, 2 lateral booms, 4 lift rotors (horizontal discs), 1 aft pusher, V-tail, 2 tilting wingtip rotors in nacelles."],
-                      ["5","Tilt Rotors","TiltRotor_Right / Left default RotY=90° (hover). Change to 0° in XForm for cruise configuration."],
-                      ["6","Iterate","Adjust any slider in the app → click Download .vsp3 again. Every download regenerates from current sizing."],
+                      ["1","Download",`Click the amber button for .vspscript or the blue button for .vsp3.`],
+                      ["2","Open VSP","Open OpenVSP 3.28+ (incl. 3.48.2)."],
+                      [".vspscript","Run Script","File → Run Script → select Trail1_eVTOL.vspscript → Execute.  Model builds in ~2 s."],
+                      [".vsp3","Open Direct","File → Open → select Trail1_eVTOL.vsp3.  Geometry loads immediately — no script needed."],
+                      ["3","Verify","Check fuselage (5-station ellipse), wing (S="+SR.Swing+" m², b="+SR.bWing+" m), V-tail (Γ="+params.vtGamma+"°), "+params.nPropHover+" hover rotors + 1 cruise prop."],
+                      ["4","CG / NP","MassProperties block carries CG="+SR.xCGtotal+" m, SM="+((SR.SM_vt||SR.SM)*100).toFixed(1)+"% MAC.  View via Model → Edit → MassProperties."],
+                      ["5","Rotors","Hover rotors: Y_Rot=90° (disk horizontal, thrust +Z).  Cruise prop: Y_Rot=0° (disk vertical, thrust +X pusher)."],
+                      ["6","V-Tail","Two-panel V-tail: XZ symmetry + dihedral Γ. Ruddervators: symmetric=elevator, differential=rudder."],
+                      ["7","Iterate","Change any slider → re-download → re-open. Each download regenerates from current sizing."],
                     ].map(([n,title,text])=>(
                       <div key={n} style={{display:"flex",gap:8,marginBottom:8}}>
-                        <div style={{width:18,height:18,borderRadius:"50%",background:SC.blue,flexShrink:0,
+                        <div style={{width:18,height:18,borderRadius:"50%",background:SC.amber,flexShrink:0,
                           display:"flex",alignItems:"center",justifyContent:"center",
-                          fontSize:8,fontWeight:800,color:"#fff",fontFamily:"'DM Mono',monospace"}}>{n}</div>
+                          fontSize:8,fontWeight:800,color:"#07090f",fontFamily:"'DM Mono',monospace"}}>{n}</div>
                         <div>
                           <div style={{fontSize:10,fontWeight:700,color:SC.text,fontFamily:"'DM Mono',monospace"}}>{title}</div>
                           <div style={{fontSize:9,color:SC.muted,marginTop:1,lineHeight:1.5}}>{text}</div>
@@ -8914,30 +8933,46 @@ export default function App(){
                   </Panel>
                 </div>
 
-                {/* Single bottom download button */}
-                <div style={{display:"flex",justifyContent:"center",paddingTop:4,paddingBottom:8}}>
+                {/* Bottom download buttons — two side by side */}
+                <div style={{display:"flex",justifyContent:"center",gap:12,paddingTop:4,paddingBottom:8,flexWrap:"wrap"}}>
+                  {/* Bottom .vspscript */}
+                  <AuthGate user={user} onAuth={handleAuth}>
                   <button
                     onClick={()=>{
-                      try {
-                        const xml=generateVSP3File(params,SR);
-                        const blob=new Blob([xml],{type:"text/xml;charset=utf-8"});
-                        const url=URL.createObjectURL(blob);
-                        const a=document.createElement("a");
-                        a.href=url;
-                        a.download="Trail1_eVTOL.vsp3";
-                        document.body.appendChild(a);
-                        a.click();
-                        document.body.removeChild(a);
-                        setTimeout(()=>URL.revokeObjectURL(url),2000);
-                        if(user) addNotif(user.id,{title:"VSP3 Downloaded",body:`Trail1_eVTOL.vsp3 — MTOW=${SR.MTOW} kg, b=${SR.bWing} m`,type:"success"});
-                      } catch(e) { alert("Download error: "+e.message); }
+                      const xml=generateVSPScript(params,SR);
+                      const blob=new Blob([xml],{type:"text/plain"});
+                      const url=URL.createObjectURL(blob);
+                      const a=document.createElement("a");
+                      a.href=url; a.download="Trail1_eVTOL.vspscript"; a.click();
+                      URL.revokeObjectURL(url);
+                      if(user) addNotif(user.id,{title:"VSP Script Downloaded",body:`Trail1_eVTOL.vspscript — MTOW=${SR.MTOW} kg`,type:"success"});
                     }}
-                    style={{padding:"14px 56px",background:`linear-gradient(135deg,#3b82f6,#6366f1)`,
-                      border:"none",borderRadius:8,color:"#ffffff",fontSize:14,fontWeight:800,
+                    style={{padding:"12px 36px",background:`linear-gradient(135deg,${SC.amber},#f97316)`,
+                      border:"none",borderRadius:6,color:"#07090f",fontSize:13,fontWeight:800,
                       cursor:"pointer",letterSpacing:"0.06em",fontFamily:"'DM Mono',monospace",
-                      boxShadow:"0 0 32px #3b82f688",display:"flex",alignItems:"center",gap:10}}>
-                    ⬇  Download Trail1_eVTOL.vsp3
+                      boxShadow:`0 0 28px ${SC.amber}44`,display:"flex",alignItems:"center",gap:8}}>
+                    {!user&&<span>🔒</span>}⬇  Download Trail1_eVTOL.vspscript
                   </button>
+                  </AuthGate>
+                  {/* Bottom .vsp3 */}
+                  <AuthGate user={user} onAuth={handleAuth}>
+                  <button
+                    onClick={()=>{
+                      const xml=generateVSP3File(params,SR);
+                      const blob=new Blob([xml],{type:"application/xml"});
+                      const url=URL.createObjectURL(blob);
+                      const a=document.createElement("a");
+                      a.href=url; a.download="Trail1_eVTOL.vsp3"; a.click();
+                      URL.revokeObjectURL(url);
+                      if(user) addNotif(user.id,{title:"VSP3 Downloaded",body:`Trail1_eVTOL.vsp3 — MTOW=${SR.MTOW} kg, b=${SR.bWing} m`,type:"success"});
+                    }}
+                    style={{padding:"12px 36px",background:`linear-gradient(135deg,#3b82f6,#6366f1)`,
+                      border:"none",borderRadius:6,color:"#ffffff",fontSize:13,fontWeight:800,
+                      cursor:"pointer",letterSpacing:"0.06em",fontFamily:"'DM Mono',monospace",
+                      boxShadow:"0 0 28px #3b82f644",display:"flex",alignItems:"center",gap:8}}>
+                    {!user&&<span>🔒</span>}⬇  Download Trail1_eVTOL.vsp3
+                  </button>
+                  </AuthGate>
                 </div>
               </div>
             )}
