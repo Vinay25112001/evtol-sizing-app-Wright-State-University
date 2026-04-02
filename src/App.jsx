@@ -1128,9 +1128,16 @@ function generateVSP3File(p, SR) {
   const xVtTipTE   = xVtLE + bvt * Math.tan(swVT * Math.PI / 180) + CtVT;  // ≈ 9.312m
   const xRotAft    = xVtTipTE + Rrot + 0.2;    // ≈ 11.012m — aft rotor behind V-tail tip TE
   const boomDiam   = 0.25;
-  const boomXFwd   = xWingLE - 1.7;            // 1.7m fwd of wing LE
-  const boomXAft   = xRotAft;                  // boom end = aft rotor position
-  const boomLen    = boomXAft - boomXFwd;
+  // ── FIX: symmetric boom arms about aircraft CG ──────────────────────
+  // Aft arm is constrained by V-tail clearance (xRotAft, computed above).
+  // Mirror it forward of the CG so both lift-rotor moment arms are equal.
+  // Math.max(0.3, …) clamps the forward tip to ≥0.3 m aft of the nose in
+  // case fallback defaults produce an unrealistically short fuselage; with
+  // real sizing-engine output the clamp never fires and arms are truly equal.
+  const armAft     = xRotAft - xCG;                 // aft moment arm (V-tail constrained)
+  const boomXFwd   = Math.max(0.3, xCG - armAft);   // forward arm mirrors aft arm about CG
+  const boomXAft   = xRotAft;                        // unchanged — V-tail clearance preserved
+  const boomLen    = boomXAft - boomXFwd;            // updates automatically
   const zBoom      = fD / 2;                   // flush with high-wing / top of fuselage
 
   // ── FOUR FIXED LIFT ROTORS (on boom tips) ────────────────────────────
@@ -1619,6 +1626,7 @@ ${tiltRotLeftXML}
          3. LiftBoom × 2      — straight horizontal pods at Y=±${yBoom.toFixed(4)} m
               Formula: fD/2 + Rrot + 0.2 = ${(fD/2).toFixed(4)} + ${Rrot} + 0.2 = ${yBoom.toFixed(4)} m
               Fwd X=${boomXFwd.toFixed(3)} m  |  Aft X=${boomXAft.toFixed(3)} m  |  L=${boomLen.toFixed(3)} m
+              Fwd arm from CG=${(xCG-boomXFwd).toFixed(3)} m  |  Aft arm from CG=${armAft.toFixed(3)} m  (symmetric about CG)
               Aft rotor behind V-tail tip TE (${xVtTipTE.toFixed(3)} m) + Rrot + 0.2m margin
          4. LiftRotor_Fwd × 2 — boom fwd tips, YRot=90 (thrust UP)
          5. LiftRotor_Aft × 2 — boom aft tips, YRot=90 (thrust UP)
