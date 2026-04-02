@@ -1127,9 +1127,22 @@ function generateVSP3File(p, SR) {
   const yVtSpan_h  = bvt * Math.cos(vtG * Math.PI / 180);    // V-tail horiz reach ≈ 2.666m
   const xVtTipTE   = xVtLE + bvt * Math.tan(swVT * Math.PI / 180) + CtVT;  // ≈ 9.312m
   const boomDiam   = 0.25;
-  const boomXFwd   = xWingLE - 1.7;            // 1.7m fwd of wing LE
-  const boomXAft   = xWingLE + 1.7;                  // boom end = aft rotor position
-  const boomLen    = boomXAft - boomXFwd;
+  // ── PARAMETRIC BOOM LENGTH CALCULATION ───────────────────────────────
+  const Rrot = Drot / 2;             // Calculate radius from your propeller diameter
+  const clearance = 0.2;             // 20cm structural safety gap
+  const extension = Rrot + clearance; // Total distance the boom must extend past the obstacle
+
+  // Forward boom tip (must clear the main wing leading edge)
+  const boomXFwd = xWingLE - extension; 
+
+  // Aft boom tip (must clear the absolute furthest point of the V-Tail)
+  const boomXAft = xVtTipTE + extension; 
+
+  // Total boom length
+  const boomLen = boomXAft - boomXFwd;
+  // const boomXFwd   = xWingLE - 1.7;            // 1.7m fwd of wing LE
+  // const boomXAft   = xWingLE + 1.7;            // boom end = aft rotor position
+  // const boomLen    = boomXAft - boomXFwd;
   const zBoom      = fD / 2;                   // flush with high-wing / top of fuselage
 
   // ── FOUR FIXED LIFT ROTORS (on boom tips) ────────────────────────────
