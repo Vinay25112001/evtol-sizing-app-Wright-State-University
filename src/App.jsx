@@ -8744,7 +8744,7 @@ export default function App(){
 
                 {/* Bottom download buttons — two side by side */}
                 <div style={{display:"flex",justifyContent:"center",gap:12,paddingTop:4,paddingBottom:8,flexWrap:"wrap"}}>
-                  {/* .vsp3 download */
+                  {/* .vsp3 download */}
                   <AuthGate user={user} onAuth={handleAuth}>
                   <button
                     onClick={()=>{
