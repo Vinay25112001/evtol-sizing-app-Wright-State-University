@@ -1110,41 +1110,32 @@ function generateVSP3File(p, SR) {
 
   // ── LONGITUDINAL LIFT BOOMS ───────────────────────────────────────────
   //
-  // FIX 1 — EXACT INBOARD CLEARANCE FORMULA (Y-axis):
-  //   yBoom = (Fuselage_Width / 2) + Rotor_Radius + Safety_Clearance
-  //         = (fD / 2)             + Rrot          + 0.2
-  //         = (1.65 / 2)           + 1.5           + 0.2  = 2.525 m
-  // Fuselage max width = fD (from cross-section station p=0.380, W=fD=1.65m).
-  const yBoom      = (fD / 2) + Rrot + 0.2;   // = 2.525 m
+  // Y-AXIS: Booms set to 4.4 m outboard — clears V-tail laterally
+  // (V-tail horiz span ≈ 2.66 m, rotor radius 1.5 m → disc outer edge at 4.4+1.5=5.9 m,
+  //  inner edge at 4.4-1.5=2.9 m > 2.66 m → rotors fully bypass V-tail, no aft X constraint needed)
+  const yBoom      = 4.4;                    // m — outboard enough to clear V-tail laterally
 
-  // FIX 2 — AFT X EXTENSION TO CLEAR V-TAIL (X-axis):
-  // With yBoom=2.525m, the rotor disc spans y=1.025m to y=4.025m, overlapping
-  // the V-tail panel (horizontal span = bvt·cos(45°) = 2.666m).
-  // The V-tail TE sweeps aft with span; worst case (most aft TE) is at the
-  // V-tail tip: xVtTipTE = xVtLE + bvt·tan(swVT) + CtVT ≈ 9.312m.
-  // Aft rotor must sit BEHIND this + Rrot clearance + 0.2m safety:
-  //   xRotAft = xVtTipTE + Rrot + 0.2  ≈ 11.012m
-  const yVtSpan_h  = bvt * Math.cos(vtG * Math.PI / 180);    // V-tail horiz reach ≈ 2.666m
+  // X-axis: V-tail no longer constrains boom length — keep vtTipTE for geometry only
+  const yVtSpan_h  = bvt * Math.cos(vtG * Math.PI / 180);
   const xVtTipTE   = xVtLE + bvt * Math.tan(swVT * Math.PI / 180) + CtVT;
   const boomDiam   = 0.25;
 
-  // ── SYMMETRIC BOOM ABOUT THE WING ────────────────────────────────────
-  // 1. Calculate aft tip to safely clear the V-Tail
-  const boomXAft = xVtTipTE + Rrot + 0.2;
+  // ── SHORT, WING-SYMMETRIC BOOMS ──────────────────────────────────────
+  const clearance = Rrot + 0.2;             // 1.5 m radius + 0.2 m gap = 1.7 m
 
-  // 2. Calculate how far back the boom extends from the wing trailing edge
-  const aftExtension = boomXAft - xWingTE;
+  // Front rotor just clears the wing leading edge
+  const boomXFwd = xWingLE - clearance;
 
-  // 3. Force the front of the boom to extend the exact same distance forward from the wing leading edge
-  const boomXFwd = xWingLE - aftExtension;
+  // Rear rotor is exactly symmetric, just clearing the trailing edge
+  const boomXAft = xWingTE + clearance;
 
   const boomLen  = boomXAft - boomXFwd;
-  const zBoom    = fD / 2;                    // flush with high-wing / top of fuselage
+  const zBoom    = fD / 2;                  // flush with high-wing / top of fuselage
 
   // ── LIFT ROTOR POSITIONS — DERIVED FROM BOOM TIPS ────────────────────
-  const zLiftRotor = zBoom + boomDiam / 2;   // hub sits on top of boom surface
-  const xRotFwd    = boomXFwd;               // forward rotor AT forward boom tip
-  const xRotAft    = boomXAft;               // aft rotor AT aft boom tip
+  const zLiftRotor = zBoom + boomDiam / 2;  // hub sits on top of boom surface
+  const xRotFwd    = boomXFwd;              // forward rotor AT forward boom tip
+  const xRotAft    = boomXAft;              // aft rotor AT aft boom tip
 
   // ── CENTER PUSHER ROTOR ───────────────────────────────────────────────
   const xPusher   = fL;
