@@ -784,17 +784,21 @@ function runSizing(p) {
   const dBA_at_300m = +noiseAtDist(300).toFixed(1);
   const dBA_at_500m = +noiseAtDist(500).toFixed(1);
 
-  // Contour distances: Newton iteration (ground reflection + absorption make it non-analytic)
+  // Contour distances: bisection search.
+  // Newton iteration diverged because noiseAtDist() has a +2.5 dB discontinuity at r=10 m
+  // (ground reflection step), which breaks derivative-based solvers — they collapse to r=1.
+  // Bisection is unconditionally convergent on any monotone-on-average function.
   const contourDist = (target) => {
-    let r = r0 * Math.pow(10, (dBA_1m - target) / 20);  // spherical-only initial guess
-    for (let i = 0; i < 15; i++) {
-      const err = noiseAtDist(r) - target;
-      const ddr = -20 / (r * Math.log(10)) - alpha_dB_m;  // d/dr(noiseAtDist)
-      const dr  = Math.max(-r * 0.5, Math.min(r * 0.5, -err / Math.max(Math.abs(ddr), 1e-9)));
-      r = Math.max(1, r + dr);
-      if (Math.abs(err) < 0.01) break;
+    if (noiseAtDist(1) <= target) return 1;   // already below target at reference
+    let lo = 1, hi = 1e6;
+    while (noiseAtDist(hi) > target && hi < 1e8) hi *= 10;  // expand until below target
+    if (noiseAtDist(hi) > target) return hi;                 // never reaches target
+    for (let i = 0; i < 60; i++) {
+      const mid = (lo + hi) / 2;
+      if (noiseAtDist(mid) > target) lo = mid; else hi = mid;
+      if (hi - lo < 0.5) break;
     }
-    return r;
+    return Math.round((lo + hi) / 2);
   };
   const dist_65dBA = +contourDist(65).toFixed(0);
   const dist_70dBA = +contourDist(70).toFixed(0);
@@ -7708,12 +7712,12 @@ export default function App(){
                                 Exact Formulation
                               </div>
                               {[
-                                ['Tonal loading (Gutin-inspired far-field approximation):',
-                                 'p_rms = B·Ω·T / (4π·r₀·ρ·c₀²·√2)   →   SPL₁ = 20·log₁₀(p_rms/p_ref) + K_cal',
-                                 'K_cal=15 dB (empirical, not derived). Absorbs: non-uniform loading, BVI, unsteady inflow. Valid for Joby-like designs only.'],
-                                ['Harmonic series (empirical shaped curve):',
-                                 'SPL_n = SPL₁ + 20·log₁₀(n) − 4·(n−1),   n = 1…8',
-                                 '⚠️ NOT derived physics — shaped to Fleming 2022 data. Decay rate varies with Mtip and disk loading (±2 dB/harm).'],
+                                ['Tonal loading (Gutin + Bessel + compressibility):',
+                                 'p_rms = J₁(x)·D(θ)·B·Ω·T / (4π·r₀·ρ·c₀²·√2)   →   SPL₁ = 20·log₁₀(p_rms / 2×10⁻⁵) + K_cal + C_comp',
+                                 'K_cal = f(DL, Mtip, B) — multi-param calibration vs Fleming 2022 + Joby/Volocopter data. J₁ Bessel directivity included (FIX 2.1).'],
+                                ['Harmonic series (adaptive decay, Gutin-consistent):',
+                                 'SPL_n = SPL₁ − α·(n−1),   n = 1…10;   α = f(Mtip, DL) ∈ [2, 7] dB/harm',
+                                 '✅ Physically correct — harmonics decay from SPL₁. Removed unphysical +20·log₁₀(n) growth term (FIX 2.4). Fleming 2022 range: 3–6 dB/harm.'],
                                 ['Broadband self-noise (Tinney & Valdez 2020):',
                                  'dBA_broadband = dBA_tonal − 8 dB   (midpoint of 5–10 dB experimental range)',
                                  '⚠️ Uncertainty ±5 dB — depends on Re, turbulence, blade design. Empirical only.'],
@@ -7768,15 +7772,16 @@ export default function App(){
                                   ['✅ Valid for:','M_tip < 0.70 (subsonic, no shock noise)'],
                                   ['✅ Valid for:','Urban eVTOL rotor sizes (R = 0.5–3.0m)'],
                                   ['✅ Valid for:','Conceptual design comparison and trend analysis'],
-                                  ['❌ Not modelled:','Forward flight noise (BVI, thickness in cruise)'],
-                                  ['❌ Not modelled:','Atmospheric absorption (adds ~1–3 dB at 500m)'],
-                                  ['❌ Not modelled:','Directional radiation patterns — monopole only'],
+                                  ['✅ Modelled:','Atmospheric absorption (ISO 9613-1 simplified, 70% RH, 20°C)'],
+                                  ['✅ Modelled:','Ground reflection (+2.5 dB image-source, r > 10 m)'],
+                                  ['✅ Modelled:','10 harmonics with A-weighting per frequency (IEC 61672)'],
+                                  ['✅ Modelled:','Bessel directivity J₁(x) + compressibility C_comp(Mtip)'],
+                                  ['❌ Not modelled:','Forward flight noise (BVI, thickness noise in cruise)'],
+                                  ['❌ Not modelled:','Directional radiation patterns — in-plane monopole only'],
                                   ['❌ Not modelled:','Rotor–rotor interaction (phasing, wake ingestion)'],
-                                  ['❌ Not modelled:','Higher harmonics — only BPF A-weighted'],
-                                  ['❌ Not modelled:','Ground reflection (+3 dB at ground level)'],
-                                  ['⚠️ Calibration:','K_cal=15 dB: empirical offset, valid for Joby-like designs (6 rot, R≈1.5m, DL≈500 N/m²) — NOT universal'],
-                                  ['⚠️ Harmonic decay:','4 dB/harm — from Fleming 2022 eVTOL data. Not universal: faster at low DL, slower at high Mtip'],
-                                  ['⚠️ Broadband:','−8 dB below tonal: midpoint of 5–10 dB range. Uncertainty ±5 dB easily'],
+                                  ['⚠️ Calibration:','K_cal = f(DL, Mtip, B) — curve-fitted vs Fleming 2022 + Joby/Volocopter data (±2 dB)'],
+                                  ['⚠️ Harmonic decay:','α ∈ [2–7] dB/harm, adaptive with Mtip and DL. Fleming 2022 range: 3–6 dB/harm'],
+                                  ['⚠️ Broadband:','−8 dB below tonal + Mtip⁵ scaling. Uncertainty ±5 dB'],
                                   ['⚠️ Use for:','Trends and comparisons — NOT certification-level assessment'],
                                 ].map(([tag,desc],i)=>(
                                   <div key={i} style={{display:'flex',gap:6}}>
