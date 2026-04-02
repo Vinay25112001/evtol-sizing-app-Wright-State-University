@@ -1126,7 +1126,6 @@ function generateVSP3File(p, SR) {
   //   xRotAft = xVtTipTE + Rrot + 0.2  ≈ 11.012m
   const yVtSpan_h  = bvt * Math.cos(vtG * Math.PI / 180);    // V-tail horiz reach ≈ 2.666m
   const xVtTipTE   = xVtLE + bvt * Math.tan(swVT * Math.PI / 180) + CtVT;  // ≈ 9.312m
-  const xRotAft    = xVtTipTE + Rrot + 0.2;    // ≈ 11.012m — aft rotor behind V-tail tip TE
   const boomDiam   = 0.25;
   const boomXFwd   = xWingLE - 1.7;            // 1.7m fwd of wing LE
   const boomXAft   = xWingLE + 1.7;                  // boom end = aft rotor position
@@ -1136,7 +1135,7 @@ function generateVSP3File(p, SR) {
   // ── FOUR FIXED LIFT ROTORS (on boom tips) ────────────────────────────
   const zLiftRotor = zBoom + boomDiam / 2;     // hub sits on top of boom surface
   const xRotFwd    = boomXFwd;
-
+  const xRotAft    = boomXAft;    // aft rotor behind V-tail tip TE
   // ── CENTER PUSHER ROTOR ───────────────────────────────────────────────
   const xPusher   = fL;
   const dPusher   = Drot * 0.75;
