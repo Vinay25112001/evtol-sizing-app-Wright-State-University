@@ -1126,29 +1126,17 @@ function generateVSP3File(p, SR) {
   //   xRotAft = xVtTipTE + Rrot + 0.2  ≈ 11.012m
   const yVtSpan_h  = bvt * Math.cos(vtG * Math.PI / 180);    // V-tail horiz reach ≈ 2.666m
   const xVtTipTE   = xVtLE + bvt * Math.tan(swVT * Math.PI / 180) + CtVT;  // ≈ 9.312m
+  const xRotAft    = xVtTipTE + Rrot + 0.2;    // ≈ 11.012m — aft rotor behind V-tail tip TE
   const boomDiam   = 0.25;
-  // ── PARAMETRIC BOOM LENGTH CALCULATION ───────────────────────────────
-  const Rrot = Drot / 2;             // Calculate radius from your propeller diameter
-  const clearance = 0.2;             // 20cm structural safety gap
-  const extension = Rrot + clearance; // Total distance the boom must extend past the obstacle
-
-  // Forward boom tip (must clear the main wing leading edge)
-  const boomXFwd = xWingLE - extension; 
-
-  // Aft boom tip (must clear the absolute furthest point of the V-Tail)
-  const boomXAft = 2*xVtTipTE + extension; 
-
-  // Total boom length
-  const boomLen = boomXAft - boomXFwd;
-  // const boomXFwd   = xWingLE - 1.7;            // 1.7m fwd of wing LE
-  // const boomXAft   = xWingLE + 1.7;            // boom end = aft rotor position
-  // const boomLen    = boomXAft - boomXFwd;
+  const boomXFwd   = xWingLE - 1.7;            // 1.7m fwd of wing LE
+  const boomXAft   = xRotAft;                  // boom end = aft rotor position
+  const boomLen    = boomXAft - boomXFwd;
   const zBoom      = fD / 2;                   // flush with high-wing / top of fuselage
 
   // ── FOUR FIXED LIFT ROTORS (on boom tips) ────────────────────────────
   const zLiftRotor = zBoom + boomDiam / 2;     // hub sits on top of boom surface
   const xRotFwd    = boomXFwd;
-  const xRotAft    = boomXAft;    // aft rotor behind V-tail tip TE
+
   // ── CENTER PUSHER ROTOR ───────────────────────────────────────────────
   const xPusher   = fL;
   const dPusher   = Drot * 0.75;
