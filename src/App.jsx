@@ -1138,9 +1138,10 @@ function generateVSP3File(p, SR) {
   //   • boomLen  = 2·xCG        → ≈6 m when xCG≈3 m from sizing engine
   //   • Rotors sit exactly at boom tips — boom defines rotor location.
   //   • vtClearAft is a SAFETY CHECK only: logged below, not used for placement.
-  const boomXFwd = 0;                         // front tip at nose  → X_Loc = 0
-  const boomXAft = 2 * xCG;                   // aft  tip at 2·CG  → X_Loc = 2·xCG
-  const boomLen  = boomXAft - boomXFwd;       // = 2·xCG  (≈6 m)
+  const boomXOffset = 0.5;                     // shift entire boom 0.5 m aft
+  const boomXFwd = 0 + boomXOffset;           // = 0.5 m  → X_Loc = 0.5
+  const boomXAft = 2 * xCG + boomXOffset;     // = 2·xCG + 0.5 m
+  const boomLen  = boomXAft - boomXFwd;       // = 2·xCG (length unchanged)
   const zBoom    = fD / 2;                     // flush with high-wing / top of fuselage
 
   // ── LIFT ROTOR POSITIONS — DERIVED FROM BOOM TIPS ────────────────────
