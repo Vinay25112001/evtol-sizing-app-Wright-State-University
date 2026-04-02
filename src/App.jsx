@@ -1098,23 +1098,63 @@ function generateVSP3File(p, SR) {
 
   // ─── Component positions ──────────────────────────────────────────────
   const xWingLE = xACw - 0.25*Cr;       // wing LE (absolute x from nose)
-  const zWing   = 0;                     // mid-wing: passes through fuselage CL
+  const xWingTE = xWingLE + Cr;         // wing TE (absolute x from nose)
+
+  // ── HIGH-WING: Z raised to sit flush on TOP of fuselage ──────────────
+  // zWing = fD/2 places the wing root chord at the fuselage crown.
+  const zWing   = fD / 2;
 
   // V-tail: tail AC is lv behind wing AC; LE is 25% root chord ahead of AC
+  // Geometry unchanged — root stays at fuselage CL (Z=0) per original design
   const xVtLE  = Math.min(xACw + lv - 0.25*CrVT, fL - 0.05);
   const zVtRoot= 0;                      // V-tail root at fuselage CL
 
-  // Booms: vertical rods extending upward from wing surface
-  // Diameter: 0.25m as specified; length: enough to clear rotor blade tips
-  const boomDiam = 0.25;                 // m (user specified)
-  const boomLen  = Math.max(0.70, Drot * 0.27); // ≈ 0.81m for D=3m
-  const rotX     = xWingLE + Cr*0.25;   // boom/rotor X at wing AC
-  const rotZ     = boomLen;             // rotor hub at TOP of boom
-  const yMid     = bW * 0.25;           // mid-span (bW/4)
-  const yTip     = bW * 0.50;           // wingtip  (bW/2)
+  // ── LONGITUDINAL LIFT BOOMS ───────────────────────────────────────────
+  // Two horizontal pods running fore-aft, mounted symmetrically in Y.
+  //
+  // Y constraint: >= 1.7m from fuselage CL so 3m rotors clear the cabin.
+  //   yBoom = 1.7m exactly (minimum clearance).
+  //
+  // X extent: must reach at least 1.7m fwd of wing LE and 1.7m aft of wing TE.
+  //   boomXFwd = xWingLE - 1.7
+  //   boomXAft = xWingTE + 1.7
+  //
+  // Z: flush with high-wing surface = fD/2 (structurally integrated).
+  //
+  // Each boom is modelled as a slender Fuselage geom along the X-axis (yRot=0).
+  const boomDiam  = 0.25;               // boom cross-section diameter (m)
+  const yBoom     = 1.7;               // Y offset — minimum 1.7m from CL for rotor clearance
+  const boomXFwd  = xWingLE - 1.7;     // forward tip: 1.7m ahead of wing LE
+  const boomXAft  = xWingTE + 1.7;     // aft tip:     1.7m behind wing TE
+  const boomLen   = boomXAft - boomXFwd; // total boom length
+  const zBoom     = fD / 2;            // flush with high-wing / top of fuselage
 
-  // Cruise pusher at fuselage tail
-  const xPush    = fL;
+  // ── FOUR FIXED LIFT ROTORS (on boom tips) ────────────────────────────
+  // Placed at the exact forward and aft tips of each boom.
+  // YRot=90 → disk plane horizontal → thrust vector pointing straight UP (+Z).
+  // Hub Z: boom outer surface + tiny offset = zBoom + boomDiam/2
+  const zLiftRotor = zBoom + boomDiam / 2;  // hub sits on top of boom
+  const xRotFwd    = boomXFwd;          // fwd lift rotor at fwd boom tip
+  const xRotAft    = boomXAft;          // aft lift rotor at aft boom tip
+
+  // ── TWO TILTING WINGTIP ROTORS ────────────────────────────────────────
+  // Attached to wing extreme tips (Y = half-span).
+  //
+  // Clearance constraint: distance between wingtip rotor hub and nearest boom
+  // rotor hub (measured laterally) must be >= 1.7m blade-tip clearance.
+  //   Required: yTipRot - yBoom - Rrotor - Rrotor >= 1.7
+  //   => yTipRot >= yBoom + Drot + 1.7 = 1.7 + 3.0 + 1.7 = 6.4m
+  //
+  // Existing half-span = bW/2 ≈ 6.385m; 6.4m requires a negligible 15mm extension.
+  // The rotor hub is placed at max(bW/2, yBoom + Drot + 1.7) to guarantee clearance.
+  //
+  // Tilt mechanism: RotY encodes the rotor tilt angle.
+  //   RotY = 90° → prop disc horizontal → thrust UP (hover mode)
+  //   RotY = 0°  → prop disc vertical   → thrust FORWARD (cruise mode)
+  // Default is set to RotY=90 (hover). OpenVSP animates the transition 0→90°.
+  const yTipRot   = Math.max(bW / 2, yBoom + Drot + 1.7); // ≥ 6.4m (clearance enforced)
+  const xTipRot   = xWingLE + 0.25 * Cr;  // at wing AC (balanced tilt pivot)
+  const zTipRot   = zBoom;                // flush with wing surface
 
   // ─── TE-sweep helper ──────────────────────────────────────────────────
   const sweepTE = (swDeg, halfSpan, rC, tC) => {
@@ -1432,7 +1472,7 @@ void Scale(double curr_scale )
 
   // ═══ BUILD COMPONENTS ══════════════════════════════════════════════════
 
-  // ── 1. MAIN FUSELAGE ──────────────────────────────────────────────────
+  // ── 1. MAIN FUSELAGE — GEOMETRY UNCHANGED ─────────────────────────────
   const maxW = fD, maxH = fD*0.88;
   const fusSt = [
     {p:0.000, W:fD*0.01, H:fD*0.01, tA: 90, bA: 90, tS:0.40, bS:0.40, ell:false, refLen:fL},
@@ -1443,78 +1483,88 @@ void Scale(double curr_scale )
   ];
   const fusXML = fusGeom('Fuselage', 0,0,0, 0,0,0, 0, fL, 0, fusSt, 16, 17);
 
-  // ── 2. MAIN WING (mid-mounted, Z=0, XZ symmetric) ─────────────────────
+  // ── 2. MAIN WING — SHAPE UNCHANGED, NOW HIGH-WING (Z = fD/2) ──────────
+  // Wing profile, chord, taper, sweep, dihedral all identical to original.
+  // Only Z_Location raised from 0 to fD/2 to mount flush on top of fuselage.
   const wingXML = wingGeom(
     'MainWing', 0,0,255,
-    xWingLE, zWing, 0,
+    xWingLE, zWing, 0,          // zWing = fD/2 (high-wing)
     Cr, Ct, bW/2, sw, 2.0, -1.5,
     33, 2, bW, SW, MAC
   );
 
-  // ── 3. BOOM RODS (vertical cylinders, Y_Rotation=-90 → upward) ────────
-  // Diameter = boomDiam (0.25m), Length = boomLen (~0.81m)
-  // 4 booms total (2 pairs via XZ symmetry):
-  //   Pair A: mid-span at Y=bW/4
-  //   Pair B: wingtip  at Y=bW/2
-  //
-  // Y_Rotation = -90° makes the fuselage axis (normally +X) point to +Z (upward)
-  // so the boom bottom is at (rotX, yPos, 0) and top at (rotX, yPos, boomLen)
+  // ── 3. LONGITUDINAL LIFT BOOMS (Pod-style, horizontal along X-axis) ────
+  // Two slender cylindrical booms, one each side (XZ symmetry → mirrored).
+  // yBoom = 1.7m: minimum separation from fuselage CL for rotor-cabin clearance.
+  // boomXFwd → boomXAft: spans 1.7m fwd of wing LE to 1.7m aft of wing TE.
+  // zBoom = fD/2: flush with high-wing surface for structural integration.
+  // yRot = 0: boom axis runs along +X (default Fuselage orientation).
   const boomSt = [
     {p:0.00, W:boomDiam*0.15, H:boomDiam*0.15, tA: 90, bA: 90, tS:0.4, bS:0.4, ell:false, refLen:boomLen},
-    {p:0.15, W:boomDiam,      H:boomDiam,       tA:0,  bA:0,   tS:1.0, bS:1.0, ell:true,  refLen:boomLen},
-    {p:0.85, W:boomDiam,      H:boomDiam,       tA:0,  bA:0,   tS:1.0, bS:1.0, ell:true,  refLen:boomLen},
+    {p:0.08, W:boomDiam,      H:boomDiam,       tA:0,  bA:0,   tS:1.0, bS:1.0, ell:true,  refLen:boomLen},
+    {p:0.92, W:boomDiam,      H:boomDiam,       tA:0,  bA:0,   tS:1.0, bS:1.0, ell:true,  refLen:boomLen},
     {p:1.00, W:boomDiam*0.15, H:boomDiam*0.15, tA:-90, bA:-90, tS:0.25,bS:0.25,ell:false, refLen:boomLen},
   ];
-  // Mid-span booms (pair A — mirrors to -yMid)
-  const boomMidXML = fusGeom(
-    'Boom_MidSpan', 200,200,200,
-    rotX, yMid, 0,          // X at wing AC, Y at mid-span, Z at wing level
-    -90,                     // Y_Rotation=-90 → boom points upward (+Z)
-    boomLen, 2, boomSt, 8, 9
-  );
-  // Wingtip booms (pair B — mirrors to -yTip)
-  const boomTipXML = fusGeom(
-    'Boom_WingTip', 200,200,200,
-    rotX, yTip, 0,
-    -90,
+  // Placed at boomXFwd (X start), yBoom (lateral offset), zBoom (wing surface height)
+  // XZ symmetry (sym=2) mirrors to opposite side automatically
+  const boomXML = fusGeom(
+    'LiftBoom', 200,200,200,
+    boomXFwd, yBoom, zBoom,   // fwd tip at xWingLE-1.7, Y=1.7m, Z=wing surface
+    0,                         // yRot=0: boom runs along +X axis
     boomLen, 2, boomSt, 8, 9
   );
 
-  // ── 4. LIFT ROTORS at TOPS of BOOMS ────────────────────────────────────
-  // Z = boomLen (rotor hub is at top of boom)
-  // Y_Rotation=90 → disk plane horizontal → thrust in +Z
-  // Mid-span rotors (mirrors to -yMid → 2 total)
-  const rotMidXML = diskGeom(
-    'LiftRotor_MidSpan', 255,0,0,
-    rotX, yMid, rotZ,    // Z=boomLen
-    90, Drot, 2
+  // ── 4. FOUR FIXED LIFT ROTORS — MOUNTED ON BOOM TIPS ──────────────────
+  // Two pairs (mirrored): forward tip × ±yBoom, aft tip × ±yBoom.
+  // YRot = 90: prop disc horizontal → thrust vector pointing straight UP (+Z).
+  // Attached to boom tips, NOT to wing.
+  // Hub Z = zBoom + boomDiam/2 so disk clears the boom outer surface.
+  const liftRotFwdXML = diskGeom(
+    'LiftRotor_Fwd', 255,80,0,
+    xRotFwd, yBoom, zLiftRotor,  // forward boom tip position
+    90, Drot, 2                   // YRot=90 → horizontal disk → thrust UP; XZ mirrored
   );
-  // Wingtip rotors (mirrors to -yTip → 2 total)
-  const rotTipXML = diskGeom(
-    'LiftRotor_WingTip', 255,0,0,
-    rotX, yTip, rotZ,
-    90, Drot, 2
+  const liftRotAftXML = diskGeom(
+    'LiftRotor_Aft', 255,80,0,
+    xRotAft, yBoom, zLiftRotor,  // aft boom tip position
+    90, Drot, 2                   // YRot=90 → horizontal disk → thrust UP; XZ mirrored
   );
 
-  // ── 5. V-TAIL — from website sizing calculations ──────────────────────
-  // Uses SR.Cr_vt, SR.Ct_vt, SR.bvt_panel, SR.sweep_vt, p.vtGamma
-  // XZ symmetry creates both V-panels from single definition
-  // Dihedral = vtGamma: panels spread upward and outward
-  // Root at (xVtLE, 0, 0) — fuselage centreline
+  // ── 5. V-TAIL — GEOMETRY UNCHANGED ────────────────────────────────────
+  // Uses SR.Cr_vt, SR.Ct_vt, SR.bvt_panel, SR.sweep_vt, p.vtGamma — all from sizing.
+  // Root at fuselage CL (zVtRoot=0), XZ symmetric — both panels from one definition.
   const vtailXML = wingGeom(
-    'VTail', 255,215,0,    // gold colour for V-tail
-    xVtLE, zVtRoot, 0,    // X at calculated LE position, Z=0 (fuselage CL)
-    CrVT, CtVT, bvt, swVT, vtG, 0,   // dihedral = vtGamma from sizing
-    17, 2,                 // tessW=17, XZ symmetric
+    'VTail', 255,215,0,
+    xVtLE, zVtRoot, 0,
+    CrVT, CtVT, bvt, swVT, vtG, 0,
+    17, 2,
     bvt*2, bvt*(CrVT+CtVT)/2, (CrVT+CtVT)/2
   );
 
-  // ── 6. CRUISE PUSHER (single aft prop, vertical disk → thrust +X) ──────
-  // Y_Rotation=0 → disk plane perpendicular to X axis → thrust in +X
-  const cruiseXML = diskGeom(
-    'CruiseProp', 0,200,0,
-    xPush, 0, 0,
-    0, Drot*0.75, 0   // slightly smaller cruise prop, no symmetry
+  // ── 6. TWO TILTING WINGTIP ROTORS ─────────────────────────────────────
+  // Mounted at the extreme left and right wingtips.
+  // yTipRot = max(bW/2, 1.7 + Drot + 1.7) = max(6.385, 6.4) = 6.4m
+  //   This guarantees >= 1.7m blade-tip clearance between wingtip and boom rotors.
+  //
+  // TILT MECHANISM — RotY encodes the rotor tilt angle:
+  //   RotY = 90°  → prop disc horizontal → thrust UP (+Z)  [HOVER mode — DEFAULT]
+  //   RotY =  0°  → prop disc vertical   → thrust FWD (+X) [CRUISE mode]
+  // The transition from RotY=90→0 drives the tilt mechanism for forward cruise.
+  // OpenVSP animates this by sweeping Y_Rotation from 90 to 0 degrees.
+  //
+  // No XZ symmetry flag here — left (positive Y) and right (negative Y) are
+  // generated as two separate geoms so each can be individually controlled.
+  const tiltRotRightXML = diskGeom(
+    'TiltRotor_Right', 0,200,100,
+    xTipRot, +yTipRot, zTipRot,  // right wingtip (+Y)
+    90,                            // RotY=90: HOVER default (disc horizontal, thrust UP)
+    Drot, 0                        // no symmetry — each side independent
+  );
+  const tiltRotLeftXML = diskGeom(
+    'TiltRotor_Left', 0,200,100,
+    xTipRot, -yTipRot, zTipRot,  // left wingtip (-Y)
+    90,                            // RotY=90: HOVER default (disc horizontal, thrust UP)
+    Drot, 0                        // no symmetry — each side independent
   );
 
   // ── Assemble final VSP3 XML ────────────────────────────────────────────
@@ -1528,21 +1578,33 @@ void Scale(double curr_scale )
     </ParmContainer>
 ${fusXML}
 ${wingXML}
-${boomMidXML}
-${boomTipXML}
-${rotMidXML}
-${rotTipXML}
+${boomXML}
+${liftRotFwdXML}
+${liftRotAftXML}
 ${vtailXML}
-${cruiseXML}
+${tiltRotRightXML}
+${tiltRotLeftXML}
   </Vehicle>
   <!-- ═══════════════════════════════════════════════════════════════════
-       Trail-1 Lift+Cruise eVTOL  |  Wright State University
-       Dr. Darryl K. Ahner  |  Ref: joby_s2.vsp3 (MIT)
+       Lift + Tilt-Cruise Hybrid eVTOL  |  Wright State University
+       Configuration: High-wing, 2 longitudinal lift booms, 4 fixed lift
+       rotors on boom tips, 2 tilting wingtip rotors.
+       ───────────────────────────────────────────────────────────────────
+       TILT MECHANISM (wingtip rotors):
+         RotY = 90°  →  disc horizontal  →  thrust UP   [HOVER — default]
+         RotY =  0°  →  disc vertical    →  thrust FWD  [CRUISE]
+         Animate Y_Rotation from 90→0 in OpenVSP for transition simulation.
+       ───────────────────────────────────────────────────────────────────
        MTOW: ${MTOW.toFixed(1)} kg  |  Wing: b=${bW.toFixed(2)} m  S=${SW.toFixed(2)} m²
+       Wing position: HIGH-WING  Z=${zWing.toFixed(3)} m (top of fuselage)
+       Boom Y offset: ${yBoom.toFixed(3)} m (>= 1.7m cabin clearance)
+       Boom length:   ${boomLen.toFixed(3)} m (${(xWingLE-1.7).toFixed(3)} → ${(xWingTE+1.7).toFixed(3)} m)
+       Lift rotors:   Fwd X=${xRotFwd.toFixed(3)} m / Aft X=${xRotAft.toFixed(3)} m
+       Tip rotors Y:  ${yTipRot.toFixed(3)} m (>= 1.7m tip-to-boom clearance)
        CG: ${xCG.toFixed(3)} m from nose  |  SM: ${(SM*100).toFixed(1)}% MAC
        V-tail: Γ=${vtG.toFixed(1)}°  bvt=${bvt.toFixed(2)} m  Cr=${CrVT.toFixed(2)} m  Λ=${swVT.toFixed(1)}°
        Booms: D=${boomDiam}m  L=${boomLen.toFixed(2)}m
-       Rotors: 4 lift (mid+tip) + 1 cruise pusher
+       Rotors: 4 fixed lift (boom tips, YRot=90 UP) + 2 tilting wingtip (YRot=90 hover / 0 cruise)
   ═══════════════════════════════════════════════════════════════════ -->
 </Vsp_Geometry>`;
 
