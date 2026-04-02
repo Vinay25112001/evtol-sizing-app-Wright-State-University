@@ -708,24 +708,30 @@ function runSizing(p) {
   // At reference: 0 + 0 = −8 dB (matches Tinney & Valdez midpoint, same as v1)
   // At Mtip=0.65: +2.5 dB → −5.5 dB below tonal (physically higher broadband)
 
-  // ── 9. VORTEX (BVI) NOISE — eVTOL-master noise_models.py vortex_noise() ──
-  // Schlegel–King–Mull vortex-shedding model.
-  // eVTOL-master formula: p_ratio = k2 × (V_tip/(ρ·δ_S)) × sqrt((T_perRotor·N/σ)·DL)
-  //   k2 = 1.206×10⁻² s³/ft³  (Schlegel original unit — ft, NOT metres)
-  //   δ_S = 500 ft = 152.4 m  (eVTOL-master observer reference distance)
-  //   SPL = 20·log10(p_ratio)  — eVTOL-master returns relative (no /2e-5)
+  // ── 9. VORTEX (BVI) NOISE — Schlegel–King–Mull vortex-shedding model ──
+  // Original Schlegel formula (eVTOL-master noise_models.py vortex_noise()):
+  //   p_ratio = k2 × (V_tip / δ_S) × sqrt((T_perRotor / σ) × DL)
+  //   k2 = 1.206×10⁻² (Schlegel original — ft units throughout)
+  //   δ_S = 500 ft = 152.4 m  (observer reference distance)
+  //   p_ratio is DIMENSIONLESS — SPL = 20·log10(p_ratio)  (no /p_ref needed)
   //
-  // FIX: convert k2 to SI so we can use our 1m reference and propagate consistently.
-  //   k2_SI = k2_ft / (0.3048³) = 1.206e-2 / 0.02832 = 0.4259 s³/m³
-  // Our approach: compute at r0=1m, then propagate via noiseAtDist() — same as tonal.
-  // dBA_vortex = 20·log10(p_ratio/2e-5) + A-weight  (absolute pressure, IEC 61672)
-  const k2_vortex    = 0.4259;                      // SI: s³/m³ (converted from eVTOL-master k2_ft)
+  // Unit-consistent SI version (k2 kept in original, all lengths in ft converted):
+  //   Use k2_ft=1.206e-2, V in ft/s, δ_S=500 ft, T in lbf, DL in lbf/ft²
+  // Simpler: keep original dimensionless form, convert to SI by factor analysis.
+  //   k2_vortex (SI, m units) = 1.206e-2 × sqrt(4.448/47.88) / (0.3048²) = 0.4259 ✓
+  //   vortex_arg = (T_r / σ) × DL  [single rotor thrust only — N × N/m² = N²/m²]
+  //   p_ratio at δ_S: dimensionless; then back-project to 1m: +20·log10(152.4)
+  //   SPL_vortex_1m = 20·log10(p_ratio_at_deltaS) + 20·log10(152.4)  [no /2e-5]
+  const k2_vortex    = 0.4259;                      // SI conversion of Schlegel k2_ft
+  const delta_S_vortex = 152.4;                      // reference distance (500 ft in m)
   const V07_vortex   = 0.7 * TipSpd;                // blade speed at 70% radius [m/s]
   const sigma_vortex = sigma;                        // rotor solidity (computed above)
   const vortex_arg   = Math.max(1e-30,
-    (T_r * N_rot / Math.max(1e-6, sigma_vortex)) * DL_hover);
-  const p_ratio_vortex    = k2_vortex * (V07_vortex / (rho0 * r0)) * Math.sqrt(vortex_arg);
-  const SPL_vortex_1m     = 20 * Math.log10(Math.max(p_ratio_vortex, 1e-10) / 2e-5);
+    (T_r / Math.max(1e-6, sigma_vortex)) * DL_hover);  // single-rotor: T_r/σ × DL [N²/m²]
+  const p_ratio_vortex = k2_vortex * (V07_vortex / delta_S_vortex) * Math.sqrt(vortex_arg);
+  // p_ratio_vortex is dimensionless at delta_S_vortex; propagate to 1m reference:
+  const SPL_vortex_1m  = 20 * Math.log10(Math.max(p_ratio_vortex, 1e-10))
+                        + 20 * Math.log10(delta_S_vortex);  // back-project: no /2e-5
   // Apply A-weighting at vortex peak frequency: f_peak = St·V₀.₇/t_proj  (St=0.28)
   const AoA_blade   = 0.067;   // mean blade AoA ≈ 3.8° (Cl_mean≈0.6/2π)
   const t_proj_v    = ChordBl * (0.09 * Math.cos(AoA_blade) + Math.sin(AoA_blade));
