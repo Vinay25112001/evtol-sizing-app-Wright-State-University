@@ -5582,35 +5582,45 @@ export default function App(){
     },50); // defer to allow UI to update
   };
 
-  // setP — main param setter that records undo history
-  const setP=useCallback((updater)=>{
+  // ── Undo / Redo — uses refs to avoid setState-in-setState ─────────────
+  const undoRef=useRef(undoStack);   // mirror state in ref for sync access
+  const redoRef=useRef(redoStack);
+  useEffect(()=>{undoRef.current=undoStack;},[undoStack]);
+  useEffect(()=>{redoRef.current=redoStack;},[redoStack]);
+
+  const set=useCallback(paramKey=>paramVal=>{
     setParams(prev=>{
-      const next=typeof updater==="function"?updater(prev):updater;
-      // Schedule undo push outside the setState callback (avoids side-effects in reducer)
-      setTimeout(()=>{
+      const next={...prev,[paramKey]:paramVal};
+      // Push snapshot AFTER this render via microtask
+      Promise.resolve().then(()=>{
         setUndoStack(s=>[...s.slice(-29),prev]);
         setRedoStack([]);
-      },0);
+      });
       return next;
     });
   },[]);
-  const set=useCallback(paramKey=>paramVal=>setP(prev=>({...prev,[paramKey]:paramVal})),[setP]);
   const undo=useCallback(()=>{
-    setUndoStack(s=>{
-      if(!s.length) return s;
-      const prev=[...s]; const snap=prev.pop();
-      setRedoStack(r=>[...r,null]); // placeholder — filled below
-      setParams(cur=>{ setRedoStack(r=>[...r.slice(0,-1),cur]); return snap; });
-      return prev;
+    const stack=[...undoRef.current];
+    if(!stack.length) return;
+    const snap=stack.pop();
+    setParams(cur=>{
+      Promise.resolve().then(()=>{
+        setRedoStack(r=>[...r.slice(-29),cur]);
+        setUndoStack(stack);
+      });
+      return snap;
     });
   },[]);
   const redo=useCallback(()=>{
-    setRedoStack(s=>{
-      if(!s.length) return s;
-      const prev=[...s]; const snap=prev.pop();
-      setUndoStack(r=>[...r,null]);
-      setParams(cur=>{ setUndoStack(r=>[...r.slice(0,-1),cur]); return snap; });
-      return prev;
+    const stack=[...redoRef.current];
+    if(!stack.length) return;
+    const snap=stack.pop();
+    setParams(cur=>{
+      Promise.resolve().then(()=>{
+        setUndoStack(r=>[...r.slice(-29),cur]);
+        setRedoStack(stack);
+      });
+      return snap;
     });
   },[]);
   const stCol=!SR?SC.red:SR.feasible?SC.green:SC.amber;
