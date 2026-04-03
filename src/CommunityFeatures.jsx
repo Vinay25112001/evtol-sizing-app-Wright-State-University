@@ -132,6 +132,7 @@ async function sendSignal(sessionId, fromId, toId, type, payload) {
 function useVoice(sessionId, myId) {
   const [micOn,    setMicOn]   = useState(false);
   const [muted,    setMuted]   = useState(false);
+  const [listening,setListening]= useState(false); // Listen Mode: mic muted, incoming audio ON
   const [audioErr, setAudioErr]= useState("");
   const [peers,    setPeers]   = useState({});
 
@@ -334,6 +335,7 @@ function useVoice(sessionId, myId) {
       localStream.current = stream;
       setMicOn(true);
       setMuted(false);
+      setListening(false);
 
       const myName = members.find(m => m.user_id === myIdRef.current)?.display_name || myIdRef.current;
 
@@ -387,6 +389,17 @@ function useVoice(sessionId, myId) {
     setMuted(nowMuted);
   }, [muted]);
 
+  /* ── Listen Mode: mutes outgoing mic, keeps all incoming audio playing ── */
+  const toggleListen = useCallback(() => {
+    if (!localStream.current) return;
+    const nowListening = !listening;
+    // Disable/enable all local audio tracks (stops transmission, not reception)
+    localStream.current.getAudioTracks().forEach(t => { t.enabled = !nowListening; });
+    setListening(nowListening);
+    // If turning listen on, also clear the manual mute flag so state is consistent
+    if (nowListening) setMuted(false);
+  }, [listening]);
+
   const stopMic = useCallback(() => {
     localStream.current?.getTracks().forEach(t => t.stop());
     localStream.current = null;
@@ -400,12 +413,13 @@ function useVoice(sessionId, myId) {
     stopSig.current = null;
     setMicOn(false);
     setMuted(false);
+    setListening(false);
     setPeers({});
   }, []);
 
   useEffect(() => () => stopMic(), [stopMic]);
 
-  return { micOn, muted, audioErr, peers, enableMic, toggleMute, stopMic };
+  return { micOn, muted, listening, audioErr, peers, enableMic, toggleMute, toggleListen, stopMic };
 }
 
 /* ══════════════════════════════════════════════════════
@@ -1055,23 +1069,51 @@ export function CollabPanel({ user, params, onParamChange, C }) {
                   1. <strong>Both</strong> people click "Enable Microphone"<br/>
                   2. Allow mic access when the browser asks<br/>
                   3. Connection establishes automatically (uses TURN relay if needed)<br/>
-                  4. You will hear each other directly
+                  4. You will hear each other directly<br/>
+                  5. Use <strong style={{color:C.amber}}>👂 Listen Mode</strong> to mute your mic and listen only — like a lecture mode
                 </div>
               </div>
             ) : (
               <div>
-                <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",marginBottom:12}}>
+                <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:12}}>
+
+                  {/* ── Mute / Unmute ── */}
                   <button onClick={voice.toggleMute} type="button"
                     style={{...B(voice.muted?C.red:C.green,true),display:"flex",alignItems:"center",gap:8,minWidth:130}}>
                     {voice.muted ? "🔇 Unmute" : "🎙️ Mute"}
                   </button>
-                  <button onClick={voice.stopMic} type="button" style={{...B(C.red),display:"flex",alignItems:"center",gap:6}}>
+
+                  {/* ── Listen Mode — mutes mic, keeps incoming audio ── */}
+                  <button
+                    onClick={voice.toggleListen}
+                    type="button"
+                    title={voice.listening
+                      ? "Exit listen mode — your mic will transmit again"
+                      : "Listen mode — mutes your mic, you can still hear others"}
+                    style={{
+                      ...B(voice.listening ? C.amber : C.blue, voice.listening),
+                      display:"flex", alignItems:"center", gap:8, minWidth:140,
+                    }}>
+                    {voice.listening ? "👂 Listening…" : "👂 Listen Mode"}
+                  </button>
+
+                  {/* ── Leave ── */}
+                  <button onClick={voice.stopMic} type="button"
+                    style={{...B(C.red),display:"flex",alignItems:"center",gap:6}}>
                     ⏹ Leave Voice
                   </button>
+
+                  {/* ── Status indicator ── */}
                   <div style={{display:"flex",alignItems:"center",gap:6}}>
-                    <div style={{width:10,height:10,borderRadius:"50%",background:voice.muted?C.red:C.green,animation:voice.muted?"none":"pulse 1s infinite"}}/>
-                    <span style={{fontSize:11,fontWeight:700,color:voice.muted?C.red:C.green,fontFamily:"'DM Mono',monospace"}}>
-                      {voice.muted ? "Muted" : "Transmitting"}
+                    <div style={{
+                      width:10, height:10, borderRadius:"50%",
+                      background: voice.listening ? C.amber : voice.muted ? C.red : C.green,
+                      animation: voice.muted || voice.listening ? "none" : "pulse 1s infinite",
+                    }}/>
+                    <span style={{fontSize:11,fontWeight:700,
+                      color: voice.listening ? C.amber : voice.muted ? C.red : C.green,
+                      fontFamily:"'DM Mono',monospace"}}>
+                      {voice.listening ? "Listening only" : voice.muted ? "Muted" : "Transmitting"}
                     </span>
                   </div>
                 </div>
@@ -1088,6 +1130,11 @@ export function CollabPanel({ user, params, onParamChange, C }) {
                           {voice.peers[id]?.name || id}
                         </span>
                         <span style={{fontSize:9,color:C.green,fontFamily:"'DM Mono',monospace"}}>● live audio</span>
+                        {voice.listening && (
+                          <span style={{fontSize:8,color:C.amber,fontFamily:"'DM Mono',monospace",marginLeft:4}}>
+                            (you are in listen mode)
+                          </span>
+                        )}
                       </div>
                     ))}
                   </div>
