@@ -6797,6 +6797,18 @@ export default function App(){
                 </div>
 
                 {/* ── Full-width Payload-Range Diagram ── */}
+                {(()=>{
+                  // All guards up-front — if ANY value is invalid, skip the panel
+                  const rpData  = SR.rpData||[];
+                  const ferry   = isFinite(SR.ferryRange) && SR.ferryRange>0 ? SR.ferryRange : params.range;
+                  const maxPay  = isFinite(SR.maxPayloadRp) && SR.maxPayloadRp>0 ? SR.maxPayloadRp : params.payload;
+                  if(!rpData.length) return null;
+                  const yMax = Math.max(50, Math.ceil(ferry*1.1/50)*50);
+                  const xMax = Math.max(10, maxPay*1.05);
+                  const halfPay = Math.round(params.payload/2);
+                  const halfPt  = rpData.find(d=>Math.abs(d.payload-halfPay)<=maxPay/20);
+                  const halfRange = halfPt ? `${halfPt.range} km` : "—";
+                  return(
                 <div style={{background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:8,padding:"14px 16px"}}>
                   <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",
                     marginBottom:12,flexWrap:"wrap",gap:8}}>
@@ -6810,12 +6822,11 @@ export default function App(){
                         Freed payload weight transfers directly to battery (fixed MTOW).
                       </div>
                     </div>
-                    {/* Key-point summary pills */}
                     <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
                       {[
                         ["Design Point",`${params.payload} kg / ${params.range} km`,SC.amber],
-                        ["Ferry Range",`0 kg / ${SR.ferryRange??params.range} km`,SC.teal],
-                        ["Max Payload",`${SR.maxPayloadRp??params.payload} kg / 0 km`,SC.red],
+                        ["Ferry Range",`0 kg / ${ferry} km`,SC.teal],
+                        ["Max Payload",`${maxPay} kg / 0 km`,SC.red],
                       ].map(([lbl,val,col])=>(
                         <div key={lbl} style={{padding:"4px 10px",borderRadius:5,
                           background:`${col}18`,border:`1px solid ${col}44`}}>
@@ -6829,91 +6840,64 @@ export default function App(){
                   </div>
 
                   <ResponsiveContainer width="100%" height={300}>
-                    <ComposedChart
-                      data={SR.rpData}
-                      margin={{top:10,right:40,left:10,bottom:30}}>
+                    <ComposedChart data={rpData} margin={{top:10,right:40,left:10,bottom:30}}>
                       <defs>
-                        <linearGradient id="rpGrad" x1="0" y1="0" x2="0" y2="1">
+                        <linearGradient id="rpGrad2" x1="0" y1="0" x2="0" y2="1">
                           <stop offset="5%"  stopColor="#8b5cf6" stopOpacity={0.35}/>
                           <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0.02}/>
                         </linearGradient>
                       </defs>
                       <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
-                      <XAxis dataKey="payload"
-                        type="number"
-                        domain={[0, Math.max(10, (SR.maxPayloadRp||params.payload)*1.05)]}
+                      <XAxis dataKey="payload" type="number" domain={[0, xMax]}
                         tick={{fontSize:11,fill:SC.muted}}
                         label={{value:"Payload (kg)",position:"insideBottom",offset:-12,fontSize:12,fill:SC.muted}}/>
-                      <YAxis
-                        domain={[0, Math.max(50, Math.ceil(((SR.ferryRange||params.range)*1.1)/50)*50)]}
+                      <YAxis domain={[0, yMax]}
                         tick={{fontSize:11,fill:SC.muted}}
                         label={{value:"Range (km)",angle:-90,position:"insideLeft",offset:10,fontSize:12,fill:SC.muted}}/>
                       <Tooltip {...TTP}
-                        formatter={(v,n)=>[`${v} km`,"Range"]}
+                        formatter={(v)=>[`${v} km`,"Range"]}
                         labelFormatter={v=>`Payload: ${v} kg`}/>
-                      {/* Design range reference */}
-                      <ReferenceLine y={params.range} stroke={SC.amber}
-                        strokeDasharray="5 3"
-                        label={{value:`Design range ${params.range} km`,fill:SC.amber,
-                          fontSize:10,position:"insideTopRight"}}/>
-                      {/* Design payload reference */}
-                      <ReferenceLine x={params.payload} stroke={SC.amber}
-                        strokeDasharray="5 3"
+                      <ReferenceLine y={params.range} stroke={SC.amber} strokeDasharray="5 3"
+                        label={{value:`Design range ${params.range} km`,fill:SC.amber,fontSize:10,position:"insideTopRight"}}/>
+                      <ReferenceLine x={params.payload} stroke={SC.amber} strokeDasharray="5 3"
                         label={{value:`${params.payload} kg`,fill:SC.amber,fontSize:10,position:"top"}}/>
-                      {/* Reference aircraft — Joby S4 */}
                       <ReferenceLine y={150} stroke={SC.blue} strokeDasharray="3 4" strokeWidth={1}
                         label={{value:"Joby S4 ~150 km",fill:SC.blue,fontSize:9,position:"insideBottomRight"}}/>
-                      {/* Reference aircraft — Archer Midnight */}
                       <ReferenceLine y={100} stroke={SC.teal} strokeDasharray="3 4" strokeWidth={1}
-                        label={{value:"Archer Midnight ~100 km",fill:SC.teal,fontSize:9,position:"insideBottomRight"}}/>
-                      {/* The envelope area */}
-                      <Area type="monotone" dataKey="range"
-                        stroke="#8b5cf6" strokeWidth={2.5}
-                        fill="url(#rpGrad)"
-                        dot={false}
-                        name="Range (km)"
-                        connectNulls/>
-                      {/* Design point dot — ReferenceDot doesn't break tooltip */}
+                        label={{value:"Archer ~100 km",fill:SC.teal,fontSize:9,position:"insideBottomRight"}}/>
+                      <Area type="monotone" dataKey="range" stroke="#8b5cf6" strokeWidth={2.5}
+                        fill="url(#rpGrad2)" dot={false} name="Range (km)" connectNulls/>
                       <ReferenceDot x={params.payload} y={params.range}
-                        r={7} fill={SC.amber} stroke={SC.panel} strokeWidth={2}
-                        label={{value:"◉",fill:SC.amber,fontSize:14,position:"top"}}/>
-                      {/* Ferry range dot */}
-                      <ReferenceDot x={0} y={SR.ferryRange??params.range}
+                        r={7} fill={SC.amber} stroke={SC.panel} strokeWidth={2}/>
+                      <ReferenceDot x={0} y={ferry}
                         r={6} fill={SC.teal} stroke={SC.panel} strokeWidth={2}/>
                     </ComposedChart>
                   </ResponsiveContainer>
 
-                  {/* Key-points data table */}
-                  <div style={{marginTop:10,display:"grid",
-                    gridTemplateColumns:"repeat(4,1fr)",gap:6}}>
+                  <div style={{marginTop:10,display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6}}>
                     {[
-                      ["Ferry Range (no payload)",     `${SR.ferryRange??params.range} km`, `0 kg`, SC.teal],
-                      ["Design Point",                  `${params.range} km`,        `${params.payload} kg`, SC.amber],
-                      ["Half-payload range",            (()=>{
-                        const halfPay=Math.round(params.payload/2);
-                        const pt=SR.rpData.find(d=>Math.abs(d.payload-halfPay)<SR.maxPayloadRp/20);
-                        return pt?`${pt.range} km`:"—";
-                      })(),                              `${Math.round(params.payload/2)} kg`, "#a78bfa"],
-                      ["Max payload (zero range)",      `0 km`,                      `${SR.maxPayloadRp??params.payload} kg`, SC.red],
-                    ].map(([label,range,payload,col])=>(
+                      ["Ferry Range (payload=0)", `${ferry} km`,       "0 kg",              SC.teal],
+                      ["Design Point",            `${params.range} km`,`${params.payload} kg`,SC.amber],
+                      ["Half-payload range",       halfRange,           `${halfPay} kg`,     "#a78bfa"],
+                      ["Max payload (range=0)",    "0 km",              `${maxPay} kg`,      SC.red],
+                    ].map(([label,rng,pay,col])=>(
                       <div key={label} style={{background:SC.bg,border:`1px solid ${SC.border}`,
                         borderLeft:`3px solid ${col}`,borderRadius:5,padding:"7px 10px"}}>
                         <div style={{fontSize:8,color:SC.muted,fontFamily:"system-ui,sans-serif",
                           marginBottom:3,lineHeight:1.3}}>{label}</div>
                         <div style={{fontSize:13,fontWeight:700,color:col,
-                          fontFamily:"'DM Mono',monospace"}}>{range}</div>
-                        <div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace"}}>{payload}</div>
+                          fontFamily:"'DM Mono',monospace"}}>{rng}</div>
+                        <div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace"}}>{pay}</div>
                       </div>
                     ))}
                   </div>
-
-                  <div style={{marginTop:8,fontSize:9,color:SC.dim,
-                    fontFamily:"system-ui,sans-serif",lineHeight:1.6}}>
-                    Model: fixed-MTOW ({SR.MTOW??0} kg) — reduced payload → battery mass increases.
-                    Blue reference: Joby S4 (2023 spec). Teal reference: Archer Midnight.
-                    Ferry range assumes full battery, zero payload.
+                  <div style={{marginTop:8,fontSize:9,color:SC.dim,fontFamily:"system-ui,sans-serif",lineHeight:1.6}}>
+                    Fixed-MTOW model ({SR.MTOW||0} kg). Reduced payload → battery mass increases → more range.
+                    References: Joby S4 ~150 km · Archer Midnight ~100 km.
                   </div>
                 </div>
+                  );
+                })()}
               </div>
             )}
 
