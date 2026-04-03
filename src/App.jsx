@@ -27,12 +27,18 @@ function runSizing(p) {
   const Vcl=RoC/Math.sin(clAng*Math.PI/180);
   // Climb L/D derating: induced drag increases at climb AoA (user-adjustable, default 13%)
   const LDcl=p.LD*(1-(p.climbLDPenalty||0.13));
-  // Descent angle: derived from L/D glide ratio (matches MATLAB: Decent_Angle = -atand(1/L/D))
-  // Default = arctan(1/L/D) deg. User override via p.descentAngle preserved.
-  const desAng=p.descentAngle||(Math.atan(1/p.LD)*180/Math.PI);
-  // MATLAB: Decent_Velocity = Rate_of_Decent / sind(Decent_Angle) — no cap applied.
-  // Both ROD and sin(angle) are negative → ratio is positive. No cruise-speed cap.
-  const Vdc=RoC/Math.sin(desAng*Math.PI/180);
+  // MATLAB (updated): Decent_Velocity = 0.8 * Velocity_Cruise
+  //                   Decent_Angle    = asind(Rate_of_Decent / Decent_Velocity)
+  // This guarantees Vdc < Vcruise and derives the angle from the speed, not L/D.
+  const Vdc = p.matlabMode
+    ? 0.8 * p.vCruise                                          // MATLAB: 0.8 × Vcruise = 53.6 m/s
+    : (p.descentAngle ? RoC/Math.sin(p.descentAngle*Math.PI/180) : 0.8*p.vCruise);
+  // desAng: in MATLAB mode derived from Vdc; in standard mode user-set or same formula
+  const desAng = p.matlabMode
+    ? Math.asin(-RoC / Vdc) * 180 / Math.PI * -1              // = asind(ROD/Vdc) — positive magnitude
+    : (p.descentAngle || Math.asin(-RoC / (0.8*p.vCruise)) * 180 / Math.PI * -1);
+  // DescR uses positive angle magnitude for geometry
+  const DescAngPositive = Math.abs(desAng);
   // Reserve: loiter at best-endurance speed ≈ 0.76×cruise (min-power speed for electric)
   // Reserve time: regulations define reserve by TIME, not distance.
   // AC 21.17-4 / SC-VTOL VTOL.1035: 20 min VFR minimum (1,200 s).
@@ -42,7 +48,7 @@ function runSizing(p) {
   const Vres=0.70*p.vCruise;  // best-endurance speed — matches MATLAB Reserve_Phase_velocity = 0.7×Vcruise
   const hvtol=p.hoverHeight;
   const ClimbR=(p.cruiseAlt-hvtol)/Math.tan(clAng*Math.PI/180);
-  const DescR=(p.cruiseAlt-hvtol)/Math.tan(desAng*Math.PI/180);
+  const DescR=(p.cruiseAlt-hvtol)/Math.tan(DescAngPositive*Math.PI/180);
 
   /* Convergence tolerance — user-controlled exponent, e.g. tolExp=-6 → tol=1e-6 */
   const tol = Math.pow(10, p.convTolExp || -6);
@@ -108,8 +114,10 @@ function runSizing(p) {
     Pcr=(W/p.etaSys)*(p.vCruise/(p.matlabMode?p.LD:LDact_i))/1000;
     // ── DESCENT POWER: MATLAB uses raw formula, no floor ──────────────────
     // MATLAB: P_descent = (W_N/eta_s * (ROD + V_descent/LD_climb)) / 1000
-    // ROD < 0, V_descent > 0 (both signs cancel), result is small positive value ~29 kW.
-    // App.jsx previously applied Math.max(0.22*Phov, Pdc) — removed in MATLAB mode.
+    // With new formula Vdc=0.8*Vcruise=53.6 m/s:
+    //   ROD = -5.08, Vdc/LD_climb = 53.6/13.05 = 4.11
+    //   Net = -0.97 → P_descent is NEGATIVE (net energy recovery)
+    // MATLAB treats descent energy as abs(P)*t — no floor applied.
     Pdc=(W/p.etaSys)*(-RoC+Vdc/LDcl)/1000;
     if(!p.matlabMode){
       // Physics floor only in standard mode: rotors need minimum authority in descent
@@ -125,7 +133,8 @@ function runSizing(p) {
     // MATLAB: E_to = P_hover * (Vertical_Hover_Takeoff_Distance / 0.5) / 3600 — no transition
     Eto=Phov*(hvtol/0.5)/3600 + (p.matlabMode?0:Ptrans*ttrans/3600);
     Ecl=Pcl*tcl/3600; Ecr=Pcr*tcr/3600;
-    Edc=Pdc*tdc/3600;  // Pdc already floored ≥0 above
+    // MATLAB mode: Pdc is negative (net regenerative) → energy = abs(Pdc)*t
+    Edc=Math.abs(Pdc)*tdc/3600;
     Eld=Phov*tld/3600; Eres=Pres*tres/3600;
     Etot=Eto+Ecl+Ecr+Edc+Eld+Eres;
     Wempty=p.ewf*MTOW;
@@ -591,7 +600,10 @@ function runSizing(p) {
     {label:`Hover T/W ≥ ${TW.toFixed(2)}`,ok:TW>=1.0,val:`${TW.toFixed(2)} (Phov = ${Phov.toFixed(1)} kW)`},
     // Cross-parameter feasibility checks
     {label:"AR vs LD compatible",ok:LDact>=(p.LD*0.70),val:`Act L/D ${LDact.toFixed(1)} vs target ${p.LD} (min 70%)`},
-    {label:"Vdc ≤ vCruise",ok:Vdc<=p.vCruise,val:`${Vdc.toFixed(1)} m/s (cruise ${p.vCruise} m/s)`},
+    // Vdc = 0.8×Vcruise = 53.6 m/s in MATLAB mode — always < Vcruise ✓
+    {label:"Vdc (descent velocity)",
+     ok: Vdc<=p.vCruise,
+     val:`${Vdc.toFixed(1)} m/s (cruise ${p.vCruise} m/s)${p.matlabMode?" — 0.8×Vcruise ✓":""}`},
     {label:"Rotors: even & ≥ 4",ok:p.nPropHover>=4&&p.nPropHover%2===0,val:`${p.nPropHover} rotors`},
   ];
 
