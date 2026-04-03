@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect, useRef } from "react";
+import React, { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { AuthModal, AuthGate, UserHeaderBar, getSession, saveSession, clearSession, addNotif, saveDesign, addReport, setAuthTheme } from "./AuthSystem";
 import { ShareDesignButton, LeaderboardPanel, CollabPanel, PublicDesignBanner } from "./CommunityFeatures";
 import {
@@ -3435,6 +3435,129 @@ class TabErrorBoundary extends React.Component {
   }
 }
 
+/* ════════════════════════════════════════════════════════════════════════
+   SENSITIVITY ANALYSIS PANEL — proper component (hooks-safe)
+   ════════════════════════════════════════════════════════════════════════ */
+function SensitivityPanel({params,SR,SC,runSizing}){
+  const[sensRunning,setSensRunning]=useState(false);
+  const[sensResults,setSensResults]=useState(null);
+
+  const SWEEP_PARAMS=[
+    {key:"range",     label:"Range",        unit:"km"},
+    {key:"payload",   label:"Payload",      unit:"kg"},
+    {key:"sedCell",   label:"Cell SED",     unit:"Wh/kg"},
+    {key:"ewf",       label:"Empty Wt Frac",unit:""},
+    {key:"LD",        label:"L/D",          unit:""},
+    {key:"etaHov",    label:"Hover FOM",    unit:""},
+    {key:"etaSys",    label:"System η",     unit:""},
+    {key:"etaBat",    label:"Battery η",    unit:""},
+    {key:"propDiam",  label:"Rotor Dia.",   unit:"m"},
+    {key:"nPropHover",label:"# Rotors",     unit:""},
+    {key:"AR",        label:"Aspect Ratio", unit:""},
+    {key:"twRatio",   label:"T/W Ratio",    unit:""},
+  ];
+
+  const runAnalysis=()=>{
+    setSensRunning(true);
+    setSensResults(null);
+    setTimeout(()=>{
+      const baseMTOW=SR.MTOW;
+      const results=SWEEP_PARAMS.map(sp=>{
+        const base=params[sp.key];
+        if(base==null||!isFinite(Number(base))) return null;
+        const hi=Number(base)*1.10, lo=Number(base)*0.90;
+        let SR_hi=null,SR_lo=null;
+        try{ SR_hi=runSizing({...params,[sp.key]:hi}); }catch{}
+        try{ SR_lo=runSizing({...params,[sp.key]:lo}); }catch{}
+        if(!SR_hi||!SR_lo) return null;
+        const dHi=SR_hi.MTOW-baseMTOW, dLo=SR_lo.MTOW-baseMTOW;
+        const impact=Math.abs(dHi-dLo)/2;
+        return {key:sp.key,label:sp.label,unit:sp.unit,
+          dHi:+dHi.toFixed(1),dLo:+dLo.toFixed(1),
+          impact:+impact.toFixed(1),
+          pctImpact:+(impact/baseMTOW*100).toFixed(2)};
+      }).filter(Boolean).sort((a,b)=>b.impact-a.impact);
+      setSensResults(results);
+      setSensRunning(false);
+    },50);
+  };
+
+  const maxImpact=sensResults?Math.max(...sensResults.map(r=>r.impact),1):1;
+
+  return(
+    <div style={{background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:8,
+      padding:"14px 16px",marginTop:4}}>
+      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:sensResults?12:0}}>
+        <div style={{flex:1}}>
+          <div style={{fontSize:13,fontWeight:700,color:SC.text,fontFamily:"system-ui,sans-serif"}}>
+            🎯 One-Click Sensitivity Report
+          </div>
+          <div style={{fontSize:10,color:SC.muted,marginTop:2,fontFamily:"system-ui,sans-serif"}}>
+            Sweeps 12 parameters ±10% and ranks by MTOW impact — paste chart into thesis
+          </div>
+        </div>
+        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+          {sensResults&&(
+            <span style={{fontSize:9,color:SC.green,fontFamily:"'DM Mono',monospace"}}>
+              ✓ {sensResults.length} params ranked
+            </span>
+          )}
+          <button onClick={runAnalysis} disabled={sensRunning} type="button"
+            style={{padding:"8px 22px",
+              background:sensRunning?"transparent":`linear-gradient(135deg,${SC.amber},#f97316)`,
+              border:`1px solid ${sensRunning?SC.border:SC.amber}`,borderRadius:6,
+              color:sensRunning?SC.muted:"#07090f",fontSize:11,fontWeight:800,
+              cursor:sensRunning?"not-allowed":"pointer",
+              fontFamily:"system-ui,sans-serif",
+              display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap"}}>
+            {sensRunning?(<><span style={{animation:"pulse 0.6s infinite"}}>⏳</span> Running…</>):"▶ Run Analysis"}
+          </button>
+        </div>
+      </div>
+
+      {sensResults&&(
+        <div>
+          <div style={{display:"flex",flexDirection:"column",gap:4}}>
+            {sensResults.map((r,i)=>{
+              const barW=(r.impact/maxImpact)*100;
+              const col=i===0?SC.red:i<=2?SC.amber:i<=5?SC.teal:SC.dim;
+              return(
+                <div key={r.key} style={{display:"flex",alignItems:"center",gap:8}}>
+                  <div style={{width:106,fontSize:9,color:SC.muted,fontFamily:"system-ui,sans-serif",
+                    textAlign:"right",flexShrink:0,lineHeight:1.2}}>{r.label}</div>
+                  <div style={{flex:1,height:20,background:SC.bg,borderRadius:3,
+                    position:"relative",overflow:"hidden"}}>
+                    <div style={{height:"100%",width:`${barW}%`,background:`${col}44`,
+                      borderRadius:3,transition:"width 0.5s ease"}}/>
+                    <div style={{position:"absolute",inset:0,display:"flex",
+                      alignItems:"center",paddingLeft:8,gap:6}}>
+                      <span style={{fontSize:9,fontWeight:700,color:col,
+                        fontFamily:"'DM Mono',monospace"}}>±{r.impact} kg</span>
+                      {i===0&&<span style={{fontSize:8,color:SC.red,fontFamily:"system-ui,sans-serif",
+                        fontWeight:600}}>← most sensitive</span>}
+                    </div>
+                  </div>
+                  <div style={{width:52,fontSize:8,color:SC.muted,textAlign:"right",
+                    fontFamily:"'DM Mono',monospace",flexShrink:0}}>{r.pctImpact}% MTOW</div>
+                  <div style={{width:32,fontSize:8,color:SC.dim,textAlign:"right",
+                    fontFamily:"'DM Mono',monospace",flexShrink:0}}>
+                    {i===0?"—":`${(sensResults[0].impact/r.impact).toFixed(1)}×`}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div style={{marginTop:10,paddingTop:8,borderTop:`1px solid ${SC.border}`,
+            fontSize:9,color:SC.dim,fontFamily:"system-ui,sans-serif",lineHeight:1.6}}>
+            Base MTOW: <strong style={{color:SC.amber}}>{SR.MTOW} kg</strong> ·
+            Bar = mean |ΔMTOW| for ±10% sweep · Last column = sensitivity ratio vs #1
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ── API Key Input — shared by RegTracker and AI Assistant ── */
 function ApiKeyInput({ SC }) {
   const [key, setKey] = useState(localStorage.getItem("anthropic_api_key") || "");
@@ -5460,11 +5583,15 @@ export default function App(){
   };
 
   // setP — main param setter that records undo history
-  const setP=useCallback((newParams)=>{
+  const setP=useCallback((updater)=>{
     setParams(prev=>{
-      setUndoStack(s=>[...s.slice(-29),prev]); // keep last 30 states
-      setRedoStack([]);                          // any new change clears redo
-      return newParams;
+      const next=typeof updater==="function"?updater(prev):updater;
+      // Schedule undo push outside the setState callback (avoids side-effects in reducer)
+      setTimeout(()=>{
+        setUndoStack(s=>[...s.slice(-29),prev]);
+        setRedoStack([]);
+      },0);
+      return next;
     });
   },[]);
   const set=useCallback(paramKey=>paramVal=>setP(prev=>({...prev,[paramKey]:paramVal})),[setP]);
@@ -5975,133 +6102,10 @@ export default function App(){
               </div>
             )}
 
-            {/* ──── SENSITIVITY REPORT — injected into Overview tab ──── */}
-            {tab===0&&SR&&(()=>{
-              const [sensRunning,setSensRunning]=React.useState(false);
-              const [sensResults,setSensResults]=React.useState(null);
-              const runSensitivity=()=>{
-                setSensRunning(true);
-                setSensResults(null);
-                setTimeout(()=>{
-                  const SWEEP_PARAMS=[
-                    {key:"range",    label:"Range",       unit:"km",  pct:0.10},
-                    {key:"payload",  label:"Payload",     unit:"kg",  pct:0.10},
-                    {key:"sedCell",  label:"Cell SED",    unit:"Wh/kg",pct:0.10},
-                    {key:"ewf",      label:"Empty Wt Frac",unit:"",   pct:0.10},
-                    {key:"LD",       label:"L/D",         unit:"",    pct:0.10},
-                    {key:"etaHov",   label:"Hover FOM",   unit:"",    pct:0.10},
-                    {key:"etaSys",   label:"System η",    unit:"",    pct:0.10},
-                    {key:"etaBat",   label:"Battery η",   unit:"",    pct:0.10},
-                    {key:"propDiam", label:"Rotor Dia.",  unit:"m",   pct:0.10},
-                    {key:"nPropHover",label:"# Rotors",   unit:"",    pct:0.10},
-                    {key:"AR",       label:"Aspect Ratio",unit:"",    pct:0.10},
-                    {key:"twRatio",  label:"T/W Ratio",   unit:"",    pct:0.10},
-                  ];
-                  const baseMTOW=SR.MTOW;
-                  const results=SWEEP_PARAMS.map(sp=>{
-                    const base=params[sp.key];
-                    if(base==null||!isFinite(Number(base))) return null;
-                    const hi=Number(base)*(1+sp.pct), lo=Number(base)*(1-sp.pct);
-                    let SR_hi,SR_lo;
-                    try{ SR_hi=runSizing({...params,[sp.key]:hi}); } catch{ SR_hi=null; }
-                    try{ SR_lo=runSizing({...params,[sp.key]:lo}); } catch{ SR_lo=null; }
-                    if(!SR_hi||!SR_lo) return null;
-                    const dHi=SR_hi.MTOW-baseMTOW, dLo=SR_lo.MTOW-baseMTOW;
-                    const impact=Math.abs(dHi-dLo)/2; // avg absolute change
-                    return {key:sp.key,label:sp.label,unit:sp.unit,
-                      base:+Number(base).toFixed(3),
-                      dHi:+dHi.toFixed(1),dLo:+dLo.toFixed(1),
-                      impact:+impact.toFixed(1),
-                      pctImpact:+(impact/baseMTOW*100).toFixed(2)};
-                  }).filter(Boolean).sort((a,b)=>b.impact-a.impact);
-                  setSensResults(results);
-                  setSensRunning(false);
-                },50);
-              };
-              const maxImpact=sensResults?sensResults[0]?.impact||1:1;
-              return(
-                <div style={{background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:8,padding:"14px 16px",marginTop:4}}>
-                  <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:sensResults?12:0}}>
-                    <div style={{flex:1}}>
-                      <div style={{fontSize:13,fontWeight:700,color:SC.text,fontFamily:"system-ui,sans-serif"}}>
-                        🎯 One-Click Sensitivity Report
-                      </div>
-                      <div style={{fontSize:10,color:SC.muted,marginTop:2,fontFamily:"system-ui,sans-serif"}}>
-                        Sweeps all 12 parameters ±10% and ranks by MTOW impact
-                      </div>
-                    </div>
-                    <div style={{display:"flex",gap:6,alignItems:"center"}}>
-                      {sensResults&&(
-                        <span style={{fontSize:9,color:SC.green,fontFamily:"'DM Mono',monospace"}}>
-                          ✓ {sensResults.length} params ranked
-                        </span>
-                      )}
-                      <button onClick={runSensitivity} disabled={sensRunning} type="button"
-                        style={{padding:"8px 20px",background:sensRunning?"transparent":`linear-gradient(135deg,${SC.amber},#f97316)`,
-                          border:`1px solid ${sensRunning?SC.border:SC.amber}`,borderRadius:6,
-                          color:sensRunning?SC.muted:"#07090f",fontSize:11,fontWeight:800,
-                          cursor:sensRunning?"not-allowed":"pointer",fontFamily:"system-ui,sans-serif",
-                          minWidth:130,display:"flex",alignItems:"center",gap:6,justifyContent:"center"}}>
-                        {sensRunning?(
-                          <><span style={{animation:"pulse 0.6s infinite"}}>⏳</span> Running…</>
-                        ):"▶ Run Analysis"}
-                      </button>
-                    </div>
-                  </div>
-                  {sensResults&&(
-                    <div>
-                      {/* Bar chart */}
-                      <div style={{display:"flex",flexDirection:"column",gap:5}}>
-                        {sensResults.map((r,i)=>{
-                          const barW=(r.impact/maxImpact)*100;
-                          const col=i===0?SC.red:i<=2?SC.amber:i<=5?SC.teal:SC.dim;
-                          const ratio=(r.impact/sensResults[sensResults.length-1]?.impact||1).toFixed(1);
-                          return(
-                            <div key={r.key} style={{display:"flex",alignItems:"center",gap:8}}>
-                              <div style={{width:110,fontSize:9,color:SC.muted,fontFamily:"system-ui,sans-serif",
-                                textAlign:"right",flexShrink:0}}>{r.label}</div>
-                              <div style={{flex:1,height:18,background:SC.bg,borderRadius:3,
-                                position:"relative",overflow:"hidden"}}>
-                                <div style={{height:"100%",width:`${barW}%`,
-                                  background:`${col}55`,borderRadius:3,transition:"width 0.4s ease"}}/>
-                                <div style={{position:"absolute",inset:0,display:"flex",
-                                  alignItems:"center",paddingLeft:6}}>
-                                  <span style={{fontSize:9,fontWeight:700,color:col,
-                                    fontFamily:"'DM Mono',monospace"}}>
-                                    ±{r.impact} kg
-                                  </span>
-                                  {i===0&&(
-                                    <span style={{fontSize:8,color:SC.red,marginLeft:6,
-                                      fontFamily:"'DM Mono',monospace",fontWeight:700}}>
-                                      Most sensitive
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                              <div style={{width:60,fontSize:8,color:SC.muted,textAlign:"right",
-                                fontFamily:"'DM Mono',monospace",flexShrink:0}}>
-                                {r.pctImpact}%
-                              </div>
-                              <div style={{width:36,fontSize:7,color:SC.dim,textAlign:"right",
-                                fontFamily:"'DM Mono',monospace",flexShrink:0}}>
-                                {i===0?"—":`${(sensResults[0].impact/r.impact).toFixed(1)}×`}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                      <div style={{marginTop:10,fontSize:9,color:SC.dim,fontFamily:"system-ui,sans-serif",
-                        borderTop:`1px solid ${SC.border}`,paddingTop:8}}>
-                        Base MTOW: <strong style={{color:SC.amber}}>{SR.MTOW} kg</strong> · 
-                        Each bar = mean absolute MTOW change for ±10% parameter sweep · 
-                        Last column = how many times less sensitive than #{1}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
-
+            {/* ──── SENSITIVITY REPORT ──── */}
+            {tab===0&&SR&&(
+              <SensitivityPanel params={params} SR={SR} SC={SC} runSizing={runSizing}/>
+            )}
             {/* ──── TAB 1: MISSION ──── */}
             {tab===1&&(
               <div style={{display:"flex",flexDirection:"column",gap:12}}>
