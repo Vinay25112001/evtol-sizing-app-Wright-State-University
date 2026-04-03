@@ -27,18 +27,10 @@ function runSizing(p) {
   const Vcl=RoC/Math.sin(clAng*Math.PI/180);
   // Climb L/D derating: induced drag increases at climb AoA (user-adjustable, default 13%)
   const LDcl=p.LD*(1-(p.climbLDPenalty||0.13));
-  // MATLAB (updated): Decent_Velocity = 0.8 * Velocity_Cruise
-  //                   Decent_Angle    = asind(Rate_of_Decent / Decent_Velocity)
-  // This guarantees Vdc < Vcruise and derives the angle from the speed, not L/D.
-  const Vdc = p.matlabMode
-    ? 0.8 * p.vCruise                                          // MATLAB: 0.8 × Vcruise = 53.6 m/s
-    : (p.descentAngle ? RoC/Math.sin(p.descentAngle*Math.PI/180) : 0.8*p.vCruise);
-  // desAng: in MATLAB mode derived from Vdc; in standard mode user-set or same formula
-  const desAng = p.matlabMode
-    ? Math.asin(-RoC / Vdc) * 180 / Math.PI * -1              // = asind(ROD/Vdc) — positive magnitude
-    : (p.descentAngle || Math.asin(-RoC / (0.8*p.vCruise)) * 180 / Math.PI * -1);
-  // DescR uses positive angle magnitude for geometry
-  const DescAngPositive = Math.abs(desAng);
+  // Descent angle: derived from L/D glide ratio (matches MATLAB: Decent_Angle = -atand(1/L/D))
+  // Default = arctan(1/L/D) deg. User override via p.descentAngle preserved.
+  const desAng=p.descentAngle||(Math.atan(1/p.LD)*180/Math.PI);
+  const Vdc=RoC/Math.sin(desAng*Math.PI/180);  // no cruise-speed cap — matches MATLAB Decent_Velocity
   // Reserve: loiter at best-endurance speed ≈ 0.76×cruise (min-power speed for electric)
   // Reserve time: regulations define reserve by TIME, not distance.
   // AC 21.17-4 / SC-VTOL VTOL.1035: 20 min VFR minimum (1,200 s).
@@ -48,7 +40,7 @@ function runSizing(p) {
   const Vres=0.70*p.vCruise;  // best-endurance speed — matches MATLAB Reserve_Phase_velocity = 0.7×Vcruise
   const hvtol=p.hoverHeight;
   const ClimbR=(p.cruiseAlt-hvtol)/Math.tan(clAng*Math.PI/180);
-  const DescR=(p.cruiseAlt-hvtol)/Math.tan(DescAngPositive*Math.PI/180);
+  const DescR=(p.cruiseAlt-hvtol)/Math.tan(desAng*Math.PI/180);
 
   /* Convergence tolerance — user-controlled exponent, e.g. tolExp=-6 → tol=1e-6 */
   const tol = Math.pow(10, p.convTolExp || -6);
@@ -107,52 +99,26 @@ function runSizing(p) {
     Phov=(W/p.etaHov)*Math.sqrt(DL/(2*rhoHov))/1000;  // uses hover-altitude density
     // η_hov absorbs: non-uniform inflow, swirl losses, figure-of-merit deviation from ideal
     Pcl=(W/p.etaSys)*(RoC+Vcl/LDcl)/1000;
-    // ── MATLAB MODE: cruise power uses user-input L/D (not computed LDact) ──
-    // MATLAB: Cruise_Power = (W_N/Cruise_Efficiency*(Velocity_Cruise/Lift_to_Drag))/1000
-    // where Lift_to_Drag = 15 (user input). The aerodynamic LDact is only used for
-    // performance display, not in the sizing convergence loop.
-    Pcr=(W/p.etaSys)*(p.vCruise/(p.matlabMode?p.LD:LDact_i))/1000;
-    // ── DESCENT POWER: MATLAB uses raw formula, no floor ──────────────────
-    // MATLAB: P_descent = (W_N/eta_s * (ROD + V_descent/LD_climb)) / 1000
-    // With new formula Vdc=0.8*Vcruise=53.6 m/s:
-    //   ROD = -5.08, Vdc/LD_climb = 53.6/13.05 = 4.11
-    //   Net = -0.97 → P_descent is NEGATIVE (net energy recovery)
-    // MATLAB treats descent energy as abs(P)*t — no floor applied.
-    Pdc=(W/p.etaSys)*(-RoC+Vdc/LDcl)/1000;
-    if(!p.matlabMode){
-      // Physics floor only in standard mode: rotors need minimum authority in descent
-      Pdc=Math.max(0.22*Phov, Pdc);
-    }
-    // ── RESERVE POWER: uses user-input L/D in MATLAB mode ─────────────────
-    Pres=(W/p.etaSys)*(Vres/(p.matlabMode?p.LD:LDact_i))/1000;
+    Pcr=(W/p.etaSys)*(p.vCruise/LDact_i)/1000;   // uses computed LDact, not user-input p.LD
+    Pdc=(W/p.etaSys)*(-RoC+Vdc/LDcl)/1000;  // descent: uses climb L/D (derated)
+    // eVTOL rotors must keep spinning throughout descent for pitch/roll/yaw authority.
+    // Minimum control authority ≈ 22% hover power (Uber Elevate 2016 / eVTOL descent data).
+    Pdc=Math.max(0.22*Phov, Pdc);
+    Pres=(W/p.etaSys)*(Vres/LDact_i)/1000;   // uses computed LDact, not user-input p.LD
     // Hover-to-climb transition: ~45 s at 65% hover power (rotor tilt / speed-up phase)
-    // Only applied in standard mode. MATLAB code has no transition phase.
-    const ttrans=p.matlabMode?0:45, Ptrans=0.65*Phov;
+    const ttrans=45, Ptrans=0.65*Phov;
     tto=hvtol/0.5; tcl=ClimbR/Vcl; tcr=Math.max(0,CruiseRange/p.vCruise);
     tdc=DescR/Vdc; tld=hvtol/0.5; tres=tres_s;
-    // MATLAB: E_to = P_hover * (Vertical_Hover_Takeoff_Distance / 0.5) / 3600 — no transition
-    Eto=Phov*(hvtol/0.5)/3600 + (p.matlabMode?0:Ptrans*ttrans/3600);
+    Eto=Phov*(hvtol/0.5)/3600;  // hover-ascent energy only — matches MATLAB E_to = P_hover×Vertical_Takeoff_Time/3600
     Ecl=Pcl*tcl/3600; Ecr=Pcr*tcr/3600;
-    // MATLAB mode: Pdc is negative (net regenerative) → energy = abs(Pdc)*t
-    Edc=Math.abs(Pdc)*tdc/3600;
+    Edc=Pdc*tdc/3600;  // Pdc already floored ≥0 above
     Eld=Phov*tld/3600; Eres=Pres*tres/3600;
     Etot=Eto+Ecl+Ecr+Edc+Eld+Eres;
     Wempty=p.ewf*MTOW;
-    // ── SED EFFECTIVE: MATLAB uses raw SED (no C-rate derating) ───────────
-    // MATLAB: SED_pack = 275 Wh/kg — no derating applied in sizing loop.
-    // Standard mode applies 8% C-rate derating for physical accuracy.
-    const sedEff=p.matlabMode ? p.sedCell : p.sedCell*(1-(p.cRateDerate||0.08));
-    // ── ENERGY-LIMITED BATTERY MASS (W_E) ─────────────────────────────────
-    // MATLAB Eq: W_E = TotalEnergy*1000 / ((1-SoCmin)*SED_pack*eta_bat)
-    // Correct SOC floor: 1/(1-SoCmin)=1.25 — both modes use this correct form
-    const WE_local=Etot*1000/((1-p.socMin)*sedEff*p.etaBat);
-    // ── POWER-LIMITED BATTERY MASS (W_P) — MATLAB dual constraint ─────────
-    // MATLAB: W_P = P_hover / SP_battery  where SP_battery = 1.0 kW/kg
-    // W_battery = max(W_E, W_P)
-    // Standard mode: W_P not applied (energy-only sizing, physics mode)
-    const SP_bat = p.spBattery || 1.0;   // [kW/kg] pack-level specific power
-    const WP_local = p.matlabMode ? (Phov / SP_bat) : 0;
-    Wbat = Math.max(WE_local, WP_local);
+    // Battery C-rate derating: SED drops at high discharge rates (hover peaks 3–5C)
+    // Approximate: SED_eff = sedCell × (1 - cRateDerate); default 8% for ~3-4C hover
+    const sedEff=p.sedCell*(1-(p.cRateDerate||0.08));
+    Wbat=Etot*1000/((1-p.socMin)*sedEff*p.etaBat);  // correct SOC floor: 1/(1-SoCmin)=1.25 — matches MATLAB and paper Eq.9
     const mn=p.payload+Wempty+Wbat;
     const residual=Math.abs(mn-MTOW);
     energyH.push(+Etot.toFixed(3)); mtowH.push(+mn.toFixed(2));
@@ -600,10 +566,7 @@ function runSizing(p) {
     {label:`Hover T/W ≥ ${TW.toFixed(2)}`,ok:TW>=1.0,val:`${TW.toFixed(2)} (Phov = ${Phov.toFixed(1)} kW)`},
     // Cross-parameter feasibility checks
     {label:"AR vs LD compatible",ok:LDact>=(p.LD*0.70),val:`Act L/D ${LDact.toFixed(1)} vs target ${p.LD} (min 70%)`},
-    // Vdc = 0.8×Vcruise = 53.6 m/s in MATLAB mode — always < Vcruise ✓
-    {label:"Vdc (descent velocity)",
-     ok: Vdc<=p.vCruise,
-     val:`${Vdc.toFixed(1)} m/s (cruise ${p.vCruise} m/s)${p.matlabMode?" — 0.8×Vcruise ✓":""}`},
+    {label:"Vdc ≤ vCruise",ok:Vdc<=p.vCruise,val:`${Vdc.toFixed(1)} m/s (cruise ${p.vCruise} m/s)`},
     {label:"Rotors: even & ≥ 4",ok:p.nPropHover>=4&&p.nPropHover%2===0,val:`${p.nPropHover} rotors`},
   ];
 
@@ -879,11 +842,6 @@ function runSizing(p) {
 
   return {
     MTOW:+MTOW.toFixed(2),MTOW1:+MTOW1.toFixed(2),Wempty:+Wempty.toFixed(2),Wbat:+Wbat.toFixed(2),
-    // Dual-constraint outputs (MATLAB mode)
-    WE:+( Etot*1000/((1-(p.socMin||0.2))*(p.matlabMode?p.sedCell:p.sedCell*(1-(p.cRateDerate||0.08)))*(p.etaBat||0.9)) ).toFixed(2),
-    WP:+(p.matlabMode ? (Phov/(p.spBattery||1.0)) : 0).toFixed(2),
-    SPcross:+(Phov / Math.max(Etot*1000/((1-(p.socMin||0.2))*(p.sedCell||275)*(p.etaBat||0.9)), 1)).toFixed(4),
-    matlabMode:!!p.matlabMode,
     Phov:+Phov.toFixed(2),Pcl:+Pcl.toFixed(2),Pcr:+Pcr.toFixed(2),Pdc:+Pdc.toFixed(2),Pres:+Pres.toFixed(2),
     tto:+tto.toFixed(0),tcl:+tcl.toFixed(0),tcr:+tcr.toFixed(0),tdc:+tdc.toFixed(0),tld:+tld.toFixed(0),tres:+tres.toFixed(0),
     Tend:+Tend.toFixed(0),
@@ -5006,8 +4964,6 @@ export default function App(){
     climbLDPenalty:0.13,   // fractional L/D derating during climb (induced drag increase)
     deltaISA:0,            // ISA deviation °C: 0=standard day, 15=hot day
     cRateDerate:0.08,      // battery SED derate for C-rate: 8% default (~3-4C hover)
-    spBattery:1.0,         // [kW/kg] pack-level specific power for W_P dual constraint
-    matlabMode:false,      // when true: applies exact MATLAB physics (no derating, no floors)
     // ── Battery (2025 state-of-art; Joby claims ~300 Wh/kg cell-level) ──
     sedCell:300,etaBat:0.90,socMin:0.19,
     // ── Weights (composite airframe; Joby EWF=0.43, Archer~0.45, conservative 0.50) ──
@@ -5034,7 +4990,6 @@ export default function App(){
   const[undoCount,setUndoCount]=useState(0); // triggers re-render for button state
   const[redoCount,setRedoCount]=useState(0);
   const[showPdfBranding,setShowPdfBranding]=useState(false);
-  const[showMatlabModal,setShowMatlabModal]=useState(false);
   const[pdfBranding,setPdfBranding]=useState({
     authorName:"", university:"Wright State University",
     projectTitle:"eVTOL Sizing Analysis", logoUrl:"", date:new Date().toLocaleDateString(),
@@ -5552,278 +5507,11 @@ export default function App(){
   const stCol=!SR?SC.red:SR.feasible?SC.green:SC.amber;
   const stTxt=!SR?"ERROR":SR.feasible?"FEASIBLE":"CHECK DESIGN";
 
-  /* ═══════════════════════════════════════════════════════
-     MATLAB PROJECT PRESET — exact values from
-     eVTOL_Dual_Constraint_Sizing.m console output
-     MTOW=2969.45 kg, Wbat=970.34 kg, Etot=192.13 kWh
-     ═══════════════════════════════════════════════════════ */
-  const MATLAB_PRESET = {
-    // Mission
-    payload:       455,       // kg — 5 occupants, FAA AC 120-27E
-    range:         250,       // km — CMH→CVG + 60 km reserve
-    vCruise:       67,        // m/s — Uber Elevate white paper
-    cruiseAlt:     1000,      // m MSL
-    reserveRange:  60,        // km — FAA Part 135 20-min equivalent
-    hoverHeight:   15.24,     // m — MATLAB Vertical_Hover_Takeoff_Distance
-    reserveMinutes:20,        // min
-    // Aerodynamics — user-input L/D=15 used in sizing loop (NOT computed)
-    LD:            15,        // [-] MATLAB: Lift_to_Drag = 15
-    AR:            9,         // keep existing wing geometry
-    eOsw:          0.85,
-    clDesign:      0.55,
-    taper:         0.45,
-    tc:            0.15,
-    climbLDPenalty:0.13,      // 13% L/D penalty in climb — matches MATLAB
-    descentAngle:  3.8141,    // deg = atand(1/15) — MATLAB: Decent_Angle = -atand(1/LD)
-    deltaISA:      0,
-    // Propulsion — MATLAB values
-    nPropHover:    6,         // MATLAB: No_Of_Prop_Hover = 6
-    propDiam:      3.0,       // m — MATLAB: Prop_Diameter = 3
-    twRatio:       1.0,       // MATLAB hover: T/W=1.0 (no structural margin in hover)
-    etaHov:        0.63,      // MATLAB: Hover_Efficiency = 0.63
-    etaSys:        0.765,     // MATLAB: System_Efficiency = 0.765 (climb/descent/reserve)
-    rateOfClimb:   5.08,      // m/s — MATLAB: Rate_of_Climb = 5.08
-    climbAngle:    5,         // deg — MATLAB: Climb_Angle = 5
-    convTolExp:    -6,
-    // Battery — exact MATLAB values, NO C-rate derating
-    sedCell:       275,       // Wh/kg — MATLAB: SED_pack = 275 (cell-level, no derating)
-    etaBat:        0.90,      // MATLAB: Battery_Efficiency = 0.90
-    socMin:        0.20,      // MATLAB: SoCmin = 0.20
-    spBattery:     1.0,       // kW/kg — MATLAB: SP_battery = 1.0 (W_P computation)
-    cRateDerate:   0.0,       // MATLAB: NO C-rate derating applied
-    // Structure
-    ewf:           0.52,      // MATLAB: Empty_Weight_Fraction = 0.52
-    // Geometry (keep existing reasonable values)
-    fusLen:        7.2,
-    fusDiam:       1.65,
-    vtGamma:       45,
-    vtCh:          0.45,
-    vtCv:          0.032,
-    vtAR:          2.5,
-    // MATLAB mode flag — activates all physics corrections
-    matlabMode:    true,
-  };
-
-  const MATLAB_EXPECTED = {
-    MTOW_R1:   1722.73,
-    MTOW:      2969.45,
-    Wempty:    1544.11,
-    Wbat:      970.34,
-    WE:        970.34,
-    WP:        774.20,
-    Phov:      774.20,
-    Pcl:       363.52,
-    Pcr:       170.09,
-    Pdc:       29.40,
-    Pres:      119.06,
-    Etot:      192.13,
-    BatCap_kWh:240.15,
-    SPcross:   0.7979,
-  };
-
   return(
     <div style={{display:"flex",flexDirection:"column",height:"100vh",
       background:SC.bg,color:SC.text,
       fontFamily:"'Barlow',system-ui,sans-serif",overflow:"hidden",
       transition:"background 0.2s,color 0.2s"}}>
-
-      {/* ═══════════════════════════════════════════════════════
-          MY PROJECT — MATLAB DUAL-CONSTRAINT MODAL
-          ═══════════════════════════════════════════════════════ */}
-      {showMatlabModal&&(
-        <div style={{position:"fixed",inset:0,zIndex:4000,background:"rgba(0,0,0,0.80)",
-          backdropFilter:"blur(6px)",display:"flex",alignItems:"center",justifyContent:"center",
-          padding:"16px"}}
-          onClick={e=>{if(e.target===e.currentTarget)setShowMatlabModal(false);}}>
-          <div style={{background:SC.panel,border:`1px solid #3b82f6`,borderRadius:14,
-            padding:"24px 28px",width:"min(820px,96vw)",maxHeight:"90vh",overflowY:"auto",
-            boxShadow:"0 24px 80px rgba(0,0,0,0.7)"}}>
-
-            {/* Modal header */}
-            <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:18}}>
-              <div>
-                <div style={{fontSize:8,color:"#93c5fd",fontFamily:"'DM Mono',monospace",
-                  letterSpacing:"0.18em",marginBottom:4}}>MY PROJECT — MATLAB REPRODUCTION MODE</div>
-                <div style={{fontSize:20,fontWeight:800,color:SC.text,lineHeight:1.1}}>
-                  <span style={{color:"#60a5fa"}}>Dual-Constraint</span> eVTOL Sizing
-                </div>
-                <div style={{fontSize:11,color:SC.muted,marginTop:5,lineHeight:1.6}}>
-                  Loads the exact parameter set from{" "}
-                  <span style={{color:"#93c5fd",fontFamily:"'DM Mono',monospace"}}>
-                    eVTOL_Dual_Constraint_Sizing.m
-                  </span>{" "}
-                  and activates MATLAB physics mode — reproducing console output to within rounding.
-                </div>
-              </div>
-              <button onClick={()=>setShowMatlabModal(false)} type="button"
-                style={{background:"transparent",border:`1px solid ${SC.border}`,borderRadius:6,
-                  color:SC.muted,fontSize:16,cursor:"pointer",padding:"5px 11px",flexShrink:0,marginLeft:12}}>
-                ✕
-              </button>
-            </div>
-
-            {/* What changes banner */}
-            <div style={{background:"#1e3a5f22",border:"1px solid #3b82f644",borderRadius:8,
-              padding:"12px 16px",marginBottom:16}}>
-              <div style={{fontSize:9,color:"#93c5fd",fontFamily:"'DM Mono',monospace",
-                letterSpacing:"0.12em",marginBottom:8}}>PHYSICS CORRECTIONS ACTIVATED IN MATLAB MODE</div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"6px 20px"}}>
-                {[
-                  ["Dual constraint","W_bat = max(W_E, W_P)  where W_P = P_hover / SP_bat"],
-                  ["SP_battery","1.0 kW/kg → crossover at 0.80 kW/kg"],
-                  ["SED","275 Wh/kg (no C-rate derating — raw cell SED)"],
-                  ["Cruise/Reserve L/D","Fixed 15 (not computed from wing geometry)"],
-                  ["Descent power","Raw formula ~29 kW (no 22% hover floor)"],
-                  ["Hover transition","Removed (MATLAB has no 45 s transition phase)"],
-                  ["SOC formula","1/(1−SoCmin) = 1.25 ✓ (already correct)"],
-                  ["Descent velocity","76.4 m/s (no cruise-speed cap)"],
-                ].map(([k,v])=>(
-                  <div key={k} style={{display:"flex",gap:6,alignItems:"flex-start"}}>
-                    <span style={{color:"#34d399",fontSize:10,flexShrink:0,marginTop:1}}>✓</span>
-                    <div>
-                      <span style={{fontSize:9,fontWeight:700,color:SC.text,
-                        fontFamily:"'DM Mono',monospace"}}>{k}:</span>{" "}
-                      <span style={{fontSize:9,color:SC.muted}}>{v}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Parameter table */}
-            <div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace",
-              letterSpacing:"0.12em",marginBottom:8}}>MATLAB PARAMETER SET</div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:16}}>
-              {[
-                ["Payload","455 kg","5 occupants, FAA AC 120-27E"],
-                ["Range","250 km","190 km mission + 60 km reserve"],
-                ["Cruise velocity","67 m/s","≈ 241 km/h"],
-                ["L/D (cruise)","15.0","User-input, fixed in sizing loop"],
-                ["Climb angle","5°","Rate of climb 5.08 m/s"],
-                ["No. hover rotors","6","Lift rotors active in hover"],
-                ["Rotor diameter","3.0 m","MATLAB: Prop_Diameter"],
-                ["Empty weight fraction","0.52","Hybrid LPC/TR structural penalty"],
-                ["Cell SED","275 Wh/kg","No C-rate derating in MATLAB"],
-                ["Pack specific power","1.0 kW/kg","W_P = P_hover / SP_bat"],
-                ["SoCmin","0.20 (20%)","Battery degradation floor"],
-                ["Battery efficiency","0.90","Round-trip pack efficiency"],
-                ["Hover efficiency","0.63","FoM × drivetrain combined"],
-                ["System efficiency","0.765","Climb/descent/reserve"],
-                ["Reserve range","60 km","FAA Part 135 20-min equivalent"],
-                ["SOC factor","1/(1-0.20) = 1.25","Correct capacity formula"],
-              ].map(([label,val,note])=>(
-                <div key={label} style={{background:SC.bg,borderRadius:6,padding:"8px 10px",
-                  border:`1px solid ${SC.border}`,display:"flex",flexDirection:"column",gap:2}}>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                    <span style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace"}}>{label}</span>
-                    <span style={{fontSize:11,fontWeight:800,color:"#60a5fa",
-                      fontFamily:"'DM Mono',monospace"}}>{val}</span>
-                  </div>
-                  <div style={{fontSize:8,color:SC.dim}}>{note}</div>
-                </div>
-              ))}
-            </div>
-
-            {/* Expected results */}
-            <div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace",
-              letterSpacing:"0.12em",marginBottom:8}}>EXPECTED CONSOLE OUTPUT (from MATLAB)</div>
-            <div style={{background:"#0f172a",border:"1px solid #1e3a5f",borderRadius:8,
-              padding:"14px 16px",marginBottom:16,fontFamily:"'DM Mono',monospace",fontSize:10,
-              lineHeight:1.8,color:"#94a3b8"}}>
-              <div><span style={{color:"#64748b"}}>Round 1 MTOW       =</span>{" "}<span style={{color:"#fbbf24",fontWeight:700}}>1722.73 kg</span>{" "}<span style={{color:"#475569"}}>[energy-only seed]</span></div>
-              <div><span style={{color:"#64748b"}}>Final MTOW         =</span>{" "}<span style={{color:"#34d399",fontWeight:700}}>2969.45 kg</span>{" "}<span style={{color:"#475569"}}>[+72.4% vs Round 1]</span></div>
-              <div><span style={{color:"#64748b"}}>Empty Weight       =</span>{" "}<span style={{color:"#94a3b8"}}>1544.11 kg</span></div>
-              <div><span style={{color:"#64748b"}}>W_E (energy limit) =</span>{" "}<span style={{color:"#60a5fa",fontWeight:700}}>970.34 kg</span>{" "}<span style={{color:"#475569"}}>[BINDING]</span></div>
-              <div><span style={{color:"#64748b"}}>W_P (power limit)  =</span>{" "}<span style={{color:"#f87171"}}>774.20 kg</span>{" "}<span style={{color:"#475569"}}>[SP = 1.0 kW/kg]</span></div>
-              <div><span style={{color:"#64748b"}}>SP crossover       =</span>{" "}<span style={{color:"#a78bfa"}}>0.7979 kW/kg</span></div>
-              <div style={{borderTop:"1px solid #1e3a5f",marginTop:6,paddingTop:6}}>
-                <span style={{color:"#64748b"}}>Hover Power        =</span>{" "}<span style={{color:"#fb923c"}}>774.20 kW</span>{" "}
-                <span style={{color:"#64748b"}}>Cruise Power       =</span>{" "}<span style={{color:"#94a3b8"}}>170.09 kW</span>
-              </div>
-              <div>
-                <span style={{color:"#64748b"}}>Total Energy       =</span>{" "}<span style={{color:"#34d399"}}>192.13 kWh</span>{" "}
-                <span style={{color:"#64748b"}}>Battery Capacity   =</span>{" "}<span style={{color:"#34d399"}}>240.15 kWh</span>
-              </div>
-              <div><span style={{color:"#64748b"}}>Final SOC          =</span>{" "}<span style={{color:"#34d399",fontWeight:700}}>20.00%</span>{" "}<span style={{color:"#475569"}}>[= SoCmin ✓ consistent]</span></div>
-            </div>
-
-            {/* Live comparison if SR exists */}
-            {SR&&(
-              <div style={{marginBottom:16}}>
-                <div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace",
-                  letterSpacing:"0.12em",marginBottom:8}}>
-                  CURRENT vs MATLAB — LIVE COMPARISON
-                </div>
-                <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6}}>
-                  {[
-                    ["MTOW",SR.MTOW,MATLAB_EXPECTED.MTOW,"kg"],
-                    ["W_battery",SR.Wbat,MATLAB_EXPECTED.Wbat,"kg"],
-                    ["P_hover",SR.Phov,MATLAB_EXPECTED.Phov,"kW"],
-                    ["E_total",SR.Etot,MATLAB_EXPECTED.Etot,"kWh"],
-                  ].map(([label,cur,exp,unit])=>{
-                    const diff=cur&&exp?((cur-exp)/exp*100):null;
-                    const ok=diff!=null&&Math.abs(diff)<2;
-                    return(
-                      <div key={label} style={{background:SC.bg,border:`1px solid ${ok?"#22c55e44":SC.border}`,
-                        borderRadius:6,padding:"9px 10px"}}>
-                        <div style={{fontSize:8,color:SC.muted,fontFamily:"'DM Mono',monospace",marginBottom:3}}>{label}</div>
-                        <div style={{fontSize:11,fontWeight:700,color:SC.amber,fontFamily:"'DM Mono',monospace"}}>
-                          {cur?.toFixed(2)}<span style={{fontSize:8,color:SC.dim}}> {unit}</span>
-                        </div>
-                        <div style={{fontSize:8,color:SC.dim,fontFamily:"'DM Mono',monospace"}}>
-                          MATLAB: {exp}
-                        </div>
-                        {diff!=null&&(
-                          <div style={{fontSize:8,fontWeight:700,fontFamily:"'DM Mono',monospace",
-                            color:ok?"#22c55e":Math.abs(diff)<10?"#fbbf24":"#f87171"}}>
-                            {ok?"✓ ":"⚠ "}{diff>0?"+":""}{diff.toFixed(1)}%
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* Action buttons */}
-            <div style={{display:"flex",gap:10,justifyContent:"flex-end",alignItems:"center",
-              paddingTop:14,borderTop:`1px solid ${SC.border}`}}>
-              <span style={{fontSize:9,color:SC.dim,fontFamily:"system-ui,sans-serif",flex:1}}>
-                Loading will replace all current parameters. Use Undo (Ctrl+Z) to revert.
-              </span>
-              <button onClick={()=>setShowMatlabModal(false)} type="button"
-                style={{padding:"8px 20px",background:"transparent",border:`1px solid ${SC.border}`,
-                  borderRadius:6,color:SC.muted,fontSize:11,cursor:"pointer",
-                  fontFamily:"system-ui,sans-serif"}}>
-                Cancel
-              </button>
-              <button
-                onClick={()=>{
-                  // Save current params to undo stack first
-                  undoStackRef.current=[...undoStackRef.current.slice(-29),params];
-                  redoStackRef.current=[];
-                  setUndoCount(undoStackRef.current.length);
-                  setRedoCount(0);
-                  // Apply MATLAB preset
-                  setParams(prev=>({...prev,...MATLAB_PRESET}));
-                  setShowMatlabModal(false);
-                }}
-                type="button"
-                style={{padding:"9px 24px",
-                  background:"linear-gradient(135deg,#1e3a5f,#1d4ed8)",
-                  border:"1px solid #3b82f6",borderRadius:6,color:"#bfdbfe",
-                  fontSize:12,fontWeight:800,cursor:"pointer",
-                  fontFamily:"'DM Mono',monospace",
-                  boxShadow:"0 0 16px #3b82f622",
-                  display:"flex",alignItems:"center",gap:7}}>
-                🎯 Load MATLAB Parameters
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Barlow:wght@400;600;700;800&display=swap');
         html,body{background:${SC.bg};color:${SC.text};margin:0;padding:0}
@@ -5922,16 +5610,6 @@ export default function App(){
           <div style={{width:6,height:6,borderRadius:"50%",background:stCol,boxShadow:`0 0 8px ${stCol}`}}/>
           <span style={{fontSize:9,color:stCol,fontFamily:"'DM Mono',monospace",fontWeight:700,letterSpacing:"0.08em"}}>{stTxt}</span>
         </div>
-        {/* MATLAB mode indicator */}
-        {params.matlabMode&&(
-          <div style={{display:"flex",alignItems:"center",gap:5,padding:"4px 10px",
-            background:"#1e3a5f44",border:"1px solid #3b82f688",borderRadius:4}}>
-            <div style={{width:6,height:6,borderRadius:"50%",background:"#60a5fa",
-              boxShadow:"0 0 8px #3b82f6",animation:"pulse 1.5s ease-in-out infinite"}}/>
-            <span style={{fontSize:9,color:"#93c5fd",fontFamily:"'DM Mono',monospace",fontWeight:700,
-              letterSpacing:"0.08em"}}>MATLAB MODE</span>
-          </div>
-        )}
         {SR&&(
           <div style={{display:"flex",gap:14,marginLeft:6,flexWrap:"wrap"}}>
             {[[" MTOW","MTOW",SR.MTOW,"kg",SR.MTOW<4000?SC.green:SR.MTOW<5000?SC.amber:SC.red,1],
@@ -5963,30 +5641,6 @@ export default function App(){
 
         {/* Action buttons — primary visible, secondary behind ••• */}
         <div style={{display:"flex",gap:6,marginLeft:"auto",alignItems:"center",position:"relative"}}>
-          {/* ── MY PROJECT — Load exact MATLAB values ── */}
-          <button
-            onClick={()=>setShowMatlabModal(true)}
-            type="button"
-            title="Load exact MATLAB dual-constraint parameters to reproduce paper results"
-            style={{
-              padding:"6px 14px",
-              background:"linear-gradient(135deg,#1e3a5f,#1d4ed8)",
-              border:"1px solid #3b82f6",
-              borderRadius:4,
-              color:"#93c5fd",
-              fontSize:10,
-              fontWeight:800,
-              cursor:"pointer",
-              fontFamily:"'DM Mono',monospace",
-              display:"flex",
-              alignItems:"center",
-              gap:5,
-              boxShadow:"0 0 10px #3b82f622",
-              letterSpacing:"0.04em",
-            }}>
-            🎯 My Project
-          </button>
-
           {/* Dark/Light toggle — always visible, purely iconic */}
           <button onClick={()=>setDarkMode(d=>!d)} type="button"
             title={darkMode?"Switch to Light Mode":"Switch to Dark Mode"}
