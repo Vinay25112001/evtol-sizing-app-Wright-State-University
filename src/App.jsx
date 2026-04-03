@@ -414,7 +414,9 @@ function runSizing(p) {
   const Rint=0.030*Nseries/Npar,Pheat=(Phov*1000/PackV)**2*Rint;
 
   /* Performance */
-  const Vstall=Math.sqrt(2*WL/(rhoCr*selAF.CLmax)),VA=Vstall*Math.sqrt(3.5),VD=p.vCruise*1.25;
+  const Vstall=Math.sqrt(2*WL/(rhoCr*selAF.CLmax));
+  const VA=Math.min(Vstall*Math.sqrt(3.5),p.vCruise); // CS-23 §23.335(b): VA ≤ VC
+  const VD=p.vCruise*1.25;
   const vnData=Array.from({length:60},(_,i)=>{
     const v=VD*1.1*i/59;
     return {v:+v.toFixed(1),nPos:+Math.min(0.5*rhoCr*v**2*p.clDesign/WL,3.5).toFixed(3),
@@ -2566,9 +2568,9 @@ window.addEventListener('load',()=>{setTimeout(()=>window.print(),1400);});
 const DARK={bg:"#07090f",panel:"#0d1117",border:"#1c2333",amber:"#f59e0b",teal:"#14b8a6",
   blue:"#3b82f6",red:"#ef4444",green:"#22c55e",dim:"#4b5563",text:"#e2e8f0",muted:"#64748b",
   purple:"#8b5cf6",orange:"#f97316"};
-const LIGHT={bg:"#f8fafc",panel:"#ffffff",border:"#e2e8f0",amber:"#d97706",teal:"#0d9488",
-  blue:"#2563eb",red:"#dc2626",green:"#16a34a",dim:"#9ca3af",text:"#0f172a",muted:"#64748b",
-  purple:"#7c3aed",orange:"#ea580c"};
+const LIGHT={bg:"#eef2f7",panel:"#ffffff",border:"#c8d5e3",amber:"#92610a",teal:"#0d7a72",
+  blue:"#1a4fcc",red:"#b01c1c",green:"#146b30",dim:"#8fa3b8",text:"#0b1524",muted:"#3d5166",
+  purple:"#5c22b5",orange:"#a83700"};
 let SC=DARK; // global ref — updated by App before render
 
 const PHC=["#ff6b35","#ffd23f","#06d6a0","#118ab2","#8338ec","#6c757d"];
@@ -2577,76 +2579,27 @@ const PHC=["#ff6b35","#ffd23f","#06d6a0","#118ab2","#8338ec","#6c757d"];
    REUSABLE COMPONENTS
    ═══════════════════════════════════ */
 function Slider({label,unit,value,min,max,step,onChange,note}){
-  const [flash,setFlash]=useState(false);
-  const [showTip,setShowTip]=useState(false);
-  const [tipX,setTipX]=useState(0);
-  const prevVal=useRef(value);
   const pct=((value-min)/(max-min))*100;
-
-  // Flash amber highlight briefly when value changes
-  useEffect(()=>{
-    if(prevVal.current!==value){
-      prevVal.current=value;
-      setFlash(true);
-      const t=setTimeout(()=>setFlash(false),600);
-      return()=>clearTimeout(t);
-    }
-  },[value]);
-
-  const handleMove=evt=>{
-    // Position tooltip over thumb
-    const rect=evt.currentTarget.getBoundingClientRect();
-    setTipX(((value-min)/(max-min))*rect.width);
-    onChange(parseFloat(evt.target.value));
-  };
-
   return(
     <div style={{marginBottom:12}}>
       <div style={{display:"flex",justifyContent:"space-between",marginBottom:4,alignItems:"center"}}>
-        <span style={{fontSize:10,color:flash?SC.amber:SC.muted,fontFamily:"system-ui,sans-serif",
-          letterSpacing:"0.01em",transition:"color 0.3s",fontWeight:flash?600:400}}>{label}</span>
+        <span style={{fontSize:10,color:SC.muted,fontFamily:"system-ui,sans-serif",letterSpacing:"0.01em"}}>{label}</span>
         <div style={{display:"flex",alignItems:"center",gap:4}}>
           <input type="number" value={value} step={step} min={min} max={max}
-            onChange={evt=>{const n=parseFloat(evt.target.value);if(!isNaN(n))onChange(Math.max(min,Math.min(max,n)));}}
-            style={{width:62,background:SC.panel,border:`1px solid ${flash?SC.amber:SC.border}`,borderRadius:3,
-              color:SC.amber,fontSize:11,textAlign:"right",padding:"2px 5px",
-              fontFamily:"'DM Mono',monospace",outline:"none",transition:"border-color 0.3s"}}/>
+            onChange={evt=>{const numVal=parseFloat(evt.target.value);if(!isNaN(numVal))onChange(Math.max(min,Math.min(max,numVal)));}}
+            style={{width:62,background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:3,color:SC.amber,
+              fontSize:11,textAlign:"right",padding:"2px 5px",fontFamily:"'DM Mono',monospace",outline:"none"}}/>
           <span style={{fontSize:9,color:SC.dim,minWidth:26,fontFamily:"'DM Mono',monospace"}}>{unit}</span>
         </div>
       </div>
-      <div style={{position:"relative",height:4,background:SC.border,borderRadius:2}}
-        onMouseLeave={()=>setShowTip(false)}>
-        {/* Filled track */}
+      <div style={{position:"relative",height:3,background:SC.border,borderRadius:2}}>
         <div style={{position:"absolute",left:0,top:0,height:"100%",width:`${pct}%`,
-          background:flash?`linear-gradient(90deg,${SC.teal},${SC.amber})`:`linear-gradient(90deg,${SC.teal},${SC.amber}99)`,
-          borderRadius:2,transition:"width 0.1s, background 0.3s"}}/>
-        {/* Thumb dot */}
-        <div style={{position:"absolute",top:"50%",left:`${pct}%`,transform:"translate(-50%,-50%)",
-          width:flash?10:7,height:flash?10:7,borderRadius:"50%",background:SC.amber,
-          boxShadow:flash?`0 0 6px ${SC.amber}`:"none",
-          transition:"width 0.2s,height 0.2s,box-shadow 0.2s",pointerEvents:"none"}}/>
-        {/* Tooltip on hover */}
-        {showTip&&(
-          <div style={{position:"absolute",bottom:10,left:`${pct}%`,transform:"translateX(-50%)",
-            background:SC.panel,border:`1px solid ${SC.amber}66`,borderRadius:4,
-            padding:"2px 6px",fontSize:8,color:SC.amber,fontFamily:"'DM Mono',monospace",
-            whiteSpace:"nowrap",pointerEvents:"none",zIndex:10,
-            boxShadow:"0 2px 8px rgba(0,0,0,0.4)"}}>
-            {value} {unit} · {pct.toFixed(0)}%
-          </div>
-        )}
+          background:`linear-gradient(90deg,${SC.teal},${SC.amber})`,borderRadius:2,transition:"width 0.1s"}}/>
         <input type="range" value={value} min={min} max={max} step={step}
-          onChange={handleMove}
-          onMouseEnter={()=>setShowTip(true)}
-          onMouseMove={evt=>{
-            const rect=evt.currentTarget.getBoundingClientRect();
-            setTipX(((value-min)/(max-min))*rect.width);
-          }}
-          onMouseLeave={()=>setShowTip(false)}
-          style={{position:"absolute",top:-8,left:0,width:"100%",opacity:0,cursor:"pointer",height:20}}/>
+          onChange={evt=>onChange(parseFloat(evt.target.value))}
+          style={{position:"absolute",top:-7,left:0,width:"100%",opacity:0,cursor:"pointer",height:17}}/>
       </div>
-      {note&&<div style={{fontSize:8,color:flash?`${SC.amber}99`:SC.dim,marginTop:2,
-        fontFamily:"'DM Mono',monospace",transition:"color 0.3s"}}>{note}</div>}
+      {note&&<div style={{fontSize:8,color:SC.dim,marginTop:2,fontFamily:"'DM Mono',monospace"}}>{note}</div>}
     </div>
   );
 }
@@ -2691,7 +2644,7 @@ function Acc({title,icon,children}){
 }
 
 const TABS=["Overview","Mission","Wing & Aero","Propulsion","Battery","Performance","Stability","V-Tail","Convergence","Monte Carlo","Certification","Noise","Cost","Mission Builder","Weather & Atmos","OpenVSP","Community","Collaboration","V-n Diagram","Design Space","BEM Rotor","Reg Tracker","AI Assistant"];
-const TABI=["📐","🛫","✈️","🔧","🔋","📈","⚖️","🦋","🔄","🎲","📋","🔊","💰","🗺️","🌤️","🛩️","🌐","👥","📐","🎯","🔬","📜","🤖"];
+const TABI=["⬛","🛫","✈️","🔧","🔋","📈","⚖️","🦋","🔄","🎲","📋","🔊","💰","🗺️","🌤️","🛩️","🌐","👥","📐","🎯","🔬","📜","🤖"];
 // Tab groups: each group has a label, color, and list of tab indices
 const TAB_GROUPS=[
   {label:"Design",    color:"#f59e0b", tabs:[0,1,2,3,4,7]},
@@ -4907,6 +4860,79 @@ function DesignSpacePanel({ params, SC, TTP, runSizingFn, onApply }) {
   );
 }
 
+/* ── Sensitivity Analysis Panel ── */
+function SensPanel({params,SR,SC}){
+  const[running,setRunning]=useState(false);
+  const[results,setResults]=useState(null);
+  const KEYS=[
+    {k:"range",    l:"Range"},    {k:"payload",  l:"Payload"},
+    {k:"sedCell",  l:"Cell SED"}, {k:"ewf",      l:"Empty Wt Frac"},
+    {k:"LD",       l:"L/D"},      {k:"etaHov",   l:"Hover FOM"},
+    {k:"etaSys",   l:"System η"}, {k:"etaBat",   l:"Battery η"},
+    {k:"propDiam", l:"Rotor Dia"},{k:"AR",        l:"Aspect Ratio"},
+    {k:"twRatio",  l:"T/W"},      {k:"nPropHover",l:"# Rotors"},
+  ];
+  const run=()=>{
+    setRunning(true); setResults(null);
+    setTimeout(()=>{
+      const base=SR.MTOW;
+      const res=KEYS.map(({k,l})=>{
+        const v=Number(params[k]);
+        if(!isFinite(v)) return null;
+        let hi,lo;
+        try{hi=runSizing({...params,[k]:v*1.1});}catch{return null;}
+        try{lo=runSizing({...params,[k]:v*0.9});}catch{return null;}
+        if(!hi||!lo) return null;
+        const impact=Math.abs((hi.MTOW-base)-(lo.MTOW-base))/2;
+        return {k,l,impact:+impact.toFixed(1),pct:+(impact/base*100).toFixed(2)};
+      }).filter(Boolean).sort((a,b)=>b.impact-a.impact);
+      setResults(res); setRunning(false);
+    },10);
+  };
+  const max=results?Math.max(...results.map(r=>r.impact),1):1;
+  return(
+    <div style={{background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:8,padding:"14px 16px",marginTop:4}}>
+      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:results?12:0,flexWrap:"wrap"}}>
+        <div style={{flex:1}}>
+          <div style={{fontSize:13,fontWeight:700,color:SC.text,fontFamily:"system-ui,sans-serif"}}>🎯 One-Click Sensitivity Report</div>
+          <div style={{fontSize:10,color:SC.muted,marginTop:2,fontFamily:"system-ui,sans-serif"}}>Sweeps 12 params ±10% — ranks by MTOW impact</div>
+        </div>
+        <button onClick={run} disabled={running} type="button"
+          style={{padding:"8px 22px",background:running?"transparent":`linear-gradient(135deg,${SC.amber},#f97316)`,
+            border:`1px solid ${running?SC.border:SC.amber}`,borderRadius:6,
+            color:running?SC.muted:"#07090f",fontSize:11,fontWeight:800,
+            cursor:running?"not-allowed":"pointer",fontFamily:"system-ui,sans-serif",whiteSpace:"nowrap"}}>
+          {running?"⏳ Running…":"▶ Run Analysis"}
+        </button>
+      </div>
+      {results&&(
+        <div>
+          {results.map((r,i)=>{
+            const col=i===0?SC.red:i<3?SC.amber:i<6?SC.teal:SC.dim;
+            return(
+              <div key={r.k} style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+                <div style={{width:108,fontSize:9,color:SC.muted,textAlign:"right",flexShrink:0,fontFamily:"system-ui,sans-serif"}}>{r.l}</div>
+                <div style={{flex:1,height:20,background:SC.bg,borderRadius:3,position:"relative",overflow:"hidden"}}>
+                  <div style={{height:"100%",width:`${(r.impact/max)*100}%`,background:`${col}44`,borderRadius:3}}/>
+                  <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",paddingLeft:8,gap:6}}>
+                    <span style={{fontSize:9,fontWeight:700,color:col,fontFamily:"'DM Mono',monospace"}}>±{r.impact} kg</span>
+                    {i===0&&<span style={{fontSize:8,color:SC.red,fontFamily:"system-ui,sans-serif"}}>← most sensitive</span>}
+                  </div>
+                </div>
+                <div style={{width:50,fontSize:8,color:SC.muted,textAlign:"right",fontFamily:"'DM Mono',monospace",flexShrink:0}}>{r.pct}%</div>
+                <div style={{width:30,fontSize:8,color:SC.dim,textAlign:"right",fontFamily:"'DM Mono',monospace",flexShrink:0}}>{i===0?"—":`${(results[0].impact/r.impact).toFixed(1)}×`}</div>
+              </div>
+            );
+          })}
+          <div style={{marginTop:8,paddingTop:8,borderTop:`1px solid ${SC.border}`,fontSize:9,color:SC.dim,fontFamily:"system-ui,sans-serif"}}>
+            Base MTOW: <b style={{color:SC.amber}}>{SR.MTOW} kg</b> · ±10% sweep · last col = ratio vs most sensitive
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function App(){
   const[params,setParams]=useState({
     // ── Mission ──────────────────────────────────────────────────────────
@@ -4943,9 +4969,10 @@ export default function App(){
   const[darkMode,setDarkMode]=useState(true);
   const prevSRRef=useRef(null);
   const[deltaMap,setDeltaMap]=useState({});
-  const[sidebarCollapsed,setSidebarCollapsed]=useState(false);
-  const[isRecalc,setIsRecalc]=useState(false);
-  const recalcTimer=useRef(null);
+  const undoStackRef=useRef([]);   // stores param snapshots — ref avoids re-render
+  const redoStackRef=useRef([]);
+  const[undoCount,setUndoCount]=useState(0); // triggers re-render for button state
+  const[redoCount,setRedoCount]=useState(0);
   const[showPdfBranding,setShowPdfBranding]=useState(false);
   const[pdfBranding,setPdfBranding]=useState({
     authorName:"", university:"Wright State University",
@@ -5127,52 +5154,6 @@ export default function App(){
   };
 
   const SR=useMemo(()=>{try{return runSizing({...params,customAirfoil:customAFData});}catch{return null;}},[params,customAFData]);
-
-  // Recalculating badge — flash for 400ms after any param change
-  useEffect(()=>{
-    setIsRecalc(true);
-    if(recalcTimer.current) clearTimeout(recalcTimer.current);
-    recalcTimer.current=setTimeout(()=>setIsRecalc(false),400);
-    return()=>{if(recalcTimer.current)clearTimeout(recalcTimer.current);};
-  },[params]);
-
-  // Keyboard shortcuts
-  useEffect(()=>{
-    const handler=evt=>{
-      if(evt.ctrlKey||evt.metaKey){
-        if(evt.key==="s"){ // Ctrl+S — Save design
-          evt.preventDefault();
-          if(SR&&user){
-            const html=generateReport(params,SR,{});
-            const nm=`Design — MTOW ${SR.MTOW}kg · ${new Date().toLocaleDateString()}`;
-            saveDesign(user.id,{name:nm,params,results:{MTOW:SR.MTOW,Etot:SR.Etot},pdfHtml:html});
-            addNotif(user.id,{title:"Design Saved",body:nm,type:"success"});
-          }
-        } else if(evt.key==="e"){ // Ctrl+E — Export CSV
-          evt.preventDefault();
-          if(SR) exportCSV();
-        } else if(evt.key==="r"){ // Ctrl+R — Reset (prevent browser refresh)
-          evt.preventDefault();
-          setParams({payload:455,range:250,vCruise:67,cruiseAlt:1000,reserveRange:60,hoverHeight:15.24,
-            LD:14,AR:9,eOsw:0.85,clDesign:0.55,taper:0.45,tc:0.15,nPropHover:6,propDiam:3.0,twRatio:1.3,
-            convTolExp:-6,etaHov:0.70,etaSys:0.80,rateOfClimb:5.08,climbAngle:5,sedCell:300,etaBat:0.90,
-            socMin:0.19,ewf:0.50,fusLen:7.2,fusDiam:1.65,vtGamma:45,vtCh:0.45,vtCv:0.032,vtAR:2.5});
-        }
-      }
-      if(evt.key==="ArrowRight"&&evt.target.tagName!=="INPUT"){
-        const grp=TAB_GROUPS[activeGroup];
-        const idx=grp.tabs.indexOf(tab);
-        if(idx<grp.tabs.length-1) setTab(grp.tabs[idx+1]);
-      }
-      if(evt.key==="ArrowLeft"&&evt.target.tagName!=="INPUT"){
-        const grp=TAB_GROUPS[activeGroup];
-        const idx=grp.tabs.indexOf(tab);
-        if(idx>0) setTab(grp.tabs[idx-1]);
-      }
-    };
-    window.addEventListener("keydown",handler);
-    return()=>window.removeEventListener("keydown",handler);
-  },[SR,user,params,tab,activeGroup]);
 
   // Track deltas for KPI header — show what changed after each slider move
   useEffect(()=>{
@@ -5452,7 +5433,61 @@ export default function App(){
     },50); // defer to allow UI to update
   };
 
-  const set=useCallback(paramKey=>paramVal=>setParams(prev=>({...prev,[paramKey]:paramVal})),[]);
+  const set=useCallback(paramKey=>paramVal=>{
+    setParams(prev=>{
+      undoStackRef.current=[...undoStackRef.current.slice(-29),prev];
+      redoStackRef.current=[];
+      setUndoCount(undoStackRef.current.length);
+      setRedoCount(0);
+      return {...prev,[paramKey]:paramVal};
+    });
+  },[]);
+
+  // Keyboard shortcuts
+  useEffect(()=>{
+    const onKey=evt=>{
+      const mod=evt.ctrlKey||evt.metaKey;
+      if(mod&&evt.key==="z"&&!evt.shiftKey){ evt.preventDefault(); undo(); }
+      if(mod&&(evt.key==="y"||(evt.key==="z"&&evt.shiftKey))){ evt.preventDefault(); redo(); }
+      if(mod&&evt.key==="s"){
+        evt.preventDefault();
+        if(SR&&user){
+          const html=generateReport(params,SR,pdfBranding||{});
+          const nm=`Design — MTOW ${SR.MTOW}kg · ${new Date().toLocaleDateString()}`;
+          saveDesign(user.id,{name:nm,params,results:{MTOW:SR.MTOW,Etot:SR.Etot},pdfHtml:html});
+          addNotif(user.id,{title:"Saved ✓",body:nm,type:"success"});
+        }
+      }
+      if(mod&&evt.key==="e"){ evt.preventDefault(); if(SR) exportCSV(); }
+      if(!mod&&evt.target.tagName!=="INPUT"&&evt.target.tagName!=="TEXTAREA"){
+        if(evt.key==="ArrowRight"){const g=TAB_GROUPS[activeGroup];const idx=g.tabs.indexOf(tab);if(idx<g.tabs.length-1)setTab(g.tabs[idx+1]);}
+        if(evt.key==="ArrowLeft") {const g=TAB_GROUPS[activeGroup];const idx=g.tabs.indexOf(tab);if(idx>0)setTab(g.tabs[idx-1]);}
+      }
+    };
+    window.addEventListener("keydown",onKey);
+    return()=>window.removeEventListener("keydown",onKey);
+  },[SR,user,params,tab,activeGroup]);
+  const undo=()=>{
+    const stack=undoStackRef.current;
+    if(!stack.length) return;
+    const snap=stack[stack.length-1];
+    undoStackRef.current=stack.slice(0,-1);
+    redoStackRef.current=[...redoStackRef.current,params];
+    setParams(snap);
+    setUndoCount(undoStackRef.current.length);
+    setRedoCount(redoStackRef.current.length);
+  };
+  const redo=()=>{
+    const stack=redoStackRef.current;
+    if(!stack.length) return;
+    const snap=stack[stack.length-1];
+    redoStackRef.current=stack.slice(0,-1);
+    undoStackRef.current=[...undoStackRef.current,params];
+    setParams(snap);
+    setUndoCount(undoStackRef.current.length);
+    setRedoCount(redoStackRef.current.length);
+  };
+
   const stCol=!SR?SC.red:SR.feasible?SC.green:SC.amber;
   const stTxt=!SR?"ERROR":SR.feasible?"FEASIBLE":"CHECK DESIGN";
 
@@ -5559,16 +5594,6 @@ export default function App(){
           <div style={{width:6,height:6,borderRadius:"50%",background:stCol,boxShadow:`0 0 8px ${stCol}`}}/>
           <span style={{fontSize:9,color:stCol,fontFamily:"'DM Mono',monospace",fontWeight:700,letterSpacing:"0.08em"}}>{stTxt}</span>
         </div>
-        {isRecalc&&(
-          <div style={{display:"flex",alignItems:"center",gap:5,padding:"3px 9px",
-            background:`${SC.amber}15`,border:`1px solid ${SC.amber}44`,borderRadius:4,
-            animation:"pulse 0.4s ease-in-out"}}>
-            <div style={{width:5,height:5,borderRadius:"50%",background:SC.amber,
-              animation:"pulse 0.6s ease-in-out infinite"}}/>
-            <span style={{fontSize:8,color:SC.amber,fontFamily:"'DM Mono',monospace",
-              letterSpacing:"0.1em"}}>RECALCULATING…</span>
-          </div>
-        )}
         {SR&&(
           <div style={{display:"flex",gap:14,marginLeft:6,flexWrap:"wrap"}}>
             {[[" MTOW","MTOW",SR.MTOW,"kg",SR.MTOW<4000?SC.green:SR.MTOW<5000?SC.amber:SC.red,1],
@@ -5687,6 +5712,26 @@ export default function App(){
                   </div>
                 )}
                 <div style={{height:1,background:SC.border,margin:"4px 0"}}/>
+                {/* Undo / Redo */}
+                <div style={{display:"flex",gap:4,padding:"4px 8px"}}>
+                  <button onClick={()=>{undo();setShowOverflow(false);}} type="button"
+                    disabled={!undoCount}
+                    style={{flex:1,padding:"7px 8px",background:"transparent",border:`1px solid ${SC.border}`,
+                      borderRadius:4,color:undoCount?SC.text:SC.dim,fontSize:10,
+                      cursor:undoCount?"pointer":"default",fontFamily:"system-ui,sans-serif",
+                      display:"flex",alignItems:"center",gap:4}}>
+                    ↩ Undo <span style={{fontSize:8,color:SC.dim}}>({undoCount})</span>
+                  </button>
+                  <button onClick={()=>{redo();setShowOverflow(false);}} type="button"
+                    disabled={!redoCount}
+                    style={{flex:1,padding:"7px 8px",background:"transparent",border:`1px solid ${SC.border}`,
+                      borderRadius:4,color:redoCount?SC.text:SC.dim,fontSize:10,
+                      cursor:redoCount?"pointer":"default",fontFamily:"system-ui,sans-serif",
+                      display:"flex",alignItems:"center",gap:4}}>
+                    ↪ Redo <span style={{fontSize:8,color:SC.dim}}>({redoCount})</span>
+                  </button>
+                </div>
+                <div style={{height:1,background:SC.border,margin:"2px 0"}}/>
                 {/* Reset */}
                 <button onClick={()=>{setParams({payload:455,range:250,vCruise:67,cruiseAlt:1000,reserveRange:60,hoverHeight:15.24,
                     LD:14,AR:9,eOsw:0.85,clDesign:0.55,taper:0.45,tc:0.15,nPropHover:6,propDiam:3.0,twRatio:1.3,convTolExp:-6,
@@ -5707,67 +5752,9 @@ export default function App(){
       </div>
 
       <div style={{display:"flex",flex:1,overflow:"hidden"}}>
-        {/* SIDEBAR — collapsible */}
-        <div style={{
-          width:sidebarCollapsed?40:262,
-          minWidth:sidebarCollapsed?40:262,
-          background:SC.panel,
-          borderRight:`1px solid ${SC.border}`,
-          overflowY:"auto",
-          overflowX:"hidden",
-          padding:sidebarCollapsed?"8px 6px":"10px 13px 24px",
-          position:"relative",
-          transition:"width 0.2s ease, min-width 0.2s ease",
-          flexShrink:0,
-        }}>
-          {/* Collapse toggle arrow */}
-          <button type="button" onClick={()=>setSidebarCollapsed(v=>!v)}
-            title={sidebarCollapsed?"Expand sidebar":"Collapse sidebar"}
-            style={{position:"sticky",top:0,zIndex:10,
-              display:"flex",alignItems:"center",justifyContent:"center",
-              width:"100%",height:28,marginBottom:sidebarCollapsed?8:6,
-              background:SC.bg,border:`1px solid ${SC.border}`,
-              borderRadius:5,cursor:"pointer",color:SC.muted,fontSize:13,
-              transition:"all 0.15s"}}>
-            {sidebarCollapsed?"›":"‹"}
-          </button>
-          {/* Collapsed: show icon-only param summary */}
-          {sidebarCollapsed&&SR&&(
-            <div style={{display:"flex",flexDirection:"column",gap:6,alignItems:"center"}}>
-              {[
-                ["⚖️",(SR.MTOW/1000).toFixed(1)+"t",SR.MTOW<4000?SC.green:SC.amber],
-                ["🔋",SR.Etot+"kWh",SC.teal],
-                ["✈️",SR.LDact,SR.LDact>12?SC.green:SC.amber],
-                ["⚡",SR.Phov+"kW",SC.blue],
-              ].map(([icon,val,col])=>(
-                <div key={icon} title={val}
-                  style={{display:"flex",flexDirection:"column",alignItems:"center",gap:1}}>
-                  <span style={{fontSize:13}}>{icon}</span>
-                  <span style={{fontSize:7,color:col,fontFamily:"'DM Mono',monospace",
-                    fontWeight:700,letterSpacing:"0.02em"}}>{val}</span>
-                </div>
-              ))}
-              <div style={{height:1,width:"80%",background:SC.border,margin:"4px 0"}}/>
-              {/* Sticky mini checks */}
-              {SR&&[
-                [SR.TipMach<0.70,"M","Tip Mach"],
-                [SR.SM_vt>0.05&&SR.SM_vt<0.25,"SM","Stat Margin"],
-                [SR.feasible,"✓","Feasible"],
-              ].map(([ok,lbl,tip])=>(
-                <div key={lbl} title={`${tip}: ${ok?"✓":"✗"}`}
-                  style={{width:24,height:24,borderRadius:"50%",
-                    background:ok?`${SC.green}22`:`${SC.red}22`,
-                    border:`1px solid ${ok?SC.green:SC.red}`,
-                    display:"flex",alignItems:"center",justifyContent:"center",
-                    fontSize:8,color:ok?SC.green:SC.red,fontWeight:700,
-                    fontFamily:"'DM Mono',monospace"}}>
-                  {ok?"✓":"✗"}
-                </div>
-              ))}
-            </div>
-          )}
-          {/* Full sidebar content — hidden when collapsed */}
-          <div style={{display:sidebarCollapsed?"none":"block"}}>
+        {/* SIDEBAR */}
+        <div style={{width:262,minWidth:262,background:SC.panel,borderRight:`1px solid ${SC.border}`,
+          overflowY:"auto",padding:"10px 13px 24px"}}>
           <Acc title="Mission Requirements" icon="🛫">
             <Slider label="Payload" unit="kg" value={params.payload} min={100} max={900} step={5} onChange={set("payload")} note="Passengers + cargo"/>
             <Slider label="Range" unit="km" value={params.range} min={50} max={500} step={10} onChange={set("range")}/>
@@ -5814,37 +5801,20 @@ export default function App(){
             <Slider label="Fuselage Length" unit="m" value={params.fusLen} min={3.0} max={10.0} step={0.1} onChange={set("fusLen")} note="Affects drag, stability, tail arm"/>
             <Slider label="Fuselage Diameter" unit="m" value={params.fusDiam} min={0.8} max={2.5} step={0.05} onChange={set("fusDiam")} note={`Fineness ratio: ${(params.fusLen/params.fusDiam).toFixed(1)}`}/>
           </Acc>
-            {/* ── Sticky design checks strip ── */}
-            {SR&&(()=>{
-              const _checks=[SR.TipMach<0.70,SR.SM_vt>0.05&&SR.SM_vt<0.25,SR.feasible,(SR.Crate_hov||0)<5,SR.converged!==false];
-              const _stripCol=_checks.some(v=>!v)?SC.red:SC.green;
-              return(
-              <div style={{position:"sticky",bottom:0,marginTop:16,marginLeft:-13,marginRight:-13,
-                padding:"8px 13px",background:SC.panel,
-                borderTop:`1px solid ${_stripCol}`,
-                zIndex:5}}>
-                <div style={{fontSize:8,color:SC.muted,fontFamily:"system-ui,sans-serif",
-                  letterSpacing:"0.08em",marginBottom:5,textTransform:"uppercase"}}>Design Checks</div>
-                {[
-                  [SR.TipMach<0.70,`Tip Mach ${SR.TipMach?.toFixed(3)}`,"< 0.70"],
-                  [SR.SM_vt>0.05&&SR.SM_vt<0.25,`SM ${(SR.SM_vt*100)?.toFixed(1)}%`,"5–25%"],
-                  [SR.feasible||false,"Feasibility","✓"],
-                  [(SR.Crate_hov||0)<5,`C-rate ${(SR.Crate_hov||0)?.toFixed(1)}C`,"< 5C"],
-                  [SR.converged!==false,"Convergence",SR.converged!==false?"✓":"✗"],
-                ].map(([ok,label,target])=>(
-                  <div key={label} style={{display:"flex",alignItems:"center",gap:5,
-                    marginBottom:3,padding:"2px 4px",borderRadius:3,
-                    background:ok?`${SC.green}0a`:`${SC.red}0a`}}>
-                    <span style={{fontSize:9,flexShrink:0}}>{ok?"✓":"✗"}</span>
-                    <span style={{fontSize:8,color:ok?SC.green:SC.red,flex:1,
-                      fontFamily:"'DM Mono',monospace",fontWeight:ok?400:600}}>{label}</span>
-                    <span style={{fontSize:7,color:SC.dim,fontFamily:"'DM Mono',monospace"}}>{target}</span>
-                  </div>
-                ))}
-              </div>
-              );})()}
-          </div>{/* end full sidebar content */}
-        </div>{/* end sidebar */}
+          {/* Design checks */}
+          {SR&&(
+            <div style={{marginTop:10,borderTop:`1px solid ${SC.border}`,paddingTop:10}}>
+              <div style={{fontSize:8,color:SC.muted,textTransform:"uppercase",letterSpacing:"0.1em",fontFamily:"'DM Mono',monospace",marginBottom:7}}>Design Checks</div>
+              {SR.checks.map((chkItem,i)=>(
+                <div key={i} style={{display:"flex",alignItems:"center",gap:5,padding:"3px 0",borderBottom:`1px solid #0f131a`}}>
+                  <span style={{fontSize:9}}>{chkItem.ok?"✅":"❌"}</span>
+                  <span style={{fontSize:8,color:chkItem.ok?SC.green:SC.red,flex:1,fontFamily:"'DM Mono',monospace"}}>{chkItem.label}</span>
+                  <span style={{fontSize:8,color:SC.muted,fontFamily:"'DM Mono',monospace"}}>{chkItem.val}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
 
         {/* MAIN */}
         <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
@@ -6000,6 +5970,9 @@ export default function App(){
                 </Panel>
               </div>
             )}
+
+            {/* ──── SENSITIVITY REPORT (Overview tab only) ──── */}
+            {tab===0&&SR&&<SensPanel params={params} SR={SR} SC={SC}/>}
 
             {/* ──── TAB 1: MISSION ──── */}
             {tab===1&&(
@@ -9786,8 +9759,11 @@ export default function App(){
               const ngust_d=1+(Kg*rhoMSL*Ug_dive*VD*CLa)/(2*WL);
               const ngust_cn=1-(Kg*rhoMSL*Ug_cruise*VC*CLa)/(2*WL);
               // Build V-n envelope
+              const rhoCr_vn=SR.rhoCr||rhoMSL; // use cruise density, not MSL
+              const CLmax_vn=SR.selAF?.CLmax||1.6;      // positive stall CL
+              const CLneg_vn=0.8*CLmax_vn;              // CS-23: neg stall ≈ 0.8×CLmax
               const pts=[];
-              for(let i=0;i<=80;i++){const v=VD*1.15*i/80;pts.push({v:+v.toFixed(1),nPos:+Math.min(0.5*rhoMSL*v*v*(params.clDesign||1.2)/WL,nPosLimit).toFixed(3),nNeg:+Math.max(-0.5*rhoMSL*v*v*0.8*(params.clDesign||1.2)/WL,nNegLimit).toFixed(3)});}
+              for(let i=0;i<=80;i++){const v=VD*1.15*i/80;pts.push({v:+v.toFixed(1),nPos:+Math.min(0.5*rhoCr_vn*v*v*CLmax_vn/WL,nPosLimit).toFixed(3),nNeg:+Math.max(-0.5*rhoCr_vn*v*v*CLneg_vn/WL,nNegLimit).toFixed(3)});}
               // OEI hover analysis — CS-VTOL SC.VTOL AMC 27.65
               const N=params.nPropHover,Phov_tot=SR.Phov*1000; // W total hover power
               const P_per_motor=Phov_tot/N;         // nominal power per motor (W)
