@@ -432,18 +432,21 @@ function runSizing(p) {
   // For fixed-MTOW eVTOL: all freed payload weight → battery (same MTOW)
   const sedEff_rp = p.sedCell*(1-(p.cRateDerate||0.08));
   const minBatKg  = (Eto+Eld)*1000*(1+p.socMin)/(sedEff_rp*p.etaBat); // min bat for hover phases
-  const maxPayload= Math.max(0, MTOW-Wempty-minBatKg);  // hard upper limit on payload
+  const maxPayload= Math.max(1, MTOW-Wempty-minBatKg);  // at least 1 to avoid domain=[0,0]
   const ferryRange= (()=>{
-    const WbFerry=MTOW-Wempty;  // all weight = battery when payload=0
+    if(!Efl_design || Efl_design<=0) return +p.range.toFixed(1); // fallback: design range
+    const WbFerry=MTOW-Wempty;
     const EavFerry=WbFerry*sedEff_rp*p.etaBat/(1000*(1+p.socMin));
-    return +Math.max(0,((EavFerry-Eto-Eld)/Efl_design)*p.range).toFixed(1);
+    const r=(EavFerry-Eto-Eld)/Efl_design*p.range;
+    return +Math.max(p.range, isFinite(r)?r:p.range).toFixed(1); // at least design range
   })();
   const rpData=Array.from({length:61},(_,i)=>{
     const pay=maxPayload*i/60;
     const Wavail=Math.max(0,MTOW-Wempty-pay);  // remaining weight = battery
     if(Wavail<minBatKg) return{payload:+pay.toFixed(0),range:0,segment:"A"};
     const Eavail=Wavail*sedEff_rp*p.etaBat/(1000*(1+p.socMin));
-    const r=+Math.max(0,((Eavail-Eto-Eld)/Efl_design)*p.range).toFixed(1);
+    const raw=(Efl_design>0)?((Eavail-Eto-Eld)/Efl_design)*p.range:0;
+    const r=+Math.max(0,isFinite(raw)?raw:0).toFixed(1);
     const seg=pay>p.payload?"A":pay<p.payload?"B":"design";
     return{payload:+pay.toFixed(0),range:r,segment:seg};
   }); // ascending: payload 0 → maxPayload (standard payload-range convention)
@@ -6811,8 +6814,8 @@ export default function App(){
                     <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
                       {[
                         ["Design Point",`${params.payload} kg / ${params.range} km`,SC.amber],
-                        ["Ferry Range",`0 kg / ${SR.ferryRange} km`,SC.teal],
-                        ["Max Payload",`${SR.maxPayloadRp} kg / 0 km`,SC.red],
+                        ["Ferry Range",`0 kg / ${SR.ferryRange??params.range} km`,SC.teal],
+                        ["Max Payload",`${SR.maxPayloadRp??params.payload} kg / 0 km`,SC.red],
                       ].map(([lbl,val,col])=>(
                         <div key={lbl} style={{padding:"4px 10px",borderRadius:5,
                           background:`${col}18`,border:`1px solid ${col}44`}}>
@@ -6838,11 +6841,11 @@ export default function App(){
                       <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
                       <XAxis dataKey="payload"
                         type="number"
-                        domain={[0, SR.maxPayloadRp*1.05]}
+                        domain={[0, Math.max(10, (SR.maxPayloadRp||params.payload)*1.05)]}
                         tick={{fontSize:11,fill:SC.muted}}
                         label={{value:"Payload (kg)",position:"insideBottom",offset:-12,fontSize:12,fill:SC.muted}}/>
                       <YAxis
-                        domain={[0, Math.ceil(SR.ferryRange*1.1/50)*50]}
+                        domain={[0, Math.max(50, Math.ceil(((SR.ferryRange||params.range)*1.1)/50)*50)]}
                         tick={{fontSize:11,fill:SC.muted}}
                         label={{value:"Range (km)",angle:-90,position:"insideLeft",offset:10,fontSize:12,fill:SC.muted}}/>
                       <Tooltip {...TTP}
@@ -6875,7 +6878,7 @@ export default function App(){
                         r={7} fill={SC.amber} stroke={SC.panel} strokeWidth={2}
                         label={{value:"◉",fill:SC.amber,fontSize:14,position:"top"}}/>
                       {/* Ferry range dot */}
-                      <ReferenceDot x={0} y={SR.ferryRange}
+                      <ReferenceDot x={0} y={SR.ferryRange??params.range}
                         r={6} fill={SC.teal} stroke={SC.panel} strokeWidth={2}/>
                     </ComposedChart>
                   </ResponsiveContainer>
@@ -6884,14 +6887,14 @@ export default function App(){
                   <div style={{marginTop:10,display:"grid",
                     gridTemplateColumns:"repeat(4,1fr)",gap:6}}>
                     {[
-                      ["Ferry Range (no payload)",     `${SR.ferryRange} km`,       `0 kg`,       SC.teal],
+                      ["Ferry Range (no payload)",     `${SR.ferryRange??params.range} km`, `0 kg`, SC.teal],
                       ["Design Point",                  `${params.range} km`,        `${params.payload} kg`, SC.amber],
                       ["Half-payload range",            (()=>{
                         const halfPay=Math.round(params.payload/2);
                         const pt=SR.rpData.find(d=>Math.abs(d.payload-halfPay)<SR.maxPayloadRp/20);
                         return pt?`${pt.range} km`:"—";
                       })(),                              `${Math.round(params.payload/2)} kg`, "#a78bfa"],
-                      ["Max payload (zero range)",      `0 km`,                      `${SR.maxPayloadRp} kg`, SC.red],
+                      ["Max payload (zero range)",      `0 km`,                      `${SR.maxPayloadRp??params.payload} kg`, SC.red],
                     ].map(([label,range,payload,col])=>(
                       <div key={label} style={{background:SC.bg,border:`1px solid ${SC.border}`,
                         borderLeft:`3px solid ${col}`,borderRadius:5,padding:"7px 10px"}}>
@@ -6906,7 +6909,7 @@ export default function App(){
 
                   <div style={{marginTop:8,fontSize:9,color:SC.dim,
                     fontFamily:"system-ui,sans-serif",lineHeight:1.6}}>
-                    Model: fixed-MTOW ({SR.MTOW} kg) — reduced payload → battery mass increases.
+                    Model: fixed-MTOW ({SR.MTOW??0} kg) — reduced payload → battery mass increases.
                     Blue reference: Joby S4 (2023 spec). Teal reference: Archer Midnight.
                     Ferry range assumes full battery, zero payload.
                   </div>
