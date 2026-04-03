@@ -5,7 +5,7 @@ import {
   AreaChart, Area, LineChart, Line, BarChart, Bar, RadarChart, Radar,
   ComposedChart, ScatterChart, Scatter,
   PolarGrid, PolarAngleAxis, XAxis, YAxis, CartesianGrid, Tooltip,
-  Legend, ResponsiveContainer, ReferenceLine, Cell, PieChart, Pie
+  Legend, ResponsiveContainer, ReferenceLine, ReferenceDot, Cell, PieChart, Pie
 } from "recharts";
 
 /* ═══════════════════════════════════════════════════════════════════════
