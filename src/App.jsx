@@ -414,7 +414,9 @@ function runSizing(p) {
   const Rint=0.030*Nseries/Npar,Pheat=(Phov*1000/PackV)**2*Rint;
 
   /* Performance */
-  const Vstall=Math.sqrt(2*WL/(rhoCr*selAF.CLmax)),VA=Vstall*Math.sqrt(3.5),VD=p.vCruise*1.25;
+  const Vstall=Math.sqrt(2*WL/(rhoCr*selAF.CLmax));  // stall speed at cruise alt
+  const VA=Math.min(Vstall*Math.sqrt(3.5),p.vCruise); // CS-23 §23.335(b): VA ≤ VC
+  const VD=p.vCruise*1.25;
   const vnData=Array.from({length:60},(_,i)=>{
     const v=VD*1.1*i/59;
     return {v:+v.toFixed(1),nPos:+Math.min(0.5*rhoCr*v**2*p.clDesign/WL,3.5).toFixed(3),
@@ -2566,9 +2568,9 @@ window.addEventListener('load',()=>{setTimeout(()=>window.print(),1400);});
 const DARK={bg:"#07090f",panel:"#0d1117",border:"#1c2333",amber:"#f59e0b",teal:"#14b8a6",
   blue:"#3b82f6",red:"#ef4444",green:"#22c55e",dim:"#4b5563",text:"#e2e8f0",muted:"#64748b",
   purple:"#8b5cf6",orange:"#f97316"};
-const LIGHT={bg:"#f8fafc",panel:"#ffffff",border:"#e2e8f0",amber:"#d97706",teal:"#0d9488",
-  blue:"#2563eb",red:"#dc2626",green:"#16a34a",dim:"#9ca3af",text:"#0f172a",muted:"#64748b",
-  purple:"#7c3aed",orange:"#ea580c"};
+const LIGHT={bg:"#f0f4f8",panel:"#ffffff",border:"#cbd5e1",amber:"#b45309",teal:"#0f766e",
+  blue:"#1d4ed8",red:"#b91c1c",green:"#15803d",dim:"#94a3b8",text:"#0f172a",muted:"#475569",
+  purple:"#6d28d9",orange:"#c2410c"};
 let SC=DARK; // global ref — updated by App before render
 
 const PHC=["#ff6b35","#ffd23f","#06d6a0","#118ab2","#8338ec","#6c757d"];
@@ -2577,76 +2579,27 @@ const PHC=["#ff6b35","#ffd23f","#06d6a0","#118ab2","#8338ec","#6c757d"];
    REUSABLE COMPONENTS
    ═══════════════════════════════════ */
 function Slider({label,unit,value,min,max,step,onChange,note}){
-  const [flash,setFlash]=useState(false);
-  const [showTip,setShowTip]=useState(false);
-  const [tipX,setTipX]=useState(0);
-  const prevVal=useRef(value);
   const pct=((value-min)/(max-min))*100;
-
-  // Flash amber highlight briefly when value changes
-  useEffect(()=>{
-    if(prevVal.current!==value){
-      prevVal.current=value;
-      setFlash(true);
-      const t=setTimeout(()=>setFlash(false),600);
-      return()=>clearTimeout(t);
-    }
-  },[value]);
-
-  const handleMove=evt=>{
-    // Position tooltip over thumb
-    const rect=evt.currentTarget.getBoundingClientRect();
-    setTipX(((value-min)/(max-min))*rect.width);
-    onChange(parseFloat(evt.target.value));
-  };
-
   return(
     <div style={{marginBottom:12}}>
       <div style={{display:"flex",justifyContent:"space-between",marginBottom:4,alignItems:"center"}}>
-        <span style={{fontSize:10,color:flash?SC.amber:SC.muted,fontFamily:"system-ui,sans-serif",
-          letterSpacing:"0.01em",transition:"color 0.3s",fontWeight:flash?600:400}}>{label}</span>
+        <span style={{fontSize:10,color:SC.muted,fontFamily:"system-ui,sans-serif",letterSpacing:"0.01em"}}>{label}</span>
         <div style={{display:"flex",alignItems:"center",gap:4}}>
           <input type="number" value={value} step={step} min={min} max={max}
-            onChange={evt=>{const n=parseFloat(evt.target.value);if(!isNaN(n))onChange(Math.max(min,Math.min(max,n)));}}
-            style={{width:62,background:SC.panel,border:`1px solid ${flash?SC.amber:SC.border}`,borderRadius:3,
-              color:SC.amber,fontSize:11,textAlign:"right",padding:"2px 5px",
-              fontFamily:"'DM Mono',monospace",outline:"none",transition:"border-color 0.3s"}}/>
+            onChange={evt=>{const numVal=parseFloat(evt.target.value);if(!isNaN(numVal))onChange(Math.max(min,Math.min(max,numVal)));}}
+            style={{width:62,background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:3,color:SC.amber,
+              fontSize:11,textAlign:"right",padding:"2px 5px",fontFamily:"'DM Mono',monospace",outline:"none"}}/>
           <span style={{fontSize:9,color:SC.dim,minWidth:26,fontFamily:"'DM Mono',monospace"}}>{unit}</span>
         </div>
       </div>
-      <div style={{position:"relative",height:4,background:SC.border,borderRadius:2}}
-        onMouseLeave={()=>setShowTip(false)}>
-        {/* Filled track */}
+      <div style={{position:"relative",height:3,background:SC.border,borderRadius:2}}>
         <div style={{position:"absolute",left:0,top:0,height:"100%",width:`${pct}%`,
-          background:flash?`linear-gradient(90deg,${SC.teal},${SC.amber})`:`linear-gradient(90deg,${SC.teal},${SC.amber}99)`,
-          borderRadius:2,transition:"width 0.1s, background 0.3s"}}/>
-        {/* Thumb dot */}
-        <div style={{position:"absolute",top:"50%",left:`${pct}%`,transform:"translate(-50%,-50%)",
-          width:flash?10:7,height:flash?10:7,borderRadius:"50%",background:SC.amber,
-          boxShadow:flash?`0 0 6px ${SC.amber}`:"none",
-          transition:"width 0.2s,height 0.2s,box-shadow 0.2s",pointerEvents:"none"}}/>
-        {/* Tooltip on hover */}
-        {showTip&&(
-          <div style={{position:"absolute",bottom:10,left:`${pct}%`,transform:"translateX(-50%)",
-            background:SC.panel,border:`1px solid ${SC.amber}66`,borderRadius:4,
-            padding:"2px 6px",fontSize:8,color:SC.amber,fontFamily:"'DM Mono',monospace",
-            whiteSpace:"nowrap",pointerEvents:"none",zIndex:10,
-            boxShadow:"0 2px 8px rgba(0,0,0,0.4)"}}>
-            {value} {unit} · {pct.toFixed(0)}%
-          </div>
-        )}
+          background:`linear-gradient(90deg,${SC.teal},${SC.amber})`,borderRadius:2,transition:"width 0.1s"}}/>
         <input type="range" value={value} min={min} max={max} step={step}
-          onChange={handleMove}
-          onMouseEnter={()=>setShowTip(true)}
-          onMouseMove={evt=>{
-            const rect=evt.currentTarget.getBoundingClientRect();
-            setTipX(((value-min)/(max-min))*rect.width);
-          }}
-          onMouseLeave={()=>setShowTip(false)}
-          style={{position:"absolute",top:-8,left:0,width:"100%",opacity:0,cursor:"pointer",height:20}}/>
+          onChange={evt=>onChange(parseFloat(evt.target.value))}
+          style={{position:"absolute",top:-7,left:0,width:"100%",opacity:0,cursor:"pointer",height:17}}/>
       </div>
-      {note&&<div style={{fontSize:8,color:flash?`${SC.amber}99`:SC.dim,marginTop:2,
-        fontFamily:"'DM Mono',monospace",transition:"color 0.3s"}}>{note}</div>}
+      {note&&<div style={{fontSize:8,color:SC.dim,marginTop:2,fontFamily:"'DM Mono',monospace"}}>{note}</div>}
     </div>
   );
 }
@@ -2666,10 +2619,40 @@ function KPI({label,value,unit,sub,color}){
 }
 
 function Panel({title,children,ht}){
+  const panelRef=React.useRef(null);
+  const exportSVG=()=>{
+    const el=panelRef.current; if(!el) return;
+    try{
+      const {width,height}=el.getBoundingClientRect();
+      const clone=el.cloneNode(true);
+      // Remove the export button from clone
+      clone.querySelector(".panel-export-btn")?.remove();
+      const html=clone.innerHTML;
+      const svgStr=`<svg xmlns="http://www.w3.org/2000/svg" width="${Math.round(width)}" height="${Math.round(height)}"><foreignObject width="100%" height="100%"><div xmlns="http://www.w3.org/1999/xhtml" style="font-family:system-ui,sans-serif">${html}</div></foreignObject></svg>`;
+      const blob=new Blob([svgStr],{type:"image/svg+xml"});
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement("a"); a.href=url;
+      a.download=`${(title||"chart").replace(/[^a-z0-9]/gi,"_")}.svg`;
+      a.click(); URL.revokeObjectURL(url);
+    } catch(e){ console.error("Export failed",e); }
+  };
   return(
-    <div style={{background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:8,padding:"12px 14px",height:ht||"auto"}}>
-      <div style={{fontSize:9,color:SC.muted,textTransform:"uppercase",letterSpacing:"0.08em",fontFamily:"system-ui,sans-serif",
-        marginBottom:8,borderBottom:`1px solid ${SC.border}`,paddingBottom:5}}>{title}</div>
+    <div ref={panelRef} style={{background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:8,
+      padding:"12px 14px",height:ht||"auto",position:"relative"}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",
+        marginBottom:8,borderBottom:`1px solid ${SC.border}`,paddingBottom:5}}>
+        <div style={{fontSize:9,color:SC.muted,textTransform:"uppercase",letterSpacing:"0.08em",
+          fontFamily:"system-ui,sans-serif"}}>{title}</div>
+        <button onClick={exportSVG} type="button" title="Export panel as SVG"
+          className="panel-export-btn"
+          style={{background:"transparent",border:"none",cursor:"pointer",
+            color:SC.dim,fontSize:11,padding:"1px 4px",lineHeight:1,
+            opacity:0,transition:"opacity 0.2s"}}
+          onMouseEnter={e=>e.currentTarget.style.opacity="1"}
+          onMouseLeave={e=>e.currentTarget.style.opacity="0"}>
+          📷
+        </button>
+      </div>
       {children}
     </div>
   );
@@ -2691,7 +2674,7 @@ function Acc({title,icon,children}){
 }
 
 const TABS=["Overview","Mission","Wing & Aero","Propulsion","Battery","Performance","Stability","V-Tail","Convergence","Monte Carlo","Certification","Noise","Cost","Mission Builder","Weather & Atmos","OpenVSP","Community","Collaboration","V-n Diagram","Design Space","BEM Rotor","Reg Tracker","AI Assistant"];
-const TABI=["📐","🛫","✈️","🔧","🔋","📈","⚖️","🦋","🔄","🎲","📋","🔊","💰","🗺️","🌤️","🛩️","🌐","👥","📐","🎯","🔬","📜","🤖"];
+const TABI=["⬛","🛫","✈️","🔧","🔋","📈","⚖️","🦋","🔄","🎲","📋","🔊","💰","🗺️","🌤️","🛩️","🌐","👥","📐","🎯","🔬","📜","🤖"];
 // Tab groups: each group has a label, color, and list of tab indices
 const TAB_GROUPS=[
   {label:"Design",    color:"#f59e0b", tabs:[0,1,2,3,4,7]},
@@ -3415,6 +3398,41 @@ function DesignGallery({ SC, onLoadDesign }) {
       )}
     </div>
   );
+}
+
+/* ── Error Boundary — wraps each tab so a crash doesn't blank the whole app ── */
+class TabErrorBoundary extends React.Component {
+  constructor(props){ super(props); this.state={hasError:false,error:null}; }
+  static getDerivedStateFromError(err){ return {hasError:true,error:err}; }
+  componentDidCatch(err,info){ console.error("Tab crashed:",err,info); }
+  render(){
+    if(this.state.hasError){
+      const SC_=this.props.SC||DARK;
+      return(
+        <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
+          minHeight:300,gap:16,padding:32}}>
+          <div style={{fontSize:32}}>⚠️</div>
+          <div style={{fontSize:16,fontWeight:700,color:SC_.red,fontFamily:"system-ui,sans-serif"}}>
+            This tab encountered an error
+          </div>
+          <div style={{fontSize:12,color:SC_.muted,fontFamily:"'DM Mono',monospace",maxWidth:480,
+            textAlign:"center",lineHeight:1.6}}>
+            {this.state.error?.message||"Unknown error"}
+          </div>
+          <div style={{fontSize:11,color:SC_.muted,fontFamily:"system-ui,sans-serif"}}>
+            Try adjusting a slider — the engine will recalculate and this tab should recover.
+          </div>
+          <button onClick={()=>this.setState({hasError:false,error:null})} type="button"
+            style={{padding:"8px 20px",background:`${SC_.blue}22`,border:`1px solid ${SC_.blue}`,
+              borderRadius:6,color:SC_.blue,fontSize:12,cursor:"pointer",
+              fontFamily:"system-ui,sans-serif",fontWeight:600}}>
+            Try Again
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
 }
 
 /* ── API Key Input — shared by RegTracker and AI Assistant ── */
@@ -4943,9 +4961,10 @@ export default function App(){
   const[darkMode,setDarkMode]=useState(true);
   const prevSRRef=useRef(null);
   const[deltaMap,setDeltaMap]=useState({});
-  const[sidebarCollapsed,setSidebarCollapsed]=useState(false);
-  const[isRecalc,setIsRecalc]=useState(false);
-  const recalcTimer=useRef(null);
+  // Undo / redo history (stores params snapshots)
+  const[undoStack,setUndoStack]=useState([]);
+  const[redoStack,setRedoStack]=useState([]);
+  const prevParamsRef=useRef(null);
   const[showPdfBranding,setShowPdfBranding]=useState(false);
   const[pdfBranding,setPdfBranding]=useState({
     authorName:"", university:"Wright State University",
@@ -5128,51 +5147,39 @@ export default function App(){
 
   const SR=useMemo(()=>{try{return runSizing({...params,customAirfoil:customAFData});}catch{return null;}},[params,customAFData]);
 
-  // Recalculating badge — flash for 400ms after any param change
-  useEffect(()=>{
-    setIsRecalc(true);
-    if(recalcTimer.current) clearTimeout(recalcTimer.current);
-    recalcTimer.current=setTimeout(()=>setIsRecalc(false),400);
-    return()=>{if(recalcTimer.current)clearTimeout(recalcTimer.current);};
-  },[params]);
-
-  // Keyboard shortcuts
+  // ── Keyboard shortcuts ────────────────────────────────────────────────
   useEffect(()=>{
     const handler=evt=>{
-      if(evt.ctrlKey||evt.metaKey){
-        if(evt.key==="s"){ // Ctrl+S — Save design
+      const mod=evt.ctrlKey||evt.metaKey;
+      if(mod){
+        if(evt.key==="z"&&!evt.shiftKey){ evt.preventDefault(); undo(); }
+        if((evt.key==="y")||(evt.key==="z"&&evt.shiftKey)){ evt.preventDefault(); redo(); }
+        if(evt.key==="s"){
           evt.preventDefault();
           if(SR&&user){
-            const html=generateReport(params,SR,{});
+            const html=generateReport(params,SR,pdfBranding);
             const nm=`Design — MTOW ${SR.MTOW}kg · ${new Date().toLocaleDateString()}`;
             saveDesign(user.id,{name:nm,params,results:{MTOW:SR.MTOW,Etot:SR.Etot},pdfHtml:html});
-            addNotif(user.id,{title:"Design Saved",body:nm,type:"success"});
+            addNotif(user.id,{title:"Design Saved ✓",body:nm,type:"success"});
           }
-        } else if(evt.key==="e"){ // Ctrl+E — Export CSV
-          evt.preventDefault();
-          if(SR) exportCSV();
-        } else if(evt.key==="r"){ // Ctrl+R — Reset (prevent browser refresh)
-          evt.preventDefault();
-          setParams({payload:455,range:250,vCruise:67,cruiseAlt:1000,reserveRange:60,hoverHeight:15.24,
-            LD:14,AR:9,eOsw:0.85,clDesign:0.55,taper:0.45,tc:0.15,nPropHover:6,propDiam:3.0,twRatio:1.3,
-            convTolExp:-6,etaHov:0.70,etaSys:0.80,rateOfClimb:5.08,climbAngle:5,sedCell:300,etaBat:0.90,
-            socMin:0.19,ewf:0.50,fusLen:7.2,fusDiam:1.65,vtGamma:45,vtCh:0.45,vtCv:0.032,vtAR:2.5});
         }
+        if(evt.key==="e"){ evt.preventDefault(); if(SR) exportCSV(); }
       }
-      if(evt.key==="ArrowRight"&&evt.target.tagName!=="INPUT"){
-        const grp=TAB_GROUPS[activeGroup];
-        const idx=grp.tabs.indexOf(tab);
-        if(idx<grp.tabs.length-1) setTab(grp.tabs[idx+1]);
-      }
-      if(evt.key==="ArrowLeft"&&evt.target.tagName!=="INPUT"){
-        const grp=TAB_GROUPS[activeGroup];
-        const idx=grp.tabs.indexOf(tab);
-        if(idx>0) setTab(grp.tabs[idx-1]);
+      // Arrow keys for tab navigation (only when not in input)
+      if(evt.target.tagName!=="INPUT"&&evt.target.tagName!=="TEXTAREA"){
+        if(evt.key==="ArrowRight"){
+          const g=TAB_GROUPS[activeGroup]; const idx=g.tabs.indexOf(tab);
+          if(idx<g.tabs.length-1) setTab(g.tabs[idx+1]);
+        }
+        if(evt.key==="ArrowLeft"){
+          const g=TAB_GROUPS[activeGroup]; const idx=g.tabs.indexOf(tab);
+          if(idx>0) setTab(g.tabs[idx-1]);
+        }
       }
     };
     window.addEventListener("keydown",handler);
     return()=>window.removeEventListener("keydown",handler);
-  },[SR,user,params,tab,activeGroup]);
+  },[SR,user,params,tab,activeGroup,undo,redo,pdfBranding]);
 
   // Track deltas for KPI header — show what changed after each slider move
   useEffect(()=>{
@@ -5452,7 +5459,33 @@ export default function App(){
     },50); // defer to allow UI to update
   };
 
-  const set=useCallback(paramKey=>paramVal=>setParams(prev=>({...prev,[paramKey]:paramVal})),[]);
+  // setP — main param setter that records undo history
+  const setP=useCallback((newParams)=>{
+    setParams(prev=>{
+      setUndoStack(s=>[...s.slice(-29),prev]); // keep last 30 states
+      setRedoStack([]);                          // any new change clears redo
+      return newParams;
+    });
+  },[]);
+  const set=useCallback(paramKey=>paramVal=>setP(prev=>({...prev,[paramKey]:paramVal})),[setP]);
+  const undo=useCallback(()=>{
+    setUndoStack(s=>{
+      if(!s.length) return s;
+      const prev=[...s]; const snap=prev.pop();
+      setRedoStack(r=>[...r,null]); // placeholder — filled below
+      setParams(cur=>{ setRedoStack(r=>[...r.slice(0,-1),cur]); return snap; });
+      return prev;
+    });
+  },[]);
+  const redo=useCallback(()=>{
+    setRedoStack(s=>{
+      if(!s.length) return s;
+      const prev=[...s]; const snap=prev.pop();
+      setUndoStack(r=>[...r,null]);
+      setParams(cur=>{ setUndoStack(r=>[...r.slice(0,-1),cur]); return snap; });
+      return prev;
+    });
+  },[]);
   const stCol=!SR?SC.red:SR.feasible?SC.green:SC.amber;
   const stTxt=!SR?"ERROR":SR.feasible?"FEASIBLE":"CHECK DESIGN";
 
@@ -5495,6 +5528,13 @@ export default function App(){
         .slider-label{font-family:system-ui,-apple-system,sans-serif !important;font-size:11px}
         /* Tab group category pill */
         .tab-group-pill{font-family:system-ui,-apple-system,sans-serif !important}
+        /* ── Light mode overrides ── */
+        ${!darkMode?`
+          .recharts-cartesian-grid line{stroke:#e2e8f0 !important}
+          ::-webkit-scrollbar-thumb{background:#cbd5e1 !important}
+          input[type=number]{background:#f8fafc !important;color:#b45309 !important;border-color:#cbd5e1 !important}
+          .recharts-default-tooltip{box-shadow:0 4px 20px rgba(0,0,0,0.12) !important}
+        `:""}
       `}</style>
 
       {/* PDF BRANDING POPUP */}
@@ -5559,16 +5599,6 @@ export default function App(){
           <div style={{width:6,height:6,borderRadius:"50%",background:stCol,boxShadow:`0 0 8px ${stCol}`}}/>
           <span style={{fontSize:9,color:stCol,fontFamily:"'DM Mono',monospace",fontWeight:700,letterSpacing:"0.08em"}}>{stTxt}</span>
         </div>
-        {isRecalc&&(
-          <div style={{display:"flex",alignItems:"center",gap:5,padding:"3px 9px",
-            background:`${SC.amber}15`,border:`1px solid ${SC.amber}44`,borderRadius:4,
-            animation:"pulse 0.4s ease-in-out"}}>
-            <div style={{width:5,height:5,borderRadius:"50%",background:SC.amber,
-              animation:"pulse 0.6s ease-in-out infinite"}}/>
-            <span style={{fontSize:8,color:SC.amber,fontFamily:"'DM Mono',monospace",
-              letterSpacing:"0.1em"}}>RECALCULATING…</span>
-          </div>
-        )}
         {SR&&(
           <div style={{display:"flex",gap:14,marginLeft:6,flexWrap:"wrap"}}>
             {[[" MTOW","MTOW",SR.MTOW,"kg",SR.MTOW<4000?SC.green:SR.MTOW<5000?SC.amber:SC.red,1],
@@ -5624,6 +5654,7 @@ export default function App(){
                   fontFamily:"system-ui,sans-serif",fontWeight:700,
                   display:"flex",alignItems:"center",gap:5,boxShadow:"0 0 10px #22c55e22"}}>
                 {!user&&<span style={{fontSize:10}}>🔒</span>}💾 Save design
+              <span style={{fontSize:8,color:"#86efac88",fontFamily:"'DM Mono',monospace"}}>⌘S</span>
               </button>
             </AuthGate>
           )}
@@ -5687,6 +5718,24 @@ export default function App(){
                   </div>
                 )}
                 <div style={{height:1,background:SC.border,margin:"4px 0"}}/>
+                {/* Undo / Redo */}
+                <div style={{display:"flex",gap:4,padding:"4px 8px"}}>
+                  <button onClick={()=>{undo();setShowOverflow(false);}} type="button"
+                    disabled={undoStack.length===0}
+                    style={{flex:1,padding:"7px 8px",background:"transparent",border:`1px solid ${SC.border}`,
+                      borderRadius:4,color:undoStack.length?SC.text:SC.dim,fontSize:10,cursor:undoStack.length?"pointer":"default",
+                      fontFamily:"system-ui,sans-serif",display:"flex",alignItems:"center",gap:5}}>
+                    ↩ Undo<span style={{fontSize:8,color:SC.dim}}>({undoStack.length})</span>
+                  </button>
+                  <button onClick={()=>{redo();setShowOverflow(false);}} type="button"
+                    disabled={redoStack.length===0}
+                    style={{flex:1,padding:"7px 8px",background:"transparent",border:`1px solid ${SC.border}`,
+                      borderRadius:4,color:redoStack.length?SC.text:SC.dim,fontSize:10,cursor:redoStack.length?"pointer":"default",
+                      fontFamily:"system-ui,sans-serif",display:"flex",alignItems:"center",gap:5}}>
+                    ↪ Redo<span style={{fontSize:8,color:SC.dim}}>({redoStack.length})</span>
+                  </button>
+                </div>
+                <div style={{height:1,background:SC.border,margin:"2px 0"}}/>
                 {/* Reset */}
                 <button onClick={()=>{setParams({payload:455,range:250,vCruise:67,cruiseAlt:1000,reserveRange:60,hoverHeight:15.24,
                     LD:14,AR:9,eOsw:0.85,clDesign:0.55,taper:0.45,tc:0.15,nPropHover:6,propDiam:3.0,twRatio:1.3,convTolExp:-6,
@@ -5707,67 +5756,9 @@ export default function App(){
       </div>
 
       <div style={{display:"flex",flex:1,overflow:"hidden"}}>
-        {/* SIDEBAR — collapsible */}
-        <div style={{
-          width:sidebarCollapsed?40:262,
-          minWidth:sidebarCollapsed?40:262,
-          background:SC.panel,
-          borderRight:`1px solid ${SC.border}`,
-          overflowY:"auto",
-          overflowX:"hidden",
-          padding:sidebarCollapsed?"8px 6px":"10px 13px 24px",
-          position:"relative",
-          transition:"width 0.2s ease, min-width 0.2s ease",
-          flexShrink:0,
-        }}>
-          {/* Collapse toggle arrow */}
-          <button type="button" onClick={()=>setSidebarCollapsed(v=>!v)}
-            title={sidebarCollapsed?"Expand sidebar":"Collapse sidebar"}
-            style={{position:"sticky",top:0,zIndex:10,
-              display:"flex",alignItems:"center",justifyContent:"center",
-              width:"100%",height:28,marginBottom:sidebarCollapsed?8:6,
-              background:SC.bg,border:`1px solid ${SC.border}`,
-              borderRadius:5,cursor:"pointer",color:SC.muted,fontSize:13,
-              transition:"all 0.15s"}}>
-            {sidebarCollapsed?"›":"‹"}
-          </button>
-          {/* Collapsed: show icon-only param summary */}
-          {sidebarCollapsed&&SR&&(
-            <div style={{display:"flex",flexDirection:"column",gap:6,alignItems:"center"}}>
-              {[
-                ["⚖️",(SR.MTOW/1000).toFixed(1)+"t",SR.MTOW<4000?SC.green:SC.amber],
-                ["🔋",SR.Etot+"kWh",SC.teal],
-                ["✈️",SR.LDact,SR.LDact>12?SC.green:SC.amber],
-                ["⚡",SR.Phov+"kW",SC.blue],
-              ].map(([icon,val,col])=>(
-                <div key={icon} title={val}
-                  style={{display:"flex",flexDirection:"column",alignItems:"center",gap:1}}>
-                  <span style={{fontSize:13}}>{icon}</span>
-                  <span style={{fontSize:7,color:col,fontFamily:"'DM Mono',monospace",
-                    fontWeight:700,letterSpacing:"0.02em"}}>{val}</span>
-                </div>
-              ))}
-              <div style={{height:1,width:"80%",background:SC.border,margin:"4px 0"}}/>
-              {/* Sticky mini checks */}
-              {SR&&[
-                [SR.TipMach<0.70,"M","Tip Mach"],
-                [SR.SM_vt>0.05&&SR.SM_vt<0.25,"SM","Stat Margin"],
-                [SR.feasible,"✓","Feasible"],
-              ].map(([ok,lbl,tip])=>(
-                <div key={lbl} title={`${tip}: ${ok?"✓":"✗"}`}
-                  style={{width:24,height:24,borderRadius:"50%",
-                    background:ok?`${SC.green}22`:`${SC.red}22`,
-                    border:`1px solid ${ok?SC.green:SC.red}`,
-                    display:"flex",alignItems:"center",justifyContent:"center",
-                    fontSize:8,color:ok?SC.green:SC.red,fontWeight:700,
-                    fontFamily:"'DM Mono',monospace"}}>
-                  {ok?"✓":"✗"}
-                </div>
-              ))}
-            </div>
-          )}
-          {/* Full sidebar content — hidden when collapsed */}
-          <div style={{display:sidebarCollapsed?"none":"block"}}>
+        {/* SIDEBAR */}
+        <div style={{width:262,minWidth:262,background:SC.panel,borderRight:`1px solid ${SC.border}`,
+          overflowY:"auto",padding:"10px 13px 24px"}}>
           <Acc title="Mission Requirements" icon="🛫">
             <Slider label="Payload" unit="kg" value={params.payload} min={100} max={900} step={5} onChange={set("payload")} note="Passengers + cargo"/>
             <Slider label="Range" unit="km" value={params.range} min={50} max={500} step={10} onChange={set("range")}/>
@@ -5814,37 +5805,20 @@ export default function App(){
             <Slider label="Fuselage Length" unit="m" value={params.fusLen} min={3.0} max={10.0} step={0.1} onChange={set("fusLen")} note="Affects drag, stability, tail arm"/>
             <Slider label="Fuselage Diameter" unit="m" value={params.fusDiam} min={0.8} max={2.5} step={0.05} onChange={set("fusDiam")} note={`Fineness ratio: ${(params.fusLen/params.fusDiam).toFixed(1)}`}/>
           </Acc>
-            {/* ── Sticky design checks strip ── */}
-            {SR&&(()=>{
-              const _checks=[SR.TipMach<0.70,SR.SM_vt>0.05&&SR.SM_vt<0.25,SR.feasible,(SR.Crate_hov||0)<5,SR.converged!==false];
-              const _stripCol=_checks.some(v=>!v)?SC.red:SC.green;
-              return(
-              <div style={{position:"sticky",bottom:0,marginTop:16,marginLeft:-13,marginRight:-13,
-                padding:"8px 13px",background:SC.panel,
-                borderTop:`1px solid ${_stripCol}`,
-                zIndex:5}}>
-                <div style={{fontSize:8,color:SC.muted,fontFamily:"system-ui,sans-serif",
-                  letterSpacing:"0.08em",marginBottom:5,textTransform:"uppercase"}}>Design Checks</div>
-                {[
-                  [SR.TipMach<0.70,`Tip Mach ${SR.TipMach?.toFixed(3)}`,"< 0.70"],
-                  [SR.SM_vt>0.05&&SR.SM_vt<0.25,`SM ${(SR.SM_vt*100)?.toFixed(1)}%`,"5–25%"],
-                  [SR.feasible||false,"Feasibility","✓"],
-                  [(SR.Crate_hov||0)<5,`C-rate ${(SR.Crate_hov||0)?.toFixed(1)}C`,"< 5C"],
-                  [SR.converged!==false,"Convergence",SR.converged!==false?"✓":"✗"],
-                ].map(([ok,label,target])=>(
-                  <div key={label} style={{display:"flex",alignItems:"center",gap:5,
-                    marginBottom:3,padding:"2px 4px",borderRadius:3,
-                    background:ok?`${SC.green}0a`:`${SC.red}0a`}}>
-                    <span style={{fontSize:9,flexShrink:0}}>{ok?"✓":"✗"}</span>
-                    <span style={{fontSize:8,color:ok?SC.green:SC.red,flex:1,
-                      fontFamily:"'DM Mono',monospace",fontWeight:ok?400:600}}>{label}</span>
-                    <span style={{fontSize:7,color:SC.dim,fontFamily:"'DM Mono',monospace"}}>{target}</span>
-                  </div>
-                ))}
-              </div>
-              );})()}
-          </div>{/* end full sidebar content */}
-        </div>{/* end sidebar */}
+          {/* Design checks */}
+          {SR&&(
+            <div style={{marginTop:10,borderTop:`1px solid ${SC.border}`,paddingTop:10}}>
+              <div style={{fontSize:8,color:SC.muted,textTransform:"uppercase",letterSpacing:"0.1em",fontFamily:"'DM Mono',monospace",marginBottom:7}}>Design Checks</div>
+              {SR.checks.map((chkItem,i)=>(
+                <div key={i} style={{display:"flex",alignItems:"center",gap:5,padding:"3px 0",borderBottom:`1px solid #0f131a`}}>
+                  <span style={{fontSize:9}}>{chkItem.ok?"✅":"❌"}</span>
+                  <span style={{fontSize:8,color:chkItem.ok?SC.green:SC.red,flex:1,fontFamily:"'DM Mono',monospace"}}>{chkItem.label}</span>
+                  <span style={{fontSize:8,color:SC.muted,fontFamily:"'DM Mono',monospace"}}>{chkItem.val}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
 
         {/* MAIN */}
         <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
@@ -5899,7 +5873,7 @@ export default function App(){
               <PublicDesignBanner shareId={sharedDesignId} onLoad={params=>setParams(prev=>({...prev,...params}))} C={SC}/>
             )}
             {!SR&&<div style={{color:SC.red,fontFamily:"'DM Mono',monospace",padding:20}}>Calculation error — adjust inputs.</div>}
-            {SR&&<>
+            {SR&&<TabErrorBoundary SC={SC}><>
 
             {/* ──── TAB 0: OVERVIEW ──── */}
             {tab===0&&SR&&(
@@ -6000,6 +5974,133 @@ export default function App(){
                 </Panel>
               </div>
             )}
+
+            {/* ──── SENSITIVITY REPORT — injected into Overview tab ──── */}
+            {tab===0&&SR&&(()=>{
+              const [sensRunning,setSensRunning]=React.useState(false);
+              const [sensResults,setSensResults]=React.useState(null);
+              const runSensitivity=()=>{
+                setSensRunning(true);
+                setSensResults(null);
+                setTimeout(()=>{
+                  const SWEEP_PARAMS=[
+                    {key:"range",    label:"Range",       unit:"km",  pct:0.10},
+                    {key:"payload",  label:"Payload",     unit:"kg",  pct:0.10},
+                    {key:"sedCell",  label:"Cell SED",    unit:"Wh/kg",pct:0.10},
+                    {key:"ewf",      label:"Empty Wt Frac",unit:"",   pct:0.10},
+                    {key:"LD",       label:"L/D",         unit:"",    pct:0.10},
+                    {key:"etaHov",   label:"Hover FOM",   unit:"",    pct:0.10},
+                    {key:"etaSys",   label:"System η",    unit:"",    pct:0.10},
+                    {key:"etaBat",   label:"Battery η",   unit:"",    pct:0.10},
+                    {key:"propDiam", label:"Rotor Dia.",  unit:"m",   pct:0.10},
+                    {key:"nPropHover",label:"# Rotors",   unit:"",    pct:0.10},
+                    {key:"AR",       label:"Aspect Ratio",unit:"",    pct:0.10},
+                    {key:"twRatio",  label:"T/W Ratio",   unit:"",    pct:0.10},
+                  ];
+                  const baseMTOW=SR.MTOW;
+                  const results=SWEEP_PARAMS.map(sp=>{
+                    const base=params[sp.key];
+                    if(base==null||!isFinite(Number(base))) return null;
+                    const hi=Number(base)*(1+sp.pct), lo=Number(base)*(1-sp.pct);
+                    let SR_hi,SR_lo;
+                    try{ SR_hi=runSizing({...params,[sp.key]:hi}); } catch{ SR_hi=null; }
+                    try{ SR_lo=runSizing({...params,[sp.key]:lo}); } catch{ SR_lo=null; }
+                    if(!SR_hi||!SR_lo) return null;
+                    const dHi=SR_hi.MTOW-baseMTOW, dLo=SR_lo.MTOW-baseMTOW;
+                    const impact=Math.abs(dHi-dLo)/2; // avg absolute change
+                    return {key:sp.key,label:sp.label,unit:sp.unit,
+                      base:+Number(base).toFixed(3),
+                      dHi:+dHi.toFixed(1),dLo:+dLo.toFixed(1),
+                      impact:+impact.toFixed(1),
+                      pctImpact:+(impact/baseMTOW*100).toFixed(2)};
+                  }).filter(Boolean).sort((a,b)=>b.impact-a.impact);
+                  setSensResults(results);
+                  setSensRunning(false);
+                },50);
+              };
+              const maxImpact=sensResults?sensResults[0]?.impact||1:1;
+              return(
+                <div style={{background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:8,padding:"14px 16px",marginTop:4}}>
+                  <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:sensResults?12:0}}>
+                    <div style={{flex:1}}>
+                      <div style={{fontSize:13,fontWeight:700,color:SC.text,fontFamily:"system-ui,sans-serif"}}>
+                        🎯 One-Click Sensitivity Report
+                      </div>
+                      <div style={{fontSize:10,color:SC.muted,marginTop:2,fontFamily:"system-ui,sans-serif"}}>
+                        Sweeps all 12 parameters ±10% and ranks by MTOW impact
+                      </div>
+                    </div>
+                    <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                      {sensResults&&(
+                        <span style={{fontSize:9,color:SC.green,fontFamily:"'DM Mono',monospace"}}>
+                          ✓ {sensResults.length} params ranked
+                        </span>
+                      )}
+                      <button onClick={runSensitivity} disabled={sensRunning} type="button"
+                        style={{padding:"8px 20px",background:sensRunning?"transparent":`linear-gradient(135deg,${SC.amber},#f97316)`,
+                          border:`1px solid ${sensRunning?SC.border:SC.amber}`,borderRadius:6,
+                          color:sensRunning?SC.muted:"#07090f",fontSize:11,fontWeight:800,
+                          cursor:sensRunning?"not-allowed":"pointer",fontFamily:"system-ui,sans-serif",
+                          minWidth:130,display:"flex",alignItems:"center",gap:6,justifyContent:"center"}}>
+                        {sensRunning?(
+                          <><span style={{animation:"pulse 0.6s infinite"}}>⏳</span> Running…</>
+                        ):"▶ Run Analysis"}
+                      </button>
+                    </div>
+                  </div>
+                  {sensResults&&(
+                    <div>
+                      {/* Bar chart */}
+                      <div style={{display:"flex",flexDirection:"column",gap:5}}>
+                        {sensResults.map((r,i)=>{
+                          const barW=(r.impact/maxImpact)*100;
+                          const col=i===0?SC.red:i<=2?SC.amber:i<=5?SC.teal:SC.dim;
+                          const ratio=(r.impact/sensResults[sensResults.length-1]?.impact||1).toFixed(1);
+                          return(
+                            <div key={r.key} style={{display:"flex",alignItems:"center",gap:8}}>
+                              <div style={{width:110,fontSize:9,color:SC.muted,fontFamily:"system-ui,sans-serif",
+                                textAlign:"right",flexShrink:0}}>{r.label}</div>
+                              <div style={{flex:1,height:18,background:SC.bg,borderRadius:3,
+                                position:"relative",overflow:"hidden"}}>
+                                <div style={{height:"100%",width:`${barW}%`,
+                                  background:`${col}55`,borderRadius:3,transition:"width 0.4s ease"}}/>
+                                <div style={{position:"absolute",inset:0,display:"flex",
+                                  alignItems:"center",paddingLeft:6}}>
+                                  <span style={{fontSize:9,fontWeight:700,color:col,
+                                    fontFamily:"'DM Mono',monospace"}}>
+                                    ±{r.impact} kg
+                                  </span>
+                                  {i===0&&(
+                                    <span style={{fontSize:8,color:SC.red,marginLeft:6,
+                                      fontFamily:"'DM Mono',monospace",fontWeight:700}}>
+                                      Most sensitive
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              <div style={{width:60,fontSize:8,color:SC.muted,textAlign:"right",
+                                fontFamily:"'DM Mono',monospace",flexShrink:0}}>
+                                {r.pctImpact}%
+                              </div>
+                              <div style={{width:36,fontSize:7,color:SC.dim,textAlign:"right",
+                                fontFamily:"'DM Mono',monospace",flexShrink:0}}>
+                                {i===0?"—":`${(sensResults[0].impact/r.impact).toFixed(1)}×`}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <div style={{marginTop:10,fontSize:9,color:SC.dim,fontFamily:"system-ui,sans-serif",
+                        borderTop:`1px solid ${SC.border}`,paddingTop:8}}>
+                        Base MTOW: <strong style={{color:SC.amber}}>{SR.MTOW} kg</strong> · 
+                        Each bar = mean absolute MTOW change for ±10% parameter sweep · 
+                        Last column = how many times less sensitive than #{1}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* ──── TAB 1: MISSION ──── */}
             {tab===1&&(
@@ -9769,7 +9870,7 @@ export default function App(){
               </div>
             )}
 
-            </>}
+            </></TabErrorBoundary>}
 
             {/* ──── TAB 18: V-n DIAGRAM + OEI CHECK ──── */}
             {tab===18&&SR&&(()=>{
@@ -9786,8 +9887,14 @@ export default function App(){
               const ngust_d=1+(Kg*rhoMSL*Ug_dive*VD*CLa)/(2*WL);
               const ngust_cn=1-(Kg*rhoMSL*Ug_cruise*VC*CLa)/(2*WL);
               // Build V-n envelope
+              // Use cruise density (not MSL) — per CS-23: envelope at operating altitude
+              const rhoCr_vn=SR.rhoCr||rhoMSL;
+              const CLmax_pos=SR.selAF?.CLmax||1.6;    // positive stall CL (wing airfoil)
+              const CLmax_neg=0.8*CLmax_pos;            // CS-23: neg stall ≈ 0.8 × CLmax_pos
               const pts=[];
-              for(let i=0;i<=80;i++){const v=VD*1.15*i/80;pts.push({v:+v.toFixed(1),nPos:+Math.min(0.5*rhoMSL*v*v*(params.clDesign||1.2)/WL,nPosLimit).toFixed(3),nNeg:+Math.max(-0.5*rhoMSL*v*v*0.8*(params.clDesign||1.2)/WL,nNegLimit).toFixed(3)});}
+              for(let i=0;i<=80;i++){const v=VD*1.15*i/80;pts.push({v:+v.toFixed(1),
+                nPos:+Math.min(0.5*rhoCr_vn*v*v*CLmax_pos/WL,nPosLimit).toFixed(3),
+                nNeg:+Math.max(-0.5*rhoCr_vn*v*v*CLmax_neg/WL,nNegLimit).toFixed(3)});}
               // OEI hover analysis — CS-VTOL SC.VTOL AMC 27.65
               const N=params.nPropHover,Phov_tot=SR.Phov*1000; // W total hover power
               const P_per_motor=Phov_tot/N;         // nominal power per motor (W)
