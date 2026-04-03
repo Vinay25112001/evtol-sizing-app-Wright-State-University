@@ -2577,27 +2577,76 @@ const PHC=["#ff6b35","#ffd23f","#06d6a0","#118ab2","#8338ec","#6c757d"];
    REUSABLE COMPONENTS
    ═══════════════════════════════════ */
 function Slider({label,unit,value,min,max,step,onChange,note}){
+  const [flash,setFlash]=useState(false);
+  const [showTip,setShowTip]=useState(false);
+  const [tipX,setTipX]=useState(0);
+  const prevVal=useRef(value);
   const pct=((value-min)/(max-min))*100;
+
+  // Flash amber highlight briefly when value changes
+  useEffect(()=>{
+    if(prevVal.current!==value){
+      prevVal.current=value;
+      setFlash(true);
+      const t=setTimeout(()=>setFlash(false),600);
+      return()=>clearTimeout(t);
+    }
+  },[value]);
+
+  const handleMove=evt=>{
+    // Position tooltip over thumb
+    const rect=evt.currentTarget.getBoundingClientRect();
+    setTipX(((value-min)/(max-min))*rect.width);
+    onChange(parseFloat(evt.target.value));
+  };
+
   return(
     <div style={{marginBottom:12}}>
       <div style={{display:"flex",justifyContent:"space-between",marginBottom:4,alignItems:"center"}}>
-        <span style={{fontSize:10,color:SC.muted,fontFamily:"'DM Mono',monospace",letterSpacing:"0.04em"}}>{label}</span>
+        <span style={{fontSize:10,color:flash?SC.amber:SC.muted,fontFamily:"system-ui,sans-serif",
+          letterSpacing:"0.01em",transition:"color 0.3s",fontWeight:flash?600:400}}>{label}</span>
         <div style={{display:"flex",alignItems:"center",gap:4}}>
           <input type="number" value={value} step={step} min={min} max={max}
-            onChange={evt=>{const numVal=parseFloat(evt.target.value);if(!isNaN(numVal))onChange(Math.max(min,Math.min(max,numVal)));}}
-            style={{width:62,background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:3,color:SC.amber,
-              fontSize:11,textAlign:"right",padding:"2px 5px",fontFamily:"'DM Mono',monospace",outline:"none"}}/>
+            onChange={evt=>{const n=parseFloat(evt.target.value);if(!isNaN(n))onChange(Math.max(min,Math.min(max,n)));}}
+            style={{width:62,background:SC.panel,border:`1px solid ${flash?SC.amber:SC.border}`,borderRadius:3,
+              color:SC.amber,fontSize:11,textAlign:"right",padding:"2px 5px",
+              fontFamily:"'DM Mono',monospace",outline:"none",transition:"border-color 0.3s"}}/>
           <span style={{fontSize:9,color:SC.dim,minWidth:26,fontFamily:"'DM Mono',monospace"}}>{unit}</span>
         </div>
       </div>
-      <div style={{position:"relative",height:3,background:SC.border,borderRadius:2}}>
+      <div style={{position:"relative",height:4,background:SC.border,borderRadius:2}}
+        onMouseLeave={()=>setShowTip(false)}>
+        {/* Filled track */}
         <div style={{position:"absolute",left:0,top:0,height:"100%",width:`${pct}%`,
-          background:`linear-gradient(90deg,${SC.teal},${SC.amber})`,borderRadius:2,transition:"width 0.1s"}}/>
+          background:flash?`linear-gradient(90deg,${SC.teal},${SC.amber})`:`linear-gradient(90deg,${SC.teal},${SC.amber}99)`,
+          borderRadius:2,transition:"width 0.1s, background 0.3s"}}/>
+        {/* Thumb dot */}
+        <div style={{position:"absolute",top:"50%",left:`${pct}%`,transform:"translate(-50%,-50%)",
+          width:flash?10:7,height:flash?10:7,borderRadius:"50%",background:SC.amber,
+          boxShadow:flash?`0 0 6px ${SC.amber}`:"none",
+          transition:"width 0.2s,height 0.2s,box-shadow 0.2s",pointerEvents:"none"}}/>
+        {/* Tooltip on hover */}
+        {showTip&&(
+          <div style={{position:"absolute",bottom:10,left:`${pct}%`,transform:"translateX(-50%)",
+            background:SC.panel,border:`1px solid ${SC.amber}66`,borderRadius:4,
+            padding:"2px 6px",fontSize:8,color:SC.amber,fontFamily:"'DM Mono',monospace",
+            whiteSpace:"nowrap",pointerEvents:"none",zIndex:10,
+            boxShadow:"0 2px 8px rgba(0,0,0,0.4)"}}>
+            {value} {unit} · {pct.toFixed(0)}%
+          </div>
+        )}
         <input type="range" value={value} min={min} max={max} step={step}
-          onChange={evt=>onChange(parseFloat(evt.target.value))}
-          style={{position:"absolute",top:-7,left:0,width:"100%",opacity:0,cursor:"pointer",height:17}}/>
+          onChange={handleMove}
+          onMouseEnter={()=>setShowTip(true)}
+          onMouseMove={evt=>{
+            const rect=evt.currentTarget.getBoundingClientRect();
+            setTipX(((value-min)/(max-min))*rect.width);
+          }}
+          onMouseLeave={()=>setShowTip(false)}
+          style={{position:"absolute",top:-8,left:0,width:"100%",opacity:0,cursor:"pointer",height:20}}/>
       </div>
-      {note&&<div style={{fontSize:8,color:SC.dim,marginTop:2,fontFamily:"'DM Mono',monospace"}}>{note}</div>}
+      {note&&<div style={{fontSize:8,color:flash?`${SC.amber}99`:SC.dim,marginTop:2,
+        fontFamily:"'DM Mono',monospace",transition:"color 0.3s"}}>{note}</div>}
     </div>
   );
 }
@@ -2606,7 +2655,7 @@ function KPI({label,value,unit,sub,color}){
   const col=color||SC.amber;
   return(
     <div style={{background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:6,padding:"9px 12px",borderLeft:`2px solid ${col}`}}>
-      <div style={{fontSize:8,color:SC.muted,textTransform:"uppercase",letterSpacing:"0.12em",fontFamily:"'DM Mono',monospace",marginBottom:3}}>{label}</div>
+      <div style={{fontSize:8,color:SC.muted,textTransform:"uppercase",letterSpacing:"0.08em",fontFamily:"system-ui,sans-serif",marginBottom:3}}>{label}</div>
       <div style={{fontSize:18,fontWeight:700,color:col,fontFamily:"'DM Mono',monospace",lineHeight:1.1}}>
         {typeof value==="number"?value.toLocaleString():value}
         <span style={{fontSize:9,color:SC.muted,marginLeft:3,fontWeight:400}}>{unit}</span>
@@ -2619,7 +2668,7 @@ function KPI({label,value,unit,sub,color}){
 function Panel({title,children,ht}){
   return(
     <div style={{background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:8,padding:"12px 14px",height:ht||"auto"}}>
-      <div style={{fontSize:9,color:SC.muted,textTransform:"uppercase",letterSpacing:"0.12em",fontFamily:"'DM Mono',monospace",
+      <div style={{fontSize:9,color:SC.muted,textTransform:"uppercase",letterSpacing:"0.08em",fontFamily:"system-ui,sans-serif",
         marginBottom:8,borderBottom:`1px solid ${SC.border}`,paddingBottom:5}}>{title}</div>
       {children}
     </div>
@@ -2633,7 +2682,7 @@ function Acc({title,icon,children}){
       <button onClick={()=>setOpen(o=>!o)} style={{width:"100%",background:"transparent",border:"none",cursor:"pointer",
         display:"flex",alignItems:"center",gap:7,padding:"4px 0"}}>
         <span style={{fontSize:12}}>{icon}</span>
-        <span style={{fontSize:9,fontWeight:700,color:SC.muted,textTransform:"uppercase",letterSpacing:"0.1em",fontFamily:"'DM Mono',monospace"}}>{title}</span>
+        <span style={{fontSize:9,fontWeight:700,color:SC.muted,textTransform:"uppercase",letterSpacing:"0.06em",fontFamily:"system-ui,sans-serif"}}>{title}</span>
         <span style={{marginLeft:"auto",color:SC.dim,fontSize:10}}>{open?"▾":"▸"}</span>
       </button>
       {open&&<div style={{paddingTop:4}}>{children}</div>}
@@ -2642,7 +2691,15 @@ function Acc({title,icon,children}){
 }
 
 const TABS=["Overview","Mission","Wing & Aero","Propulsion","Battery","Performance","Stability","V-Tail","Convergence","Monte Carlo","Certification","Noise","Cost","Mission Builder","Weather & Atmos","OpenVSP","Community","Collaboration","V-n Diagram","Design Space","BEM Rotor","Reg Tracker","AI Assistant"];
-const TABI=["⬛","🛫","✈️","🔧","🔋","📈","⚖️","🦋","🔄","🎲","📋","🔊","💰","🗺️","🌤️","🛩️","🌐","👥","📐","🎯","🔬","📜","🤖"];
+const TABI=["📐","🛫","✈️","🔧","🔋","📈","⚖️","🦋","🔄","🎲","📋","🔊","💰","🗺️","🌤️","🛩️","🌐","👥","📐","🎯","🔬","📜","🤖"];
+// Tab groups: each group has a label, color, and list of tab indices
+const TAB_GROUPS=[
+  {label:"Design",    color:"#f59e0b", tabs:[0,1,2,3,4,7]},
+  {label:"Physics",   color:"#3b82f6", tabs:[5,6,8,18,20]},
+  {label:"Analysis",  color:"#22c55e", tabs:[9,10,11,12,19]},
+  {label:"Simulation",color:"#a78bfa", tabs:[13,14,21,22]},
+  {label:"Tools",     color:"#06d6a0", tabs:[15,16,17]},
+];
 /* TTP is defined inside App() so it reads the current C theme */
 
 /* ═══════════════════════════════════
@@ -4879,9 +4936,16 @@ export default function App(){
     vtAR:2.5,
   });
   const[tab,setTab]=useState(0);
+  const[activeGroup,setActiveGroup]=useState(0);
+  const[showOverflow,setShowOverflow]=useState(false);
   const[user,setUser]=useState(()=>getSession());
   const[showAuthModal,setShowAuthModal]=useState(false);
   const[darkMode,setDarkMode]=useState(true);
+  const prevSRRef=useRef(null);
+  const[deltaMap,setDeltaMap]=useState({});
+  const[sidebarCollapsed,setSidebarCollapsed]=useState(false);
+  const[isRecalc,setIsRecalc]=useState(false);
+  const recalcTimer=useRef(null);
   const[showPdfBranding,setShowPdfBranding]=useState(false);
   const[pdfBranding,setPdfBranding]=useState({
     authorName:"", university:"Wright State University",
@@ -5063,6 +5127,75 @@ export default function App(){
   };
 
   const SR=useMemo(()=>{try{return runSizing({...params,customAirfoil:customAFData});}catch{return null;}},[params,customAFData]);
+
+  // Recalculating badge — flash for 400ms after any param change
+  useEffect(()=>{
+    setIsRecalc(true);
+    if(recalcTimer.current) clearTimeout(recalcTimer.current);
+    recalcTimer.current=setTimeout(()=>setIsRecalc(false),400);
+    return()=>{if(recalcTimer.current)clearTimeout(recalcTimer.current);};
+  },[params]);
+
+  // Keyboard shortcuts
+  useEffect(()=>{
+    const handler=evt=>{
+      if(evt.ctrlKey||evt.metaKey){
+        if(evt.key==="s"){ // Ctrl+S — Save design
+          evt.preventDefault();
+          if(SR&&user){
+            const html=generateReport(params,SR,{});
+            const nm=`Design — MTOW ${SR.MTOW}kg · ${new Date().toLocaleDateString()}`;
+            saveDesign(user.id,{name:nm,params,results:{MTOW:SR.MTOW,Etot:SR.Etot},pdfHtml:html});
+            addNotif(user.id,{title:"Design Saved",body:nm,type:"success"});
+          }
+        } else if(evt.key==="e"){ // Ctrl+E — Export CSV
+          evt.preventDefault();
+          if(SR) exportCSV();
+        } else if(evt.key==="r"){ // Ctrl+R — Reset (prevent browser refresh)
+          evt.preventDefault();
+          setParams({payload:455,range:250,vCruise:67,cruiseAlt:1000,reserveRange:60,hoverHeight:15.24,
+            LD:14,AR:9,eOsw:0.85,clDesign:0.55,taper:0.45,tc:0.15,nPropHover:6,propDiam:3.0,twRatio:1.3,
+            convTolExp:-6,etaHov:0.70,etaSys:0.80,rateOfClimb:5.08,climbAngle:5,sedCell:300,etaBat:0.90,
+            socMin:0.19,ewf:0.50,fusLen:7.2,fusDiam:1.65,vtGamma:45,vtCh:0.45,vtCv:0.032,vtAR:2.5});
+        }
+      }
+      if(evt.key==="ArrowRight"&&evt.target.tagName!=="INPUT"){
+        const grp=TAB_GROUPS[activeGroup];
+        const idx=grp.tabs.indexOf(tab);
+        if(idx<grp.tabs.length-1) setTab(grp.tabs[idx+1]);
+      }
+      if(evt.key==="ArrowLeft"&&evt.target.tagName!=="INPUT"){
+        const grp=TAB_GROUPS[activeGroup];
+        const idx=grp.tabs.indexOf(tab);
+        if(idx>0) setTab(grp.tabs[idx-1]);
+      }
+    };
+    window.addEventListener("keydown",handler);
+    return()=>window.removeEventListener("keydown",handler);
+  },[SR,user,params,tab,activeGroup]);
+
+  // Track deltas for KPI header — show what changed after each slider move
+  useEffect(()=>{
+    if(!SR) return;
+    const prev=prevSRRef.current;
+    if(prev){
+      const dm={};
+      const keys=["MTOW","Etot","Phov","LDact","SM_vt"];
+      keys.forEach(k=>{
+        if(prev[k]!=null&&SR[k]!=null){
+          const d=SR[k]-prev[k];
+          if(Math.abs(d)>0.001) dm[k]=d;
+        }
+      });
+      if(Object.keys(dm).length>0){
+        setDeltaMap(dm);
+        const tid=setTimeout(()=>setDeltaMap({}),2500);
+        prevSRRef.current=SR;
+        return()=>clearTimeout(tid);
+      }
+    }
+    prevSRRef.current=SR;
+  },[SR]);
   /* ── Mission Builder — compute custom mission ──
      BUG FIX: wrapped in useCallback so useEffect dependency is stable.
      Auto-triggers whenever customPhases or SR changes — no manual "Compute" needed. */
@@ -5350,6 +5483,18 @@ export default function App(){
         .recharts-cartesian-grid line{stroke:${SC.border} !important}
         span,div,td,th{color:inherit}
         @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}
+        /* ── Font hierarchy:
+           DM Mono  → numeric values, equations, code, unit labels, status badges
+           System   → panel headings, section titles, sidebar labels, descriptive text
+           Override monospace on headings/labels with .lbl class ── */
+        .lbl{font-family:system-ui,-apple-system,sans-serif !important}
+        .acc-title{font-family:system-ui,-apple-system,sans-serif !important;letter-spacing:0 !important}
+        .panel-title{font-family:system-ui,-apple-system,sans-serif !important;letter-spacing:0.01em !important}
+        .tab-label{font-family:system-ui,-apple-system,sans-serif !important}
+        /* Slider label — the descriptive name above the track */
+        .slider-label{font-family:system-ui,-apple-system,sans-serif !important;font-size:11px}
+        /* Tab group category pill */
+        .tab-group-pill{font-family:system-ui,-apple-system,sans-serif !important}
       `}</style>
 
       {/* PDF BRANDING POPUP */}
@@ -5414,26 +5559,48 @@ export default function App(){
           <div style={{width:6,height:6,borderRadius:"50%",background:stCol,boxShadow:`0 0 8px ${stCol}`}}/>
           <span style={{fontSize:9,color:stCol,fontFamily:"'DM Mono',monospace",fontWeight:700,letterSpacing:"0.08em"}}>{stTxt}</span>
         </div>
+        {isRecalc&&(
+          <div style={{display:"flex",alignItems:"center",gap:5,padding:"3px 9px",
+            background:`${SC.amber}15`,border:`1px solid ${SC.amber}44`,borderRadius:4,
+            animation:"pulse 0.4s ease-in-out"}}>
+            <div style={{width:5,height:5,borderRadius:"50%",background:SC.amber,
+              animation:"pulse 0.6s ease-in-out infinite"}}/>
+            <span style={{fontSize:8,color:SC.amber,fontFamily:"'DM Mono',monospace",
+              letterSpacing:"0.1em"}}>RECALCULATING…</span>
+          </div>
+        )}
         {SR&&(
           <div style={{display:"flex",gap:14,marginLeft:6,flexWrap:"wrap"}}>
-            {[[" MTOW",SR.MTOW,"kg",SR.MTOW<4000?SC.green:SR.MTOW<5000?SC.amber:SC.red],
-              ["E_total",SR.Etot,"kWh",SC.teal],["P_hover",SR.Phov,"kW",SC.blue],
-              ["  L/D",SR.LDact,"",SR.LDact>12?SC.green:SC.amber],
-              [" SM",(SR.SM_vt*100).toFixed(1)+"%","",SR.SM_vt>0.05&&SR.SM_vt<0.25?SC.green:SC.red]
-            ].map(([l,v,u,col])=>(
-              <div key={l} style={{textAlign:"center"}}>
-                <div style={{fontSize:7,color:SC.muted,fontFamily:"'DM Mono',monospace",letterSpacing:"0.08em"}}>{l}</div>
-                <div style={{fontSize:13,fontWeight:700,color:col,fontFamily:"'DM Mono',monospace",lineHeight:1.1}}>
-                  {typeof v==="number"?v.toLocaleString():v}<span style={{fontSize:8,color:SC.dim,marginLeft:2}}>{u}</span>
+            {[[" MTOW","MTOW",SR.MTOW,"kg",SR.MTOW<4000?SC.green:SR.MTOW<5000?SC.amber:SC.red,1],
+              ["E_total","Etot",SR.Etot,"kWh",SC.teal,2],["P_hover","Phov",SR.Phov,"kW",SC.blue,1],
+              ["  L/D","LDact",SR.LDact,"",SR.LDact>12?SC.green:SC.amber,1],
+              [" SM","SM_vt",(SR.SM_vt*100).toFixed(1)+"%","",SR.SM_vt>0.05&&SR.SM_vt<0.25?SC.green:SC.red,null]
+            ].map(([l,dkey,v,u,col,dp])=>{
+              const d=deltaMap[dkey];
+              const isNum=typeof v==="number";
+              const dispVal=isNum?v.toLocaleString():v;
+              return(
+                <div key={l} style={{textAlign:"center",position:"relative"}}>
+                  <div style={{fontSize:7,color:SC.muted,fontFamily:"'DM Mono',monospace",letterSpacing:"0.08em"}}>{l}</div>
+                  <div style={{fontSize:13,fontWeight:700,color:col,fontFamily:"'DM Mono',monospace",lineHeight:1.1}}>
+                    {dispVal}<span style={{fontSize:8,color:SC.dim,marginLeft:2}}>{u}</span>
+                  </div>
+                  {d!=null&&(
+                    <div style={{position:"absolute",top:-10,right:-4,fontSize:8,fontFamily:"'DM Mono',monospace",
+                      color:d>0?"#f87171":"#34d399",fontWeight:700,whiteSpace:"nowrap",
+                      background:SC.panel,borderRadius:3,padding:"0 3px",border:`1px solid ${d>0?"#f8717155":"#34d39955"}`}}>
+                      {d>0?"+":""}{dp!=null?d.toFixed(dp):(d*100).toFixed(1)+"%"}
+                    </div>
+                  )}
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 
-        {/* Action buttons */}
-        <div style={{display:"flex",gap:6,marginLeft:"auto",alignItems:"center",flexWrap:"wrap"}}>
-          {/* Dark/Light toggle */}
+        {/* Action buttons — primary visible, secondary behind ••• */}
+        <div style={{display:"flex",gap:6,marginLeft:"auto",alignItems:"center",position:"relative"}}>
+          {/* Dark/Light toggle — always visible, purely iconic */}
           <button onClick={()=>setDarkMode(d=>!d)} type="button"
             title={darkMode?"Switch to Light Mode":"Switch to Dark Mode"}
             style={{padding:"5px 10px",background:"transparent",
@@ -5442,59 +5609,7 @@ export default function App(){
             {darkMode?"☀️":"🌙"}
           </button>
 
-          {/* Reset */}
-          <button onClick={()=>setParams({payload:455,range:250,vCruise:67,cruiseAlt:1000,reserveRange:60,hoverHeight:15.24,
-            LD:14,AR:9,eOsw:0.85,clDesign:0.55,taper:0.45,tc:0.15,nPropHover:6,propDiam:3.0,twRatio:1.3,convTolExp:-6,
-            etaHov:0.70,etaSys:0.80,rateOfClimb:5.08,climbAngle:5,sedCell:300,etaBat:0.90,socMin:0.19,ewf:0.50,
-            fusLen:7.2,fusDiam:1.65,vtGamma:45,vtCh:0.45,vtCv:0.032,vtAR:2.5})}
-            style={{padding:"5px 12px",background:"transparent",border:`1px solid ${SC.border}`,
-              borderRadius:4,color:SC.muted,fontSize:9,cursor:"pointer",fontFamily:"'DM Mono',monospace"}}>
-            ↺ RESET
-          </button>
-
-          {/* CSV Export */}
-          {SR&&(
-            <button onClick={exportCSV} type="button"
-              style={{padding:"5px 12px",background:`linear-gradient(135deg,#14532d,#166534)`,
-                border:`1px solid #22c55e`,borderRadius:4,color:"#86efac",fontSize:9,
-                cursor:"pointer",fontFamily:"'DM Mono',monospace",fontWeight:700}}>
-              📊 CSV
-            </button>
-          )}
-
-          {/* PDF Branding settings */}
-          {SR&&(
-            <button onClick={()=>setShowPdfBranding(true)} type="button"
-              style={{padding:"5px 12px",background:"transparent",
-                border:`1px solid ${SC.border}`,borderRadius:4,
-                color:SC.muted,fontSize:9,cursor:"pointer",fontFamily:"'DM Mono',monospace"}}>
-              🎨 BRAND PDF
-            </button>
-          )}
-
-          {/* PDF Report */}
-          {SR&&(
-            <AuthGate user={user} onAuth={handleAuth}>
-              <button onClick={()=>{
-                  const html=generateReport(params,SR,pdfBranding);
-                  const w=window.open("","_blank");
-                  w.document.write(html);
-                  w.document.close();
-                  if(user){
-                    addNotif(user.id,{title:"PDF Report Generated",body:`Design report for MTOW=${SR.MTOW} kg exported.`,type:"success"});
-                    addReport(user.id,{name:`Report — MTOW ${SR.MTOW}kg · ${new Date().toLocaleDateString()}`,params:p,results:{MTOW:SR.MTOW,Etot:SR.Etot,Phov:SR.Phov,LDact:SR.LDact,SM:SR.SM},pdfHtml:html});
-                  }
-                }}
-                style={{padding:"5px 14px",background:"linear-gradient(135deg,#1e3a5f,#1e40af)",
-                  border:"1px solid #3b82f6",borderRadius:4,color:"#93c5fd",fontSize:9,cursor:"pointer",
-                  fontFamily:"'DM Mono',monospace",fontWeight:700,letterSpacing:"0.05em",
-                  boxShadow:"0 0 12px #3b82f620",display:"flex",alignItems:"center",gap:5}}>
-                {!user&&<span title="Sign in required" style={{fontSize:10}}>🔒</span>}⬇ PDF REPORT
-              </button>
-            </AuthGate>
-          )}
-
-          {/* Save Design */}
+          {/* PRIMARY: Save Design */}
           {SR&&(
             <AuthGate user={user} onAuth={handleAuth}>
               <button onClick={()=>{
@@ -5504,17 +5619,87 @@ export default function App(){
                   saveDesign(user.id,{name:nm,params:params,results:{MTOW:SR.MTOW,Etot:SR.Etot,Phov:SR.Phov,LDact:SR.LDact,SM:SR.SM},pdfHtml:html});
                   addNotif(user.id,{title:"Design Saved",body:`"${nm}" saved to My Designs.`,type:"success"});
                 }}
-                style={{padding:"5px 14px",background:"linear-gradient(135deg,#0f2a0f,#14532d)",
-                  border:"1px solid #22c55e",borderRadius:4,color:"#86efac",fontSize:9,cursor:"pointer",
-                  fontFamily:"'DM Mono',monospace",fontWeight:700,letterSpacing:"0.05em",
-                  display:"flex",alignItems:"center",gap:5}}>
-                {!user&&<span style={{fontSize:10}}>🔒</span>}💾 SAVE DESIGN
+                style={{padding:"6px 16px",background:"linear-gradient(135deg,#0f2a0f,#14532d)",
+                  border:"1px solid #22c55e",borderRadius:4,color:"#86efac",fontSize:10,cursor:"pointer",
+                  fontFamily:"system-ui,sans-serif",fontWeight:700,
+                  display:"flex",alignItems:"center",gap:5,boxShadow:"0 0 10px #22c55e22"}}>
+                {!user&&<span style={{fontSize:10}}>🔒</span>}💾 Save design
               </button>
             </AuthGate>
           )}
 
-          {/* Share Design — community leaderboard */}
-          {SR&&<ShareDesignButton user={user} params={params} results={SR} C={SC}/>}
+          {/* SECONDARY: overflow ••• menu */}
+          <div style={{position:"relative"}}>
+            <button type="button" onClick={()=>setShowOverflow(v=>!v)}
+              style={{padding:"6px 10px",background:"transparent",
+                border:`1px solid ${SC.border}`,borderRadius:4,
+                color:SC.muted,fontSize:14,cursor:"pointer",lineHeight:1,
+                fontFamily:"system-ui,sans-serif"}}>
+              •••
+            </button>
+            {showOverflow&&(
+              <div style={{position:"absolute",top:"calc(100% + 6px)",right:0,zIndex:200,
+                background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:8,
+                padding:"6px 0",minWidth:190,boxShadow:"0 8px 32px rgba(0,0,0,0.5)"}}
+                onMouseLeave={()=>setShowOverflow(false)}>
+                {/* Export CSV */}
+                {SR&&(
+                  <button onClick={()=>{exportCSV();setShowOverflow(false);}} type="button"
+                    style={{width:"100%",padding:"8px 16px",background:"transparent",border:"none",
+                      cursor:"pointer",textAlign:"left",fontSize:11,color:SC.text,
+                      fontFamily:"system-ui,sans-serif",display:"flex",alignItems:"center",gap:8}}>
+                    📊 Export CSV
+                  </button>
+                )}
+                {/* PDF Report */}
+                {SR&&(
+                  <AuthGate user={user} onAuth={handleAuth}>
+                    <button onClick={()=>{
+                        const html=generateReport(params,SR,pdfBranding);
+                        const w=window.open("","_blank");
+                        w.document.write(html);w.document.close();
+                        if(user){
+                          addNotif(user.id,{title:"PDF Report Generated",body:`Design report for MTOW=${SR.MTOW} kg exported.`,type:"success"});
+                          addReport(user.id,{name:`Report — MTOW ${SR.MTOW}kg · ${new Date().toLocaleDateString()}`,params,results:{MTOW:SR.MTOW,Etot:SR.Etot,Phov:SR.Phov,LDact:SR.LDact,SM:SR.SM},pdfHtml:html});
+                        }
+                        setShowOverflow(false);
+                      }}
+                      style={{width:"100%",padding:"8px 16px",background:"transparent",border:"none",
+                        cursor:"pointer",textAlign:"left",fontSize:11,color:SC.text,
+                        fontFamily:"system-ui,sans-serif",display:"flex",alignItems:"center",gap:8}}>
+                      {!user&&<span style={{fontSize:10}}>🔒</span>}⬇ PDF Report
+                    </button>
+                  </AuthGate>
+                )}
+                {/* Brand PDF */}
+                {SR&&(
+                  <button onClick={()=>{setShowPdfBranding(true);setShowOverflow(false);}} type="button"
+                    style={{width:"100%",padding:"8px 16px",background:"transparent",border:"none",
+                      cursor:"pointer",textAlign:"left",fontSize:11,color:SC.text,
+                      fontFamily:"system-ui,sans-serif",display:"flex",alignItems:"center",gap:8}}>
+                    🎨 Brand PDF
+                  </button>
+                )}
+                {/* Share Design */}
+                {SR&&(
+                  <div style={{padding:"4px 8px"}}>
+                    <ShareDesignButton user={user} params={params} results={SR} C={SC}/>
+                  </div>
+                )}
+                <div style={{height:1,background:SC.border,margin:"4px 0"}}/>
+                {/* Reset */}
+                <button onClick={()=>{setParams({payload:455,range:250,vCruise:67,cruiseAlt:1000,reserveRange:60,hoverHeight:15.24,
+                    LD:14,AR:9,eOsw:0.85,clDesign:0.55,taper:0.45,tc:0.15,nPropHover:6,propDiam:3.0,twRatio:1.3,convTolExp:-6,
+                    etaHov:0.70,etaSys:0.80,rateOfClimb:5.08,climbAngle:5,sedCell:300,etaBat:0.90,socMin:0.19,ewf:0.50,
+                    fusLen:7.2,fusDiam:1.65,vtGamma:45,vtCh:0.45,vtCv:0.032,vtAR:2.5});setShowOverflow(false);}}
+                  style={{width:"100%",padding:"8px 16px",background:"transparent",border:"none",
+                    cursor:"pointer",textAlign:"left",fontSize:11,color:SC.muted,
+                    fontFamily:"system-ui,sans-serif",display:"flex",alignItems:"center",gap:8}}>
+                  ↺ Reset to defaults
+                </button>
+              </div>
+            )}
+          </div>
 
           <UserHeaderBar user={user} onSignOut={handleSignOut} onSignIn={()=>setShowAuthModal(true)} onUpdate={handleUpdate}/>
           {showAuthModal&&<AuthModal onClose={()=>setShowAuthModal(false)} onAuth={handleAuth}/>}
@@ -5522,9 +5707,67 @@ export default function App(){
       </div>
 
       <div style={{display:"flex",flex:1,overflow:"hidden"}}>
-        {/* SIDEBAR */}
-        <div style={{width:262,minWidth:262,background:SC.panel,borderRight:`1px solid ${SC.border}`,
-          overflowY:"auto",padding:"10px 13px 24px"}}>
+        {/* SIDEBAR — collapsible */}
+        <div style={{
+          width:sidebarCollapsed?40:262,
+          minWidth:sidebarCollapsed?40:262,
+          background:SC.panel,
+          borderRight:`1px solid ${SC.border}`,
+          overflowY:"auto",
+          overflowX:"hidden",
+          padding:sidebarCollapsed?"8px 6px":"10px 13px 24px",
+          position:"relative",
+          transition:"width 0.2s ease, min-width 0.2s ease",
+          flexShrink:0,
+        }}>
+          {/* Collapse toggle arrow */}
+          <button type="button" onClick={()=>setSidebarCollapsed(v=>!v)}
+            title={sidebarCollapsed?"Expand sidebar":"Collapse sidebar"}
+            style={{position:"sticky",top:0,zIndex:10,
+              display:"flex",alignItems:"center",justifyContent:"center",
+              width:"100%",height:28,marginBottom:sidebarCollapsed?8:6,
+              background:SC.bg,border:`1px solid ${SC.border}`,
+              borderRadius:5,cursor:"pointer",color:SC.muted,fontSize:13,
+              transition:"all 0.15s"}}>
+            {sidebarCollapsed?"›":"‹"}
+          </button>
+          {/* Collapsed: show icon-only param summary */}
+          {sidebarCollapsed&&SR&&(
+            <div style={{display:"flex",flexDirection:"column",gap:6,alignItems:"center"}}>
+              {[
+                ["⚖️",(SR.MTOW/1000).toFixed(1)+"t",SR.MTOW<4000?SC.green:SC.amber],
+                ["🔋",SR.Etot+"kWh",SC.teal],
+                ["✈️",SR.LDact,SR.LDact>12?SC.green:SC.amber],
+                ["⚡",SR.Phov+"kW",SC.blue],
+              ].map(([icon,val,col])=>(
+                <div key={icon} title={val}
+                  style={{display:"flex",flexDirection:"column",alignItems:"center",gap:1}}>
+                  <span style={{fontSize:13}}>{icon}</span>
+                  <span style={{fontSize:7,color:col,fontFamily:"'DM Mono',monospace",
+                    fontWeight:700,letterSpacing:"0.02em"}}>{val}</span>
+                </div>
+              ))}
+              <div style={{height:1,width:"80%",background:SC.border,margin:"4px 0"}}/>
+              {/* Sticky mini checks */}
+              {SR&&[
+                [SR.TipMach<0.70,"M","Tip Mach"],
+                [SR.SM_vt>0.05&&SR.SM_vt<0.25,"SM","Stat Margin"],
+                [SR.feasible,"✓","Feasible"],
+              ].map(([ok,lbl,tip])=>(
+                <div key={lbl} title={`${tip}: ${ok?"✓":"✗"}`}
+                  style={{width:24,height:24,borderRadius:"50%",
+                    background:ok?`${SC.green}22`:`${SC.red}22`,
+                    border:`1px solid ${ok?SC.green:SC.red}`,
+                    display:"flex",alignItems:"center",justifyContent:"center",
+                    fontSize:8,color:ok?SC.green:SC.red,fontWeight:700,
+                    fontFamily:"'DM Mono',monospace"}}>
+                  {ok?"✓":"✗"}
+                </div>
+              ))}
+            </div>
+          )}
+          {/* Full sidebar content — hidden when collapsed */}
+          <div style={{display:sidebarCollapsed?"none":"block"}}>
           <Acc title="Mission Requirements" icon="🛫">
             <Slider label="Payload" unit="kg" value={params.payload} min={100} max={900} step={5} onChange={set("payload")} note="Passengers + cargo"/>
             <Slider label="Range" unit="km" value={params.range} min={50} max={500} step={10} onChange={set("range")}/>
@@ -5586,19 +5829,84 @@ export default function App(){
           )}
         </div>
 
+            {/* ── Sticky design checks strip ── */}
+            {SR&&(
+              <div style={{position:"sticky",bottom:0,marginTop:16,marginLeft:-13,marginRight:-13,
+                padding:"8px 13px",background:SC.panel,
+                borderTop:`1px solid ${(()=>{
+                  const hasFail=[SR.TipMach<0.70,SR.SM_vt>0.05&&SR.SM_vt<0.25,SR.feasible,
+                    (SR.Crate_hov||0)<5,SR.converged!==false].some(v=>!v);
+                  return hasFail?SC.red:SC.green;
+                })()}`,
+                zIndex:5}}>
+                <div style={{fontSize:8,color:SC.muted,fontFamily:"system-ui,sans-serif",
+                  letterSpacing:"0.08em",marginBottom:5,textTransform:"uppercase"}}>Design Checks</div>
+                {[
+                  [SR.TipMach<0.70,`Tip Mach ${SR.TipMach?.toFixed(3)}`,"< 0.70"],
+                  [SR.SM_vt>0.05&&SR.SM_vt<0.25,`SM ${(SR.SM_vt*100)?.toFixed(1)}%`,"5–25%"],
+                  [SR.feasible||false,"Feasibility","✓"],
+                  [(SR.Crate_hov||0)<5,`C-rate ${(SR.Crate_hov||0)?.toFixed(1)}C`,"< 5C"],
+                  [SR.converged!==false,"Convergence",SR.converged!==false?"✓":"✗"],
+                ].map(([ok,label,target])=>(
+                  <div key={label} style={{display:"flex",alignItems:"center",gap:5,
+                    marginBottom:3,padding:"2px 4px",borderRadius:3,
+                    background:ok?`${SC.green}0a`:`${SC.red}0a`}}>
+                    <span style={{fontSize:9,flexShrink:0}}>{ok?"✓":"✗"}</span>
+                    <span style={{fontSize:8,color:ok?SC.green:SC.red,flex:1,
+                      fontFamily:"'DM Mono',monospace",fontWeight:ok?400:600}}>{label}</span>
+                    <span style={{fontSize:7,color:SC.dim,fontFamily:"'DM Mono',monospace"}}>{target}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>{/* end full sidebar content */}
+        </div>{/* end sidebar */}
+
         {/* MAIN */}
         <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
-          {/* Tabs */}
-          <div style={{display:"flex",background:SC.panel,borderBottom:`1px solid ${SC.border}`,overflowX:"auto",flexShrink:0}}>
-            {TABS.map((tabLabel,i)=>(
-              <button key={i} onClick={()=>setTab(i)}
-                style={{padding:"8px 14px",background:"transparent",border:"none",cursor:"pointer",
-                  borderBottom:i===tab?`2px solid ${SC.amber}`:"2px solid transparent",
-                  color:i===tab?SC.text:SC.muted,fontSize:10,fontFamily:"'DM Mono',monospace",
-                  letterSpacing:"0.05em",whiteSpace:"nowrap",transition:"color 0.15s"}}>
-                {TABI[i]} {tabLabel}
-              </button>
-            ))}
+          {/* Tabs — two-row: category pills on top, sub-tabs below */}
+          <div style={{flexShrink:0,background:SC.panel,borderBottom:`1px solid ${SC.border}`}}>
+            {/* Row 1 — category pills */}
+            <div style={{display:"flex",gap:4,padding:"6px 10px 0",overflowX:"auto"}}>
+              {TAB_GROUPS.map((grp,gi)=>{
+                const isActive=gi===activeGroup;
+                return(
+                  <button key={gi} type="button"
+                    onClick={()=>{
+                      setActiveGroup(gi);
+                      // jump to first tab in group if current tab isn't in this group
+                      if(!grp.tabs.includes(tab)) setTab(grp.tabs[0]);
+                    }}
+                    style={{padding:"4px 14px",border:`1px solid ${isActive?grp.color:SC.border}`,
+                      borderBottom:"none",borderRadius:"5px 5px 0 0",cursor:"pointer",
+                      background:isActive?`${grp.color}18`:"transparent",
+                      color:isActive?grp.color:SC.muted,
+                      fontSize:10,fontWeight:isActive?700:400,
+                      whiteSpace:"nowrap",transition:"all 0.15s",
+                      fontFamily:"system-ui,sans-serif",letterSpacing:"0.01em"}}>
+                    {grp.label}
+                  </button>
+                );
+              })}
+            </div>
+            {/* Row 2 — sub-tabs for active group */}
+            <div style={{display:"flex",overflowX:"auto",padding:"0 6px",
+              borderTop:`1px solid ${SC.border}`,background:SC.bg}}>
+              {TAB_GROUPS[activeGroup].tabs.map(i=>{
+                const grpColor=TAB_GROUPS[activeGroup].color;
+                const isActive=i===tab;
+                return(
+                  <button key={i} type="button" onClick={()=>setTab(i)}
+                    style={{padding:"6px 13px",background:"transparent",border:"none",cursor:"pointer",
+                      borderBottom:isActive?`2px solid ${grpColor}`:"2px solid transparent",
+                      color:isActive?SC.text:SC.muted,
+                      fontSize:10,fontFamily:"system-ui,sans-serif",
+                      whiteSpace:"nowrap",transition:"color 0.15s",letterSpacing:"0.01em"}}>
+                    {TABI[i]} {TABS[i]}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           <div style={{flex:1,overflowY:"auto",padding:"14px 18px 28px",background:SC.bg}}>
