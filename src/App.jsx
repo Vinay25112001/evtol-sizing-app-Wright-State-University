@@ -4964,6 +4964,7 @@ export default function App(){
   const[tab,setTab]=useState(0);
   const[activeGroup,setActiveGroup]=useState(0);
   const[showOverflow,setShowOverflow]=useState(false);
+  const[sidebarOpen,setSidebarOpen]=useState(()=>localStorage.getItem("sb")!=="0");
   const[user,setUser]=useState(()=>getSession());
   const[showAuthModal,setShowAuthModal]=useState(false);
   const[darkMode,setDarkMode]=useState(true);
@@ -5752,9 +5753,88 @@ export default function App(){
       </div>
 
       <div style={{display:"flex",flex:1,overflow:"hidden"}}>
-        {/* SIDEBAR */}
-        <div style={{width:262,minWidth:262,background:SC.panel,borderRight:`1px solid ${SC.border}`,
-          overflowY:"auto",padding:"10px 13px 24px"}}>
+        {/* SIDEBAR — collapsible */}
+        <div style={{
+          width: sidebarOpen ? 262 : 32,
+          minWidth: sidebarOpen ? 262 : 32,
+          flexShrink: 0,
+          background: SC.panel,
+          borderRight: `1px solid ${SC.border}`,
+          overflowY: sidebarOpen ? "auto" : "hidden",
+          overflowX: "hidden",
+          padding: sidebarOpen ? "10px 13px 24px" : "10px 0 24px",
+          transition: "width 0.22s cubic-bezier(.4,0,.2,1), min-width 0.22s cubic-bezier(.4,0,.2,1)",
+          position: "relative",
+        }}>
+          {/* Toggle arrow — always visible */}
+          <button
+            type="button"
+            onClick={()=>setSidebarOpen(v=>{ const n=!v; localStorage.setItem("sb",n?"1":"0"); return n; })}
+            title={sidebarOpen?"Collapse sidebar":"Expand sidebar"}
+            style={{
+              position: "sticky",
+              top: 0,
+              zIndex: 20,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: sidebarOpen ? "100%" : 32,
+              height: 28,
+              marginBottom: 6,
+              background: SC.bg,
+              border: `1px solid ${SC.border}`,
+              borderRadius: 5,
+              cursor: "pointer",
+              color: SC.muted,
+              fontSize: 14,
+              lineHeight: 1,
+              transition: "background 0.15s",
+            }}
+            onMouseEnter={e=>e.currentTarget.style.background=`${SC.amber}18`}
+            onMouseLeave={e=>e.currentTarget.style.background=SC.bg}
+          >
+            {sidebarOpen ? "‹" : "›"}
+          </button>
+
+          {/* Collapsed state — show mini KPI icons */}
+          {!sidebarOpen && SR && (
+            <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:8,paddingTop:4}}>
+              {[
+                {icon:"⚖️", val:`${(SR.MTOW/1000).toFixed(1)}t`, col:SR.MTOW<4000?SC.green:SC.amber, tip:"MTOW"},
+                {icon:"🔋", val:`${SR.Etot}kWh`, col:SC.teal, tip:"Energy"},
+                {icon:"✈️", val:`${SR.LDact}`, col:SR.LDact>12?SC.green:SC.amber, tip:"L/D"},
+                {icon:"⚡", val:`${SR.Phov}kW`, col:SC.blue, tip:"Hover Power"},
+              ].map(({icon,val,col,tip})=>(
+                <div key={tip} title={`${tip}: ${val}`}
+                  style={{display:"flex",flexDirection:"column",alignItems:"center",gap:1,cursor:"default"}}>
+                  <span style={{fontSize:14,lineHeight:1}}>{icon}</span>
+                  <span style={{fontSize:6,color:col,fontFamily:"'DM Mono',monospace",
+                    fontWeight:700,lineHeight:1,textAlign:"center",maxWidth:28,
+                    overflow:"hidden",whiteSpace:"nowrap"}}>{val}</span>
+                </div>
+              ))}
+              <div style={{width:20,height:1,background:SC.border,margin:"2px 0"}}/>
+              {/* Mini check dots */}
+              {SR.checks?.slice(0,4).map((chk,i)=>(
+                <div key={i} title={chk.label+" — "+chk.val}
+                  style={{width:14,height:14,borderRadius:"50%",
+                    background:chk.ok?`${SC.green}33`:`${SC.red}33`,
+                    border:`1px solid ${chk.ok?SC.green:SC.red}`,
+                    display:"flex",alignItems:"center",justifyContent:"center",
+                    fontSize:7,color:chk.ok?SC.green:SC.red,cursor:"default"}}>
+                  {chk.ok?"✓":"✗"}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Full sidebar content — hidden when collapsed via CSS (keeps DOM for perf) */}
+          <div style={{
+            opacity: sidebarOpen ? 1 : 0,
+            pointerEvents: sidebarOpen ? "auto" : "none",
+            transition: "opacity 0.15s",
+            display: sidebarOpen ? "block" : "none",
+          }}>
           <Acc title="Mission Requirements" icon="🛫">
             <Slider label="Payload" unit="kg" value={params.payload} min={100} max={900} step={5} onChange={set("payload")} note="Passengers + cargo"/>
             <Slider label="Range" unit="km" value={params.range} min={50} max={500} step={10} onChange={set("range")}/>
@@ -5814,7 +5894,8 @@ export default function App(){
               ))}
             </div>
           )}
-        </div>
+          </div>{/* end full sidebar content */}
+        </div>{/* end sidebar */}
 
         {/* MAIN */}
         <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
