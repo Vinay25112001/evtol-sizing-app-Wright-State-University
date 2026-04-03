@@ -446,8 +446,8 @@ function runSizing(p) {
     const r=+Math.max(0,((Eavail-Eto-Eld)/Efl_design)*p.range).toFixed(1);
     const seg=pay>p.payload?"A":pay<p.payload?"B":"design";
     return{payload:+pay.toFixed(0),range:r,segment:seg};
-  }).reverse(); // payload high→low for left-to-right range increase
-  const rpFerryPoint={payload:0,range:ferryRange,segment:"ferry"};
+  }); // ascending: payload 0 → maxPayload (standard payload-range convention)
+  // ferry point is already rpData[0] (i=0 → pay=0)
 
   /* Aerodynamic polar — uses fitted kPolar for custom airfoils, Oswald for library */
   const k_polar=selAF.kPolar || 1/(Math.PI*p.AR*p.eOsw);
@@ -859,7 +859,7 @@ function runSizing(p) {
     SEDpack:+SEDpack.toFixed(1),Nseries,Npar,Ncells,PackV:+PackV.toFixed(0),PackAh:+PackAh.toFixed(1),
     PackkWh:+PackkWh.toFixed(3),CrateHov:+CrateHov.toFixed(2),CrateCr:+CrateCr.toFixed(2),Pheat:+Pheat.toFixed(1),
     Vstall:+Vstall.toFixed(2),VA:+VA.toFixed(2),VD:+VD.toFixed(2),
-    vnData,rpData,rpFerryPoint,ferryRange:+ferryRange.toFixed(1),maxPayloadRp:+maxPayload.toFixed(0),polarData,powerSteps,socSteps,velSteps,energySteps,convData,twSweepData,tolSweepData,weightBreak,dragComp,tPhases,
+    vnData,rpData,ferryRange:+ferryRange.toFixed(1),maxPayloadRp:+maxPayload.toFixed(0),polarData,powerSteps,socSteps,velSteps,energySteps,convData,twSweepData,tolSweepData,weightBreak,dragComp,tPhases,
     checks,feasible:checks.every(chk=>chk.ok),
     Trotor:+Trotor.toFixed(1),TW_hover:+TW_hover.toFixed(3),TW_cruise:+TW_cruise.toFixed(3),
     itersR1,itersR2,tol,r2Converged,
@@ -6827,7 +6827,7 @@ export default function App(){
 
                   <ResponsiveContainer width="100%" height={300}>
                     <ComposedChart
-                      data={[...SR.rpData, SR.rpFerryPoint]}
+                      data={SR.rpData}
                       margin={{top:10,right:40,left:10,bottom:30}}>
                       <defs>
                         <linearGradient id="rpGrad" x1="0" y1="0" x2="0" y2="1">
@@ -6870,14 +6870,13 @@ export default function App(){
                         dot={false}
                         name="Range (km)"
                         connectNulls/>
-                      {/* Design point dot */}
-                      <Scatter
-                        data={[{payload:params.payload,range:params.range}]}
-                        fill={SC.amber} r={6} name="Design point"/>
+                      {/* Design point dot — ReferenceDot doesn't break tooltip */}
+                      <ReferenceDot x={params.payload} y={params.range}
+                        r={7} fill={SC.amber} stroke={SC.panel} strokeWidth={2}
+                        label={{value:"◉",fill:SC.amber,fontSize:14,position:"top"}}/>
                       {/* Ferry range dot */}
-                      <Scatter
-                        data={[{payload:0,range:SR.ferryRange}]}
-                        fill={SC.teal} r={5} name="Ferry range"/>
+                      <ReferenceDot x={0} y={SR.ferryRange}
+                        r={6} fill={SC.teal} stroke={SC.panel} strokeWidth={2}/>
                     </ComposedChart>
                   </ResponsiveContainer>
 
