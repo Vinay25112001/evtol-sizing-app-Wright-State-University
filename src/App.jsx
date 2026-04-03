@@ -5814,30 +5814,14 @@ export default function App(){
             <Slider label="Fuselage Length" unit="m" value={params.fusLen} min={3.0} max={10.0} step={0.1} onChange={set("fusLen")} note="Affects drag, stability, tail arm"/>
             <Slider label="Fuselage Diameter" unit="m" value={params.fusDiam} min={0.8} max={2.5} step={0.05} onChange={set("fusDiam")} note={`Fineness ratio: ${(params.fusLen/params.fusDiam).toFixed(1)}`}/>
           </Acc>
-          {/* Design checks */}
-          {SR&&(
-            <div style={{marginTop:10,borderTop:`1px solid ${SC.border}`,paddingTop:10}}>
-              <div style={{fontSize:8,color:SC.muted,textTransform:"uppercase",letterSpacing:"0.1em",fontFamily:"'DM Mono',monospace",marginBottom:7}}>Design Checks</div>
-              {SR.checks.map((chkItem,i)=>(
-                <div key={i} style={{display:"flex",alignItems:"center",gap:5,padding:"3px 0",borderBottom:`1px solid #0f131a`}}>
-                  <span style={{fontSize:9}}>{chkItem.ok?"✅":"❌"}</span>
-                  <span style={{fontSize:8,color:chkItem.ok?SC.green:SC.red,flex:1,fontFamily:"'DM Mono',monospace"}}>{chkItem.label}</span>
-                  <span style={{fontSize:8,color:SC.muted,fontFamily:"'DM Mono',monospace"}}>{chkItem.val}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
             {/* ── Sticky design checks strip ── */}
-            {SR&&(
+            {SR&&(()=>{
+              const _checks=[SR.TipMach<0.70,SR.SM_vt>0.05&&SR.SM_vt<0.25,SR.feasible,(SR.Crate_hov||0)<5,SR.converged!==false];
+              const _stripCol=_checks.some(v=>!v)?SC.red:SC.green;
+              return(
               <div style={{position:"sticky",bottom:0,marginTop:16,marginLeft:-13,marginRight:-13,
                 padding:"8px 13px",background:SC.panel,
-                borderTop:`1px solid ${(()=>{
-                  const hasFail=[SR.TipMach<0.70,SR.SM_vt>0.05&&SR.SM_vt<0.25,SR.feasible,
-                    (SR.Crate_hov||0)<5,SR.converged!==false].some(v=>!v);
-                  return hasFail?SC.red:SC.green;
-                })()}`,
+                borderTop:`1px solid ${_stripCol}`,
                 zIndex:5}}>
                 <div style={{fontSize:8,color:SC.muted,fontFamily:"system-ui,sans-serif",
                   letterSpacing:"0.08em",marginBottom:5,textTransform:"uppercase"}}>Design Checks</div>
@@ -5858,7 +5842,7 @@ export default function App(){
                   </div>
                 ))}
               </div>
-            )}
+              );})()}
           </div>{/* end full sidebar content */}
         </div>{/* end sidebar */}
 
