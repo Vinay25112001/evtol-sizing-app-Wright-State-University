@@ -5976,32 +5976,36 @@ export default function App(){
                     📊 Export CSV
                   </button>
                 )}
-                {/* PDF Report */}
+                {/* PDF Report — no auth required */}
                 {SR&&(
-                  <AuthGate user={user} onAuth={handleAuth}>
-                    <button onClick={()=>{
+                  <button type="button" onClick={()=>{
+                      try{
                         const html=generateReport(params,SR,pdfBranding);
-                        // Use Blob URL — browsers never block this unlike window.open("","_blank")
                         const blob=new Blob([html],{type:"text/html;charset=utf-8"});
                         const url=URL.createObjectURL(blob);
-                        const a=document.createElement("a");
-                        a.href=url; a.target="_blank"; a.rel="noopener";
-                        document.body.appendChild(a); a.click();
-                        document.body.removeChild(a);
-                        // Clean up blob URL after tab opens
-                        setTimeout(()=>URL.revokeObjectURL(url), 10000);
+                        // Try opening in new tab first (auto-print triggers inside the HTML)
+                        const newTab=window.open(url,"_blank","noopener,noreferrer");
+                        if(!newTab){
+                          // Fallback: force direct file download if tab was blocked
+                          const a=document.createElement("a");
+                          a.href=url; a.download="eVTOL_Sizing_Report.html";
+                          document.body.appendChild(a); a.click(); document.body.removeChild(a);
+                        }
+                        setTimeout(()=>URL.revokeObjectURL(url),30000);
                         if(user){
-                          addNotif(user.id,{title:"PDF Report Generated",body:`Report opened — use Ctrl+P / Print to save as PDF.`,type:"success"});
+                          addNotif(user.id,{title:"PDF Report Opened",body:"Use Ctrl+P → Save as PDF to export.",type:"success"});
                           addReport(user.id,{name:`Report — MTOW ${SR.MTOW}kg · ${new Date().toLocaleDateString()}`,params,results:{MTOW:SR.MTOW,Etot:SR.Etot,Phov:SR.Phov,LDact:SR.LDact,SM:SR.SM},pdfHtml:html});
                         }
                         setShowOverflow(false);
-                      }}
-                      style={{width:"100%",padding:"8px 16px",background:"transparent",border:"none",
-                        cursor:"pointer",textAlign:"left",fontSize:11,color:SC.text,
-                        fontFamily:"system-ui,sans-serif",display:"flex",alignItems:"center",gap:8}}>
-                      {!user&&<span style={{fontSize:10}}>🔒</span>}⬇ PDF Report
-                    </button>
-                  </AuthGate>
+                      }catch(err){
+                        alert("Report generation failed: "+err.message);
+                      }
+                    }}
+                    style={{width:"100%",padding:"8px 16px",background:"transparent",border:"none",
+                      cursor:"pointer",textAlign:"left",fontSize:11,color:SC.text,
+                      fontFamily:"system-ui,sans-serif",display:"flex",alignItems:"center",gap:8}}>
+                    ⬇ PDF Report
+                  </button>
                 )}
                 {/* Brand PDF */}
                 {SR&&(
