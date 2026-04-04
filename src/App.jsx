@@ -842,6 +842,8 @@ function runSizing(p) {
 
   return {
     MTOW:+MTOW.toFixed(2),MTOW1:+MTOW1.toFixed(2),Wempty:+Wempty.toFixed(2),Wbat:+Wbat.toFixed(2),
+    WE:+(Etot*1000/((1-p.socMin)*(p.sedCell*(1-(p.cRateDerate??0.08)))*p.etaBat)).toFixed(2),
+    WP:+(Phov/(p.spBattery||1.0)).toFixed(2),
     Phov:+Phov.toFixed(2),Pcl:+Pcl.toFixed(2),Pcr:+Pcr.toFixed(2),Pdc:+Pdc.toFixed(2),Pres:+Pres.toFixed(2),
     tto:+tto.toFixed(0),tcl:+tcl.toFixed(0),tcr:+tcr.toFixed(0),tdc:+tdc.toFixed(0),tld:+tld.toFixed(0),tres:+tres.toFixed(0),
     Tend:+Tend.toFixed(0),
@@ -1597,7 +1599,7 @@ function generateReport(p, SR, branding={}) {
   const s3 = sec("weight","3. Weight & Energy Sizing (Iterative)",`
   <p>The MTOW is found by simultaneously converging the weight and energy fractions using a nested iterative scheme. The battery mass fraction is:</p>
   ${eq("f_{bat} = \\frac{g_0 \\cdot SR}{(L/D)\\,\\eta_{sys}\\,\\text{SED}_{cell}\\times 3600}","Battery mass fraction (range-energy method)")}
-  ${eq("W_{bat} = \\frac{E_{total}\\times 1000\\,(1+\\text{SoC}_{min})}{\\text{SED}_{cell}\\,\\eta_{bat}}","Battery mass from total mission energy")}
+  ${eq("W_E = \\frac{E_{total}\\times 1000}{(1-\\text{SoC}_{min})\\,\\text{SED}_{cell}\\,\\eta_{bat}},\\quad W_P = \\frac{P_{hov}}{SP_{bat}},\\quad W_{bat}=\\max(W_E,W_P)","Dual-constraint battery mass (energy limit + power limit)")}
   ${eq("\\text{MTOW} = m_{pay} + f_{EW}\\cdot\\text{MTOW} + W_{bat}","Weight closure equation (solved iteratively)")}
   ${table(["Quantity","Symbol","Value","Unit"],[
     row("MTOW (initial)","MTOW<sub>1</sub>",fmt(SR.MTOW1,1),"kg"),
@@ -1678,7 +1680,8 @@ function generateReport(p, SR, branding={}) {
 
   // ── 7. BATTERY ───────────────────────────────────────────────────────
   const s7 = sec("battery","7. Battery System Sizing",`
-  ${eq("W_{bat} = \\frac{E_{total}\\times 1000\\,(1+\\text{SoC}_{min})}{\\text{SED}_{cell}\\,\\eta_{bat}} = \\frac{"+fmt(SR.Etot,3)+"\\times 1000\\times(1+"+p.socMin+")}{"+p.sedCell+"\\times"+p.etaBat+"} = "+fmt(SR.Wbat,1)+"\\text{ kg}","Battery mass")}
+  ${eq("W_E = \\frac{E_{total}\\times 1000}{(1-\\text{SoC}_{min})\\,\\text{SED}_{cell}\\,\\eta_{bat}} = \\frac{"+fmt(SR.Etot,3)+"\\times 1000}{(1-"+p.socMin+")\\times "+p.sedCell+"\\times "+p.etaBat+"} = "+fmt(SR.WE||SR.Wbat,1)+"\\text{ kg}","Energy-limited battery mass")}
+  ${eq("W_P = \\frac{P_{hov}}{SP_{bat}} = \\frac{"+fmt(SR.Phov,1)+"}{"+((p.spBattery)||1.0)+"} = "+fmt(SR.WP||SR.Phov/(p.spBattery||1.0),1)+"\\text{ kg},\\quad W_{bat} = \\max(W_E,W_P) = "+fmt(SR.Wbat,1)+"\\text{ kg}","Power-limited battery mass and dual-constraint result")}
   ${eq("\\text{SED}_{pack} = \\frac{E_{total}}{W_{bat}} = "+fmt(SR.SEDpack,1)+"\\text{ Wh/kg}","Pack-level specific energy density")}
   ${eq("N_{series} = \\text{round}\\!\\left(\\frac{V_{pack}}{V_{cell}}\\right) = \\text{round}\\!\\left(\\frac{800}{3.6}\\right) = "+SR.Nseries,"Series cell count for 800V pack")}
   ${table(["Parameter","Symbol","Value","Unit"],[
@@ -1804,15 +1807,17 @@ function generateReport(p, SR, branding={}) {
   const RoCd=p.rateOfClimb, clAngd=p.climbAngle;
   const Vcld=RoCd/Math.sin(clAngd*Math.PI/180);
   const LDcld=p.LD*(1-(p.climbLDPenalty||0.13));
-  const desAngd=p.descentAngle||6;
-  const Vdcd=Math.min(RoCd/Math.sin(desAngd*Math.PI/180),p.vCruise);
-  const Vresd=0.76*p.vCruise;
+  // Match actual sizing: descent angle is L/D-derived (same as MATLAB)
+  const desAngd=Math.atan(1/p.LD)*180/Math.PI;
+  const Vdcd=RoCd/Math.sin(desAngd*Math.PI/180);   // no cap — matches sizing
+  const Vresd=0.70*p.vCruise;                        // 0.70 × Vcruise — matches sizing
   const hvtold=p.hoverHeight;
   const ClimbRd=(p.cruiseAlt-hvtold)/Math.tan(clAngd*Math.PI/180);
   const DescRd=(p.cruiseAlt-hvtold)/Math.tan(desAngd*Math.PI/180);
-  const reserveMinutesd=p.reserveMinutes||20;
-  const tres_sd=reserveMinutesd*60;
-  const reserveDistMd=Vresd*tres_sd;
+  // Distance-based reserve — matches sizing: Reserve_Range = 60 km, t_res = dist/Vres
+  const reserveRanged=(p.reserveRange||60)*1000;      // [m]
+  const tres_sd=reserveRanged/Vresd;                  // [s] — distance-based
+  const reserveDistMd=reserveRanged;
   const CruiseRanged=p.range*1000-ClimbRd-DescRd-reserveDistMd;
   const bfd=(g0d*p.range*1000)/(p.LD*p.etaSys*p.sedCell*3600);
   const lambdaFd=p.fusLen/p.fusDiam;
@@ -1878,8 +1883,8 @@ function generateReport(p, SR, branding={}) {
   <p><strong>Phase geometry (fixed, computed once):</strong></p>
   ${eq("V_{cl} = \\frac{\\dot{h}}{\\sin\\gamma_{cl}} = \\frac{"+RoCd+"}{\\sin("+clAngd+"^\\circ)} = "+fmt(Vcld,2)+"\\text{ m/s}","Climb speed from RoC and climb angle")}
   ${eq("(L/D)_{cl} = (L/D)_{cr}\\times 0.87 = "+p.LD+"\\times 0.87 = "+fmt(LDcld,3),"Climb L/D — 13% reduction for induced drag increase")}
-  ${eq("\\gamma_{dc} = \\arctan\\!\\left(\\frac{1}{(L/D)}\\right) = "+fmt(desAngd,3)+"^\\circ, \\quad V_{dc} = \\frac{\\dot{h}}{\\sin\\gamma_{dc}} = "+fmt(Vdcd,2)+"\\text{ m/s}","Descent angle and speed")}
-  ${eq("V_{res} = 0.76\\,V_{cr} = 0.76\\times "+p.vCruise+" = "+fmt(Vresd,2)+"\\text{ m/s}","Reserve loiter speed (best-endurance, 0.76×cruise)")}
+  ${eq("\\gamma_{dc} = \\arctan\\!\\left(\\frac{1}{L/D}\\right) = \\arctan\\!\\left(\\frac{1}{"+p.LD+"}\\right) = "+fmt(desAngd,3)+"^\\circ, \\quad V_{dc} = \\frac{\\dot{h}}{\\sin\\gamma_{dc}} = "+fmt(Vdcd,2)+"\\text{ m/s}","Descent angle (L/D-derived) and speed")}
+  ${eq("V_{res} = 0.70\\,V_{cr} = 0.70\\times "+p.vCruise+" = "+fmt(Vresd,2)+"\\text{ m/s}","Reserve loiter speed (0.70×cruise — distance-based reserve)")}
   ${eq("d_{cl} = \\frac{h_{cr}-h_{hov}}{\\tan\\gamma_{cl}} = "+fmt(ClimbRd,1)+"\\text{ m}, \\quad d_{dc} = \\frac{h_{cr}-h_{hov}}{\\tan\\gamma_{dc}} = "+fmt(DescRd,1)+"\\text{ m}","Climb and descent ground tracks")}
   ${eq("d_{cr} = SR - d_{cl} - d_{dc} - d_{res} = "+p.range*1000+" - "+fmt(ClimbRd,1)+" - "+fmt(DescRd,1)+" - "+fmt(reserveDistMd,1)+" = "+fmt(CruiseRanged,1)+"\\text{ m}","Net cruise distance")}
   <p><strong>Final converged iteration (MTOW = ${fmt(SR.MTOW,2)} kg):</strong></p>
@@ -1889,7 +1894,7 @@ function generateReport(p, SR, branding={}) {
   ${eq("P_{cr} = \\frac{W\\,V_{cr}}{\\eta_{sys}\\,(L/D)} = \\frac{"+fmt(SR.MTOW*g0d,1)+"\\times "+p.vCruise+"}{"+p.etaSys+"\\times "+p.LD+"} \\div 1000 = "+fmt(SR.Pcr,2)+"\\text{ kW}","Cruise power")}
   ${eq("P_{dc} = \\frac{W}{\\eta_{sys}}\\!\\left(-\\dot{h}+\\frac{V_{dc}}{(L/D)_{cl}}\\right)\\!\\div 1000 = "+fmt(SR.Pdc,2)+"\\text{ kW}","Descent power")}
   ${eq("P_{res} = \\frac{W\\,V_{res}}{\\eta_{sys}\\,(L/D)} \\div 1000 = "+fmt(SR.Pres,2)+"\\text{ kW}","Reserve power")}
-  ${eq("W_{bat} = \\frac{E_{total}\\times 1000\\,(1+\\text{SoC}_{min})}{\\text{SED}_{cell}\\,\\eta_{bat}} = \\frac{"+fmt(SR.Etot,3)+"\\times 1000\\times(1+"+p.socMin+")}{"+p.sedCell+"\\times "+p.etaBat+"} = "+fmt(SR.Wbat,2)+"\\text{ kg}","Battery mass from total energy")}
+  ${eq("W_E = \\frac{E_{total}\\times 1000}{(1-\\text{SoC}_{min})\\,\\text{SED}_{cell}\\,\\eta_{bat}} = \\frac{"+fmt(SR.Etot,3)+"\\times 1000}{(1-"+p.socMin+")\\times "+p.sedCell+"\\times "+p.etaBat+"} = "+fmt(SR.WE||SR.Wbat,2)+"\\text{ kg},\\quad W_P = \\frac{P_{hov}}{SP_{bat}} = "+fmt(SR.Phov,1)+"\\text{ kW},\\quad W_{bat}=\\max(W_E,W_P) = "+fmt(SR.Wbat,2)+"\\text{ kg}","Dual-constraint battery mass — energy limit and power limit")}
   ${eq("\\text{MTOW} = "+p.payload+" + "+fmt(SR.Wempty,2)+" + "+fmt(SR.Wbat,2)+" = "+fmt(SR.MTOW,2)+"\\text{ kg} \\quad \\checkmark\\text{ Converged}","Final weight closure")}
   `);
 
@@ -1900,7 +1905,7 @@ function generateReport(p, SR, branding={}) {
   ${eq("t_{cr} = \\frac{d_{cr}}{V_{cr}} = \\frac{"+fmt(CruiseRanged,1)+"}{"+p.vCruise+"} = "+fmt(SR.tcr,0)+"\\text{ s}","Cruise duration")}
   ${eq("t_{dc} = \\frac{d_{dc}}{V_{dc}} = \\frac{"+fmt(DescRd,1)+"}{"+fmt(Vdcd,2)+"} = "+fmt(SR.tdc,0)+"\\text{ s}","Descent duration")}
   ${eq("t_{ld} = \\frac{h_{hov}}{0.5} = "+fmt(SR.tld,0)+"\\text{ s}","Landing hover time")}
-  ${eq("t_{res} = t_{res,min} = "+reserveMinutesd+"\\text{ min} = "+tres_sd+"\\text{ s} \\quad (\\text{regulatory minimum, SC-VTOL VTOL.1035})","Reserve duration — time-based, not distance-based")}
+  ${eq("t_{res} = \\frac{d_{res}}{V_{res}} = \\frac{"+(p.reserveRange||60)+"\\times 1000}{"+fmt(Vresd,2)+"} = "+fmt(SR.tres,0)+"\\text{ s}\\;\\;(="+(p.reserveRange||60)+"\\text{ km reserve, FAA Part 135})","Reserve duration — distance-based reserve")}
   ${eq("T_{mission} = "+fmt(SR.tto,0)+"+"+fmt(SR.tcl,0)+"+"+fmt(SR.tcr,0)+"+"+fmt(SR.tdc,0)+"+"+fmt(SR.tld,0)+"+"+fmt(SR.tres,0)+" = "+fmt(SR.Tend,0)+"\\text{ s} = "+fmt(SR.Tend/60,1)+"\\text{ min}","Total mission time")}
   ${table(["Phase","Distance (m)","Speed (m/s)","Duration (s)","Duration (min)"],[
     row("Takeoff (hover)","Vertical "+hvtold+" m","0.5",fmt(SR.tto,0),fmt(SR.tto/60,1)),
@@ -1908,7 +1913,7 @@ function generateReport(p, SR, branding={}) {
     row("Cruise",fmt(CruiseRanged,1),p.vCruise,fmt(SR.tcr,0),fmt(SR.tcr/60,1)),
     row("Descent",fmt(DescRd,1),fmt(Vdcd,2),fmt(SR.tdc,0),fmt(SR.tdc/60,1)),
     row("Landing (hover)","Vertical "+hvtold+" m","0.5",fmt(SR.tld,0),fmt(SR.tld/60,1)),
-    row("Reserve",fmt(reserveDistMd,0)+" ("+reserveMinutesd+" min)",fmt(Vresd,2),fmt(SR.tres,0),fmt(SR.tres/60,1)),
+    row("Reserve",fmt(reserveDistMd,0)+" m ("+(p.reserveRange||60)+" km)",fmt(Vresd,2),fmt(SR.tres,0),fmt(SR.tres/60,1)),
     row("<b>Total</b>","<b>"+fmt(p.range*1000,0)+" m</b>","—","<b>"+fmt(SR.Tend,0)+"</b>","<b>"+fmt(SR.Tend/60,1)+"</b>"),
   ])}
   `);
@@ -1991,7 +1996,7 @@ function generateReport(p, SR, branding={}) {
   // ── D8. BATTERY PACK ARCHITECTURE ────────────────────────────────────
   const sd8 = sec("battcalc","D8. Battery Pack Architecture & Sizing",`
   <p>Cell specs: NMC Li-ion, V<sub>cell</sub> = 3.6 V, Q<sub>cell</sub> = 5.0 Ah. Bus voltage = 800 V DC.</p>
-  ${eq("W_{bat} = \\frac{E_{total}\\times 1000\\,(1+\\text{SoC}_{min})}{\\text{SED}_{cell}\\,\\eta_{bat}} = \\frac{"+fmt(SR.Etot,3)+"\\times 1000\\times(1+"+p.socMin+")}{"+p.sedCell+"\\times "+p.etaBat+"} = "+fmt(SR.Wbat,2)+"\\text{ kg}","Battery mass")}
+  ${eq("W_E = \\frac{E_{total}\\times 1000}{(1-\\text{SoC}_{min})\\,\\text{SED}_{cell}\\,\\eta_{bat}} = \\frac{"+fmt(SR.Etot,3)+"\\times 1000}{(1-"+p.socMin+")\\times "+p.sedCell+"\\times "+p.etaBat+"} = "+fmt(SR.WE||SR.Wbat,2)+"\\text{ kg},\\;W_P=\\frac{P_{hov}}{SP_{bat}}="+fmt(SR.Phov,1)+"\\text{ kW},\\;W_{bat}=\\max(W_E,W_P)="+fmt(SR.Wbat,2)+"\\text{ kg}","Dual-constraint battery mass")}
   ${eq("\\text{SED}_{pack} = E_{total}\\times 1000/W_{bat} = "+fmt(SR.SEDpack,1)+"\\text{ Wh/kg}","Pack energy density")}
   ${eq("N_s = \\text{round}(800/3.6) = "+Nseriesd+", \\quad Q_{req} = E_{total}\\times 1000/800 = "+fmt(PackAhReqd,2)+"\\text{ Ah}","Series cells and required capacity")}
   ${eq("N_p = \\lceil "+fmt(PackAhReqd,2)+"/5.0 \\rceil = "+Npard+", \\quad N_{cells} = "+Nseriesd+"\\times "+Npard+" = "+Nseriesd*Npard,"Parallel strings and total cells")}
@@ -3211,189 +3216,98 @@ function DesignVersionHistory({ params, SR, SC, onLoadVersion }) {
    Showcases community designs with inline SVG thumbnails.
    Filterable by MTOW / range / config type.
    ════════════════════════════════════════════════════════════════════════ */
-function DesignGallery({ SC, onLoadDesign, SR, params, user }) {
-  // ── Supabase config (same project as auth/chat) ──────────────────────
-  const SB_URL = "https://obribjypwwrbhsyjllua.supabase.co";
-  const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9icmlianlwd3dyYmhzeWpsbHVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM2MjU1MjIsImV4cCI6MjA4OTIwMTUyMn0.Rq2_KfHlHnoluGJY3AcBIqcbuMFuLBitU-Y6aBWyoJ4";
-  const SB_HDR = { "apikey": SB_KEY, "Authorization": `Bearer ${SB_KEY}`, "Content-Type": "application/json" };
-  const TABLE  = "community_gallery";
+function DesignGallery({ SC, onLoadDesign }) {
+  const [filter, setFilter] = useState({mtow:'all', range:'all', sort:'mtow'});
+  const [expanded, setExpanded] = useState(null);
 
-  const [filter,         setFilter]         = useState({mtow:'all', range:'all', sort:'mtow'});
-  const [expanded,       setExpanded]        = useState(null);
-  const [dbDesigns,      setDbDesigns]       = useState([]);   // rows from Supabase
-  const [loading,        setLoading]         = useState(true);
-  const [showShareModal, setShowShareModal]  = useState(false);
-  const [shareName,      setShareName]       = useState('');
-  const [shareMsg,       setShareMsg]        = useState('');
-  const [editingId,      setEditingId]       = useState(null);
-  const [editName,       setEditName]        = useState('');
-  const [saving,         setSaving]          = useState(false);
-
-  // ── Owner identity: email if logged in, stable guest token otherwise ─
-  const ownerToken = user?.email || (() => {
-    let t = localStorage.getItem('evtol_owner_token');
-    if (!t) { t = 'guest_' + Math.random().toString(36).slice(2, 10); localStorage.setItem('evtol_owner_token', t); }
-    return t;
-  })();
-
-  // ── Fetch all community designs from Supabase ─────────────────────────
-  const fetchDesigns = () => {
-    setLoading(true);
-    fetch(`${SB_URL}/rest/v1/${TABLE}?order=created_at.desc&limit=100`, { headers: SB_HDR })
-      .then(r => r.json())
-      .then(rows => { setDbDesigns(Array.isArray(rows) ? rows : []); setLoading(false); })
-      .catch(() => setLoading(false));
-  };
-
-  useEffect(() => { fetchDesigns(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // ── Fixed seed: always shown, cannot be deleted ───────────────────────
-  const SEED = [{
-    id: 'seed_0', name: '🎓 My MATLAB Thesis Project',
-    author: 'Wright State University', config: 'Lift+Cruise',
-    mtow: 2969, range_km: 250, bwing: 13.5, n_prop: 6, drotor: 3.0,
-    payload: 455, sm: 14.0, etot: 192,
-    tags: ['Thesis', 'WSU', 'MATLAB-Exact'], color: '#f59e0b', owner_token: '__seed__',
-    params: JSON.stringify({
-      payload:455, range:250, vCruise:67, cruiseAlt:1000, rateOfClimb:5.08, climbAngle:5,
-      reserveRange:60, hoverHeight:15.24, LD:15, climbLDPenalty:0.13, nPropHover:6,
-      propDiam:3.0, etaHov:0.63, etaSys:0.765, etaBat:0.90, sedCell:275, spBattery:1.0,
-      socMin:0.20, cRateDerate:0.0, ewf:0.52, fusLen:7.2,
-    }),
-  }];
-
-  // Helper to normalise both seed (camelCase) and DB rows (snake_case) to same shape
-  const norm = (d) => ({
-    id:      d.id,
-    name:    d.name,
-    author:  d.author || 'Community',
-    config:  d.config || 'Lift+Cruise',
-    MTOW:    d.mtow   || d.MTOW   || 0,
-    range:   d.range_km || d.range || 0,
-    bWing:   d.bwing  || d.bWing  || 0,
-    nProp:   d.n_prop || d.nProp  || 6,
-    Drotor:  d.drotor || d.Drotor || 3,
-    payload: d.payload || 0,
-    SM:      d.sm     || d.SM     || 0,
-    Etot:    d.etot   || d.Etot   || 0,
-    tags:    (() => { try { return Array.isArray(d.tags) ? d.tags : JSON.parse(d.tags||'[]'); } catch { return []; } })(),
-    color:   d.color  || '#22c55e',
-    owner:   d.owner_token || '__seed__',
-    params:  (() => { try { return typeof d.params==='object'&&d.params!==null ? d.params : JSON.parse(d.params||'{}'); } catch { return {}; } })(),
-  });
-
-  const ALL      = [...SEED, ...dbDesigns].map(norm);
-  const isOwner  = (d) => d.owner !== '__seed__' && d.owner === ownerToken;
-
-  const filtered = ALL.filter(d => {
-    if (filter.mtow==='light'  && d.MTOW > 1000) return false;
-    if (filter.mtow==='medium' && (d.MTOW<=1000||d.MTOW>3500)) return false;
-    if (filter.mtow==='heavy'  && d.MTOW <= 3500) return false;
-    if (filter.range==='short' && d.range > 80)  return false;
-    if (filter.range==='medium'&& (d.range<=80||d.range>180)) return false;
-    if (filter.range==='long'  && d.range <= 180) return false;
-    return true;
-  }).sort((a,b) => filter.sort==='mtow' ? a.MTOW-b.MTOW : filter.sort==='range' ? b.range-a.range : b.payload-a.payload);
-
-  const sel = filtered.find(d => d.id === expanded);
-
-  // ── Publish new design ────────────────────────────────────────────────
-  const handleShare = async () => {
-    if (!shareName.trim()) { setShareMsg('⚠ Please enter a name for your design.'); return; }
-    if (!SR)               { setShareMsg('⚠ Run the sizing first — no results yet.'); return; }
-    setSaving(true);
-    const row = {
-      name:        shareName.trim(),
-      author:      user?.email || 'Community',
-      config:      'Lift+Cruise',
-      mtow:        SR.MTOW,
-      range_km:    params?.range || 0,
-      bwing:       +(SR.bWing||0).toFixed(1),
-      n_prop:      params?.nPropHover || 6,
-      drotor:      params?.propDiam   || 3,
-      payload:     params?.payload    || 0,
-      sm:          +(SR.SM*100).toFixed(1),
-      etot:        +(SR.Etot||0).toFixed(1),
-      tags:        JSON.stringify(['Community', `${params?.nPropHover||6}-rotor`]),
-      color:       '#22c55e',
-      owner_token: ownerToken,
-      params:      JSON.stringify({...params}),
-    };
-    try {
-      const r = await fetch(`${SB_URL}/rest/v1/${TABLE}`, {
-        method: 'POST',
-        headers: { ...SB_HDR, "Prefer": "return=minimal" },
-        body: JSON.stringify(row),
-      });
-      if (r.ok) {
-        setShareName(''); setShowShareModal(false); setShareMsg('');
-        fetchDesigns();   // refresh grid
-      } else {
-        const txt = await r.text();
-        setShareMsg(`⚠ Save failed: ${txt.slice(0,120)}`);
+  // Gallery seeded with representative eVTOL archetypes
+  const GALLERY = [
+    { id:0, name:'🎓 My MATLAB Thesis Project', author:'Wright State University', config:'Lift+Cruise',
+      MTOW:3108, range:250, bWing:13.5, nProp:6, Drotor:3.0, payload:455, SM:14.0, Etot:205,
+      tags:['Thesis','WSU','MATLAB-Exact'], color:'#f59e0b',
+      params:{
+        // ── Mission (exact MATLAB values) ────────────────────────────────
+        payload:455, range:250, vCruise:67, cruiseAlt:1000,
+        rateOfClimb:5.08, climbAngle:5,
+        reserveRange:60,          // 60 km FAA Part 135 distance-based reserve
+        hoverHeight:15.24,
+        // ── Aerodynamics ─────────────────────────────────────────────────
+        LD:15,                    // Lift_to_Drag = 15
+        climbLDPenalty:0.13,      // 13% L/D penalty in climb
+        // ── Propulsion ───────────────────────────────────────────────────
+        nPropHover:6,             // No_Of_Prop_Hover = 6
+        propDiam:3.0,             // Prop_Diameter = 3 m
+        etaHov:0.63,              // Hover_Efficiency = 0.63
+        etaSys:0.765,             // System_Efficiency = 0.765
+        // ── Battery ──────────────────────────────────────────────────────
+        etaBat:0.90,              // Battery_Efficiency = 0.90
+        sedCell:275,              // SED_pack = 275 Wh/kg
+        spBattery:1.0,            // SP_battery = 1.0 kW/kg
+        socMin:0.20,              // SoCmin = 0.20
+        cRateDerate:0.0,          // no C-rate derating in MATLAB baseline
+        // ── Structure ────────────────────────────────────────────────────
+        ewf:0.52,                 // Empty_Weight_Fraction = 0.52
       }
-    } catch (e) { setShareMsg(`⚠ Network error: ${e.message}`); }
-    setSaving(false);
-  };
+    },
+    { id:1, name:'Trail1 — WSU Baseline', author:'Wright State Univ.', config:'Lift+Cruise',
+      MTOW:2721, range:150, bWing:12.67, nProp:6, Drotor:3.0, payload:400, SM:14.2, Etot:95,
+      tags:['Research','Hybrid','6-rotor'], color:'#3b82f6',
+      params:{fusLen:6.5,fusDiam:1.65,payload:400,range:150,nPropHover:6,vtGamma:40} },
+    { id:2, name:'UltraLight Urban', author:'Community', config:'Multirotor',
+      MTOW:550, range:40, bWing:5.2, nProp:4, Drotor:1.2, payload:120, SM:10.1, Etot:22,
+      tags:['Urban','Compact','4-rotor'], color:'#22c55e',
+      params:{fusLen:3.5,fusDiam:1.0,payload:120,range:40,nPropHover:4,vtGamma:35} },
+    { id:3, name:'Heavy Cargo VTOL', author:'Community', config:'Lift+Cruise',
+      MTOW:5800, range:200, bWing:18.5, nProp:8, Drotor:4.0, payload:1200, SM:16.5, Etot:280,
+      tags:['Cargo','Heavy','8-rotor'], color:'#f59e0b',
+      params:{fusLen:10.0,fusDiam:2.2,payload:1200,range:200,nPropHover:8,vtGamma:45} },
+    { id:4, name:'Regional Commuter', author:'Community', config:'Tilting',
+      MTOW:3200, range:280, bWing:15.0, nProp:6, Drotor:2.8, payload:560, SM:18.0, Etot:145,
+      tags:['Regional','Tilting','Long-range'], color:'#8b5cf6',
+      params:{fusLen:8.0,fusDiam:1.8,payload:560,range:280,nPropHover:6,vtGamma:40} },
+    { id:5, name:'Solo Scout', author:'Community', config:'Multirotor',
+      MTOW:380, range:25, bWing:3.8, nProp:4, Drotor:0.9, payload:80, SM:8.5, Etot:14,
+      tags:['Solo','Ultralight','4-rotor'], color:'#14b8a6',
+      params:{fusLen:2.8,fusDiam:0.85,payload:80,range:25,nPropHover:4,vtGamma:30} },
+    { id:6, name:'Medical Rapid Response', author:'Community', config:'Lift+Cruise',
+      MTOW:1850, range:120, bWing:10.0, nProp:6, Drotor:2.4, payload:300, SM:12.0, Etot:68,
+      tags:['Medical','Mid-size','6-rotor'], color:'#ef4444',
+      params:{fusLen:5.5,fusDiam:1.45,payload:300,range:120,nPropHover:6,vtGamma:40} },
+  ];
 
-  // ── Delete ────────────────────────────────────────────────────────────
-  const handleDelete = async (id) => {
-    await fetch(`${SB_URL}/rest/v1/${TABLE}?id=eq.${id}`, { method: 'DELETE', headers: SB_HDR });
-    setExpanded(null); fetchDesigns();
-  };
+  const filtered = GALLERY.filter(d=>{
+    if(filter.mtow==='light' && d.MTOW>1000) return false;
+    if(filter.mtow==='medium' && (d.MTOW<=1000||d.MTOW>3500)) return false;
+    if(filter.mtow==='heavy' && d.MTOW<=3500) return false;
+    if(filter.range==='short' && d.range>80) return false;
+    if(filter.range==='medium' && (d.range<=80||d.range>180)) return false;
+    if(filter.range==='long' && d.range<=180) return false;
+    return true;
+  }).sort((a,b)=>filter.sort==='mtow'?a.MTOW-b.MTOW:filter.sort==='range'?b.range-a.range:b.payload-a.payload);
 
-  // ── Rename ────────────────────────────────────────────────────────────
-  const handleSaveEdit = async (id) => {
-    if (!editName.trim()) return;
-    await fetch(`${SB_URL}/rest/v1/${TABLE}?id=eq.${id}`, {
-      method: 'PATCH',
-      headers: { ...SB_HDR, "Prefer": "return=minimal" },
-      body: JSON.stringify({ name: editName.trim() }),
-    });
-    setEditingId(null); fetchDesigns();
-  };
-
-  // ── Update design with current results ───────────────────────────────
-  const handleUpdateDesign = async (id) => {
-    if (!SR) return;
-    await fetch(`${SB_URL}/rest/v1/${TABLE}?id=eq.${id}`, {
-      method: 'PATCH',
-      headers: { ...SB_HDR, "Prefer": "return=minimal" },
-      body: JSON.stringify({
-        mtow:     SR.MTOW,
-        range_km: params?.range    || 0,
-        bwing:    +(SR.bWing||0).toFixed(1),
-        payload:  params?.payload  || 0,
-        sm:       +(SR.SM*100).toFixed(1),
-        etot:     +(SR.Etot||0).toFixed(1),
-        params:   JSON.stringify({...params}),
-      }),
-    });
-    setExpanded(null); fetchDesigns();
-  };
-
-  // ── SVG thumbnail ─────────────────────────────────────────────────────
-  const AircraftThumb = ({ d, w=160, h=120 }) => {
-    const prms = typeof d.params==='object' ? d.params : {};
-    const fL = prms.fusLen || 6.5;
-    const sc = Math.min(w,h) / ((d.bWing||10) + 2);
+  // Inline SVG thumbnail: simplified top-down aircraft silhouette
+  const AircraftThumb = ({d, w=160, h=120}) => {
+    const sc = Math.min(w,h) / (d.bWing + 2);
     const cx=w/2, cy=h/2;
-    const fuseW=fL*sc*0.08, fuseH=fL*sc*0.55;
-    const wingSpan=(d.bWing||10)*sc*0.45, wingC=12;
-    const rotR=(d.Drotor||2)*sc*0.35;
-    const yBoom=(fL*0.13+(d.Drotor||2)*0.5+0.2)*sc*0.45;
+    const fuseW=d.fusLen*sc*0.08, fuseH=d.fusLen*sc*0.55;
+    const wingSpan=d.bWing*sc*0.45, wingC=12;
+    const rotR=d.Drotor*sc*0.35;
+    const yBoom=(d.fusLen*0.13+d.Drotor*0.5+0.2)*sc*0.45;
     return (
       <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{display:'block'}}>
+        {/* Fuselage */}
         <ellipse cx={cx} cy={cy} rx={fuseW} ry={fuseH} fill={`${d.color}22`} stroke={d.color} strokeWidth="1.5"/>
+        {/* Wing */}
         <rect x={cx-wingSpan} y={cy-wingC/2} width={wingSpan*2} height={wingC}
           fill={`${d.color}33`} stroke={d.color} strokeWidth="1" rx="2"/>
-        {[-yBoom,yBoom].map((yOff,ri)=>
-          [cy-fuseH*0.4,cy,cy+fuseH*0.4].slice(0,Math.ceil((d.nProp||6)/2)).map((_,ci)=>(
-            <circle key={`r${ri}${ci}`} cx={cx+yOff}
-              cy={cy+(ci-(Math.ceil((d.nProp||6)/2)-1)/2)*fuseH*0.55}
+        {/* Rotors — pairs at boom positions */}
+        {[-yBoom, yBoom].map((yOff,ri)=>
+          [cy-fuseH*0.4, cy, cy+fuseH*0.4].slice(0, Math.ceil(d.nProp/2)).map((xOff,ci)=>(
+            <circle key={`r${ri}${ci}`} cx={cx+yOff} cy={cy+(ci-(Math.ceil(d.nProp/2)-1)/2)*fuseH*0.55}
               r={rotR} fill={`${d.color}18`} stroke={d.color} strokeWidth="1" strokeDasharray="3,2"/>
           ))
         )}
+        {/* V-tail */}
         <polyline points={`${cx},${cy+fuseH*0.85} ${cx-fuseW*2.5},${cy+fuseH*0.5} ${cx},${cy+fuseH*0.65}`}
           fill={`${d.color}22`} stroke={d.color} strokeWidth="1.2"/>
         <polyline points={`${cx},${cy+fuseH*0.85} ${cx+fuseW*2.5},${cy+fuseH*0.5} ${cx},${cy+fuseH*0.65}`}
@@ -3402,116 +3316,60 @@ function DesignGallery({ SC, onLoadDesign, SR, params, user }) {
     );
   };
 
+  const sel = GALLERY.find(d=>d.id===expanded);
+
   return (
-    <div style={{display:'flex',flexDirection:'column',gap:10}}>
-
-      {/* ── Share button ──────────────────────────────────────────────── */}
-      <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
-        <button type="button" onClick={()=>{setShowShareModal(v=>!v);setShareMsg('');}}
-          style={{padding:'7px 18px',background:'linear-gradient(135deg,#22c55e,#16a34a)',
-            border:'none',borderRadius:6,color:'#fff',fontSize:11,fontWeight:700,
-            cursor:'pointer',fontFamily:"'DM Mono',monospace"}}>
-          📤 Share My Current Design
-        </button>
-        <button type="button" onClick={fetchDesigns}
-          style={{padding:'7px 12px',background:'transparent',border:`1px solid ${SC.border}`,
-            borderRadius:6,color:SC.muted,fontSize:10,cursor:'pointer',fontFamily:"'DM Mono',monospace"}}>
-          ↻ Refresh
-        </button>
-        <span style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace"}}>
-          Designs are visible to everyone who opens this app.
-        </span>
-      </div>
-
-      {/* ── Share / publish modal ─────────────────────────────────────── */}
-      {showShareModal && (
-        <div style={{background:SC.panel,border:`1px solid #22c55e66`,borderRadius:8,
-          padding:'14px 16px',display:'flex',flexDirection:'column',gap:10}}>
-          <div style={{fontSize:12,fontWeight:700,color:'#22c55e',fontFamily:"'DM Mono',monospace"}}>
-            📤 Publish to Community Gallery
-          </div>
-          <div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace",lineHeight:1.7}}>
-            Your design will be stored in the cloud and visible to all users.
-            Only you can edit or delete it.{' '}
-            {SR && <span style={{color:SC.text}}>
-              Current sizing: MTOW = {SR.MTOW} kg · E = {+(SR.Etot||0).toFixed(1)} kWh
-            </span>}
-          </div>
-          <div style={{display:'flex',gap:8,alignItems:'center'}}>
-            <input value={shareName} onChange={e=>setShareName(e.target.value)}
-              placeholder="Give your design a name…"
-              style={{flex:1,background:SC.bg,border:`1px solid ${SC.border}`,borderRadius:5,
-                color:SC.text,fontSize:11,padding:'7px 10px',
-                fontFamily:"'DM Mono',monospace",outline:'none'}}
-              onKeyDown={e=>e.key==='Enter'&&handleShare()}/>
-            <button type="button" onClick={handleShare} disabled={saving}
-              style={{padding:'7px 16px',background:saving?'#166534':'#22c55e',border:'none',
-                borderRadius:5,color:'#fff',fontSize:11,fontWeight:700,
-                cursor:saving?'default':'pointer',fontFamily:"'DM Mono',monospace"}}>
-              {saving ? '…Saving' : '✓ Publish'}
-            </button>
-            <button type="button" onClick={()=>setShowShareModal(false)}
-              style={{padding:'7px 12px',background:SC.bg,border:`1px solid ${SC.border}`,
-                borderRadius:5,color:SC.muted,fontSize:11,cursor:'pointer',
-                fontFamily:"'DM Mono',monospace"}}>✕</button>
-          </div>
-          {shareMsg && <div style={{fontSize:9,color:'#f59e0b',fontFamily:"'DM Mono',monospace"}}>{shareMsg}</div>}
-        </div>
-      )}
-
-      {/* ── Filter bar ────────────────────────────────────────────────── */}
-      <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center',
-        background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:8,padding:'10px 14px'}}>
-        <span style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace",whiteSpace:'nowrap'}}>FILTER:</span>
+    <div style={{display:'flex', flexDirection:'column', gap:10}}>
+      {/* Filter bar */}
+      <div style={{display:'flex', gap:8, flexWrap:'wrap', alignItems:'center',
+        background:SC.panel, border:`1px solid ${SC.border}`, borderRadius:8, padding:'10px 14px'}}>
+        <span style={{fontSize:9, color:SC.muted, fontFamily:"'DM Mono',monospace", whiteSpace:'nowrap'}}>FILTER:</span>
         {[
-          ['mtow', [['all','All MTOW'],['light','Light (<1t)'],['medium','Medium (1–3.5t)'],['heavy','Heavy (>3.5t)']]],
-          ['range',[['all','All Range'],['short','Short (<80km)'],['medium','Mid (80–180km)'],['long','Long (>180km)']]],
-          ['sort', [['mtow','Sort: MTOW'],['range','Sort: Range'],['payload','Sort: Payload']]],
-        ].map(([key,opts])=>(
+          ['mtow',   [['all','All MTOW'],['light','Light (<1t)'],['medium','Medium (1–3.5t)'],['heavy','Heavy (>3.5t)']]],
+          ['range',  [['all','All Range'],['short','Short (<80km)'],['medium','Mid (80–180km)'],['long','Long (>180km)']]],
+          ['sort',   [['mtow','Sort: MTOW'],['range','Sort: Range'],['payload','Sort: Payload']]],
+        ].map(([key, opts])=>(
           <select key={key} value={filter[key]} onChange={e=>setFilter(f=>({...f,[key]:e.target.value}))}
-            style={{background:SC.bg,border:`1px solid ${SC.border}`,borderRadius:5,color:SC.text,
-              fontSize:9,padding:'4px 8px',fontFamily:"'DM Mono',monospace",cursor:'pointer'}}>
+            style={{background:SC.bg, border:`1px solid ${SC.border}`, borderRadius:5, color:SC.text,
+              fontSize:9, padding:'4px 8px', fontFamily:"'DM Mono',monospace", cursor:'pointer'}}>
             {opts.map(([val,label])=><option key={val} value={val}>{label}</option>)}
           </select>
         ))}
-        <span style={{fontSize:8,color:SC.dim,fontFamily:"'DM Mono',monospace",marginLeft:'auto'}}>
-          {loading ? '⟳ loading…' : `${filtered.length} design${filtered.length!==1?'s':''} shown`}
+        <span style={{fontSize:8, color:SC.dim, fontFamily:"'DM Mono',monospace", marginLeft:'auto'}}>
+          {filtered.length} designs shown
         </span>
       </div>
 
-      {/* ── Cards grid ────────────────────────────────────────────────── */}
-      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))',gap:10}}>
+      {/* Cards grid */}
+      <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))', gap:10}}>
         {filtered.map(d=>(
           <div key={d.id} onClick={()=>setExpanded(expanded===d.id?null:d.id)}
-            style={{background:SC.panel,border:`1px solid ${expanded===d.id?d.color:SC.border}`,
-              borderRadius:8,overflow:'hidden',cursor:'pointer',transition:'border-color 0.2s',
-              boxShadow:expanded===d.id?`0 0 16px ${d.color}44`:'none',position:'relative'}}>
-            {isOwner(d) && (
-              <div style={{position:'absolute',top:6,right:6,fontSize:7,padding:'2px 6px',
-                background:'#22c55e33',color:'#22c55e',borderRadius:3,
-                fontFamily:"'DM Mono',monospace",fontWeight:700,zIndex:2}}>✏ YOURS</div>
-            )}
-            <div style={{background:SC.bg,display:'flex',justifyContent:'center',alignItems:'center',padding:'8px 0'}}>
+            style={{background:SC.panel, border:`1px solid ${expanded===d.id?d.color:SC.border}`,
+              borderRadius:8, overflow:'hidden', cursor:'pointer', transition:'border-color 0.2s',
+              boxShadow:expanded===d.id?`0 0 16px ${d.color}44`:'none'}}>
+            {/* Thumbnail */}
+            <div style={{background:SC.bg, display:'flex', justifyContent:'center', alignItems:'center',
+              padding:'8px 0'}}>
               <AircraftThumb d={d}/>
             </div>
+            {/* Info */}
             <div style={{padding:'10px 12px'}}>
-              <div style={{fontSize:11,fontWeight:700,color:d.color,
-                fontFamily:"'DM Mono',monospace",marginBottom:2}}>{d.name}</div>
-              <div style={{fontSize:8,color:SC.muted,fontFamily:"'DM Mono',monospace",marginBottom:6}}>
-                {d.author} · {d.config}
-              </div>
-              <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:8}}>
+              <div style={{fontSize:11, fontWeight:700, color:d.color,
+                fontFamily:"'DM Mono',monospace", marginBottom:2}}>{d.name}</div>
+              <div style={{fontSize:8, color:SC.muted, fontFamily:"'DM Mono',monospace",
+                marginBottom:6}}>{d.author} · {d.config}</div>
+              <div style={{display:'flex', gap:6, flexWrap:'wrap', marginBottom:8}}>
                 {d.tags.map(t=>(
-                  <span key={t} style={{fontSize:7,padding:'2px 6px',borderRadius:3,
-                    background:`${d.color}22`,color:d.color,fontFamily:"'DM Mono',monospace"}}>{t}</span>
+                  <span key={t} style={{fontSize:7, padding:'2px 6px', borderRadius:3,
+                    background:`${d.color}22`, color:d.color, fontFamily:"'DM Mono',monospace"}}>{t}</span>
                 ))}
               </div>
-              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:4}}>
-                {[['MTOW',d.MTOW+'kg'],['Range',d.range+'km'],
-                  ['Payload',d.payload+'kg'],['SM',d.SM+'%']].map(([l,v])=>(
-                  <div key={l} style={{fontSize:8,fontFamily:"'DM Mono',monospace"}}>
+              <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:4}}>
+                {[['MTOW', d.MTOW+'kg'], ['Range', d.range+'km'],
+                  ['Payload', d.payload+'kg'], ['SM', d.SM+'%']].map(([l,v])=>(
+                  <div key={l} style={{fontSize:8, fontFamily:"'DM Mono',monospace"}}>
                     <span style={{color:SC.muted}}>{l}: </span>
-                    <span style={{color:SC.text,fontWeight:600}}>{v}</span>
+                    <span style={{color:SC.text, fontWeight:600}}>{v}</span>
                   </div>
                 ))}
               </div>
@@ -3520,87 +3378,38 @@ function DesignGallery({ SC, onLoadDesign, SR, params, user }) {
         ))}
       </div>
 
-      {/* ── Expanded detail panel ─────────────────────────────────────── */}
+      {/* Expanded detail */}
       {sel && (
-        <div style={{background:SC.panel,border:`2px solid ${sel.color}`,borderRadius:10,
-          padding:16,display:'grid',gridTemplateColumns:'auto 1fr',gap:16,alignItems:'start'}}>
+        <div style={{background:SC.panel, border:`2px solid ${sel.color}`,
+          borderRadius:10, padding:16, display:'grid', gridTemplateColumns:'auto 1fr', gap:16,
+          alignItems:'start'}}>
           <AircraftThumb d={sel} w={180} h={140}/>
           <div>
-            {/* Name — editable for owner */}
-            {editingId===sel.id ? (
-              <div style={{display:'flex',gap:8,alignItems:'center',marginBottom:8}}>
-                <input value={editName} onChange={e=>setEditName(e.target.value)}
-                  style={{flex:1,background:SC.bg,border:`1px solid ${sel.color}`,borderRadius:5,
-                    color:SC.text,fontSize:14,fontWeight:700,padding:'4px 8px',
-                    fontFamily:"'DM Mono',monospace",outline:'none'}}
-                  onKeyDown={e=>e.key==='Enter'&&handleSaveEdit(sel.id)}/>
-                <button type="button" onClick={()=>handleSaveEdit(sel.id)}
-                  style={{padding:'4px 12px',background:'#22c55e',border:'none',borderRadius:4,
-                    color:'#fff',fontSize:10,fontWeight:700,cursor:'pointer'}}>Save</button>
-                <button type="button" onClick={()=>setEditingId(null)}
-                  style={{padding:'4px 10px',background:SC.bg,border:`1px solid ${SC.border}`,
-                    borderRadius:4,color:SC.muted,fontSize:10,cursor:'pointer'}}>Cancel</button>
-              </div>
-            ) : (
-              <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
-                <div style={{fontSize:16,fontWeight:800,color:sel.color,
-                  fontFamily:"'DM Mono',monospace"}}>{sel.name}</div>
-                {isOwner(sel) && (
-                  <button type="button"
-                    onClick={e=>{e.stopPropagation();setEditingId(sel.id);setEditName(sel.name);}}
-                    style={{fontSize:10,padding:'2px 8px',background:'#22c55e22',
-                      border:`1px solid #22c55e66`,borderRadius:4,color:'#22c55e',
-                      cursor:'pointer',fontFamily:"'DM Mono',monospace"}}>✏ Rename</button>
-                )}
-              </div>
-            )}
-            <div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace",marginBottom:10}}>
+            <div style={{fontSize:16, fontWeight:800, color:sel.color,
+              fontFamily:"'DM Mono',monospace", marginBottom:4}}>{sel.name}</div>
+            <div style={{fontSize:9, color:SC.muted, fontFamily:"'DM Mono',monospace", marginBottom:10}}>
               {sel.author} · {sel.config} · {sel.nProp} hover rotors · D={sel.Drotor}m
             </div>
-            <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8,marginBottom:12}}>
+            <div style={{display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:8, marginBottom:12}}>
               {[['MTOW',sel.MTOW,'kg'],['Range',sel.range,'km'],
                 ['Payload',sel.payload,'kg'],['Wingspan',sel.bWing,'m'],
                 ['SM',sel.SM,'%'],['Energy',sel.Etot,'kWh'],
                 ['Rotors',sel.nProp,''],['Rotor Ø',sel.Drotor,'m']
               ].map(([l,v,u])=>(
-                <div key={l} style={{background:SC.bg,border:`1px solid ${SC.border}`,
-                  borderRadius:5,padding:'7px 9px'}}>
-                  <div style={{fontSize:7,color:SC.muted,fontFamily:"'DM Mono',monospace"}}>{l}</div>
-                  <div style={{fontSize:14,fontWeight:700,color:sel.color,fontFamily:"'DM Mono',monospace"}}>
-                    {v}<span style={{fontSize:8,color:SC.muted}}> {u}</span>
-                  </div>
+                <div key={l} style={{background:SC.bg, border:`1px solid ${SC.border}`,
+                  borderRadius:5, padding:'7px 9px'}}>
+                  <div style={{fontSize:7, color:SC.muted, fontFamily:"'DM Mono',monospace"}}>{l}</div>
+                  <div style={{fontSize:14, fontWeight:700, color:sel.color,
+                    fontFamily:"'DM Mono',monospace"}}>{v}<span style={{fontSize:8, color:SC.muted}}> {u}</span></div>
                 </div>
               ))}
             </div>
-            <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
-              <button type="button" onClick={()=>{onLoadDesign&&onLoadDesign(sel.params);setExpanded(null);}}
-                style={{padding:'9px 24px',
-                  background:`linear-gradient(135deg,${sel.color},${sel.color}aa)`,
-                  border:'none',borderRadius:6,color:'#fff',fontSize:12,fontWeight:800,
-                  cursor:'pointer',fontFamily:"'DM Mono',monospace"}}>
-                ↩ Load This Design Into Sizing Tool
-              </button>
-              {isOwner(sel) && (
-                <button type="button"
-                  onClick={e=>{e.stopPropagation();
-                    if(window.confirm(`Delete "${sel.name}" from community gallery?`))
-                      handleDelete(sel.id);}}
-                  style={{padding:'9px 16px',background:'#ef444422',border:`1px solid #ef4444`,
-                    borderRadius:6,color:'#ef4444',fontSize:11,fontWeight:700,
-                    cursor:'pointer',fontFamily:"'DM Mono',monospace"}}>
-                  🗑 Delete
-                </button>
-              )}
-              {isOwner(sel) && SR && (
-                <button type="button"
-                  onClick={e=>{e.stopPropagation();handleUpdateDesign(sel.id);}}
-                  style={{padding:'9px 16px',background:'#3b82f622',border:`1px solid #3b82f6`,
-                    borderRadius:6,color:'#3b82f6',fontSize:11,fontWeight:700,
-                    cursor:'pointer',fontFamily:"'DM Mono',monospace"}}>
-                  💾 Update with Current Results
-                </button>
-              )}
-            </div>
+            <button onClick={()=>{ onLoadDesign&&onLoadDesign(sel.params); setExpanded(null); }} type="button"
+              style={{padding:'9px 24px', background:`linear-gradient(135deg,${sel.color},${sel.color}aa)`,
+                border:'none', borderRadius:6, color:'#fff', fontSize:12, fontWeight:800,
+                cursor:'pointer', fontFamily:"'DM Mono',monospace"}}>
+              ↩ Load This Design Into Sizing Tool
+            </button>
           </div>
         </div>
       )}
@@ -3608,6 +3417,7 @@ function DesignGallery({ SC, onLoadDesign, SR, params, user }) {
   );
 }
 
+/* ── API Key Input — shared by RegTracker and AI Assistant ── */
 function ApiKeyInput({ SC }) {
   const [key, setKey] = useState(localStorage.getItem("anthropic_api_key") || "");
   const [saved, setSaved] = useState(!!localStorage.getItem("anthropic_api_key"));
@@ -10146,7 +9956,7 @@ export default function App(){
 
                 {/* ── Feature 12: Public Design Gallery ── */}
                 <Panel title="🎨 Public Design Gallery">
-                  <DesignGallery SC={SC} onLoadDesign={p=>setParams(prev=>({...prev,...p}))} SR={SR} params={params} user={user}/>
+                  <DesignGallery SC={SC} onLoadDesign={p=>setParams(prev=>({...prev,...p}))}/>
                 </Panel>
 
                 {/* Original Leaderboard */}
