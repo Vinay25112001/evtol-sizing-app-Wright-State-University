@@ -1466,6 +1466,11 @@ function generateReport(p, SR, branding={}) {
     ? `<span class="badge green">✓ FEASIBLE</span>`
     : `<span class="badge amber">⚠ CHECK DESIGN</span>`;
 
+  // ── Battery dual-constraint vars — must be at top, used in multiple sections ──
+  const sedEffd = p.sedCell*(1-(p.cRateDerate??0.08));
+  const WEd = SR.Etot*1000/((1-p.socMin)*sedEffd*p.etaBat);
+  const WPd = SR.Phov/(p.spBattery||1.0);
+
   // ── Section builder helpers ──────────────────────────────────────────
   const sec = (id, title, content) =>
     `<section id="${id}"><h2>${title}</h2>${content}</section>`;
@@ -1818,10 +1823,6 @@ function generateReport(p, SR, branding={}) {
   const reserveDistMd=Vresd*tres_sd;
   const CruiseRanged=p.range*1000-ClimbRd-DescRd-reserveDistMd;
   const bfd=(g0d*p.range*1000)/(p.LD*p.etaSys*p.sedCell*3600);
-  // Dual-constraint battery vars — mirrors sizing engine exactly
-  const sedEffd=p.sedCell*(1-(p.cRateDerate??0.08));
-  const WEd=SR.Etot*1000/((1-p.socMin)*sedEffd*p.etaBat);
-  const WPd=SR.Phov/(p.spBattery||1.0);
   const lambdaFd=p.fusLen/p.fusDiam;
   const Swwd=2*SR.Swing*(1+0.25*p.tc*(1+p.taper*0.25));
   const SwfWetd=Math.PI*p.fusDiam*p.fusLen*Math.pow(1-2/lambdaFd,2/3)*(1+1/lambdaFd**2);
