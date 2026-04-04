@@ -3273,12 +3273,12 @@ function DesignGallery({ SC, onLoadDesign, SR, params, user }) {
   const SEED = [{
     id: 'seed_0', name: '🎓 My MATLAB Thesis Project',
     author: 'Wright State University', config: 'Lift+Cruise',
-    mtow: 2969, range_km: 250, bwing: 13.5, n_prop: 6, drotor: 3.0,
+    mtow: 2969, range_km: 185.8, bwing: 13.5, n_prop: 6, drotor: 3.0,
     payload: 455, sm: 14.0, etot: 192,
     tags: ['Thesis', 'WSU', 'MATLAB-Exact'], color: '#f59e0b', owner_token: '__seed__',
     params: JSON.stringify({
-      payload:455, range:250, vCruise:67, cruiseAlt:1000, rateOfClimb:5.08, climbAngle:5,
-      reserveMinutes:20, hoverHeight:15.24, LD:15, climbLDPenalty:0.13, nPropHover:6,
+      payload:455, range:185.8, vCruise:67, cruiseAlt:1000, rateOfClimb:5.08, climbAngle:5,
+      reserveMinutes:21, hoverHeight:15.24, LD:15, climbLDPenalty:0.13, nPropHover:6,
       propDiam:3.0, etaHov:0.63, etaSys:0.765, etaBat:0.90, sedCell:275, spBattery:1.0,
       socMin:0.20, cRateDerate:0.0, ewf:0.52, fusLen:7.2,
     }),
