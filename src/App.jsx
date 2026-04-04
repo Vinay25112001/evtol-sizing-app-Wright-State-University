@@ -3221,6 +3221,33 @@ function DesignGallery({ SC, onLoadDesign }) {
 
   // Gallery seeded with representative eVTOL archetypes
   const GALLERY = [
+    { id:0, name:'🎓 My MATLAB Thesis Project', author:'Wright State University', config:'Lift+Cruise',
+      MTOW:3108, range:250, bWing:13.5, nProp:6, Drotor:3.0, payload:455, SM:14.0, Etot:205,
+      tags:['Thesis','WSU','MATLAB-Exact'], color:'#f59e0b',
+      params:{
+        // ── Mission (exact MATLAB values) ────────────────────────────────
+        payload:455, range:250, vCruise:67, cruiseAlt:1000,
+        rateOfClimb:5.08, climbAngle:5,
+        reserveRange:60,          // 60 km FAA Part 135 distance-based reserve
+        hoverHeight:15.24,
+        // ── Aerodynamics ─────────────────────────────────────────────────
+        LD:15,                    // Lift_to_Drag = 15
+        climbLDPenalty:0.13,      // 13% L/D penalty in climb
+        // ── Propulsion ───────────────────────────────────────────────────
+        nPropHover:6,             // No_Of_Prop_Hover = 6
+        propDiam:3.0,             // Prop_Diameter = 3 m
+        etaHov:0.63,              // Hover_Efficiency = 0.63
+        etaSys:0.765,             // System_Efficiency = 0.765
+        // ── Battery ──────────────────────────────────────────────────────
+        etaBat:0.90,              // Battery_Efficiency = 0.90
+        sedCell:275,              // SED_pack = 275 Wh/kg
+        spBattery:1.0,            // SP_battery = 1.0 kW/kg
+        socMin:0.20,              // SoCmin = 0.20
+        cRateDerate:0.0,          // no C-rate derating in MATLAB baseline
+        // ── Structure ────────────────────────────────────────────────────
+        ewf:0.52,                 // Empty_Weight_Fraction = 0.52
+      }
+    },
     { id:1, name:'Trail1 — WSU Baseline', author:'Wright State Univ.', config:'Lift+Cruise',
       MTOW:2721, range:150, bWing:12.67, nProp:6, Drotor:3.0, payload:400, SM:14.2, Etot:95,
       tags:['Research','Hybrid','6-rotor'], color:'#3b82f6',
