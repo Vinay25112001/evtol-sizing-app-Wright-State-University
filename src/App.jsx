@@ -4872,7 +4872,7 @@ function DesignSpacePanel({ params, SC, TTP, runSizingFn, onApply }) {
     setTimeout(() => {
       const N = nSamples;
       const vars = [
-        {key:"range",   base:params.range,   pct:0.40},
+        {key:"range",   base:params.range,   pct:0.40},  // sweeps mission range; totalRange = mission+reserve is computed per sample
         {key:"payload", base:params.payload, pct:0.40},
         {key:"LD",      base:params.LD,      pct:0.25},
         {key:"sedCell", base:params.sedCell, pct:0.30},
@@ -4889,10 +4889,18 @@ function DesignSpacePanel({ params, SC, TTP, runSizingFn, onApply }) {
         pS.AR = Math.round(pS.AR*10)/10;
         pS.payload = Math.round(pS.payload);
         try {
-          const R = runSizingFn(pS);
+          // Add reserve distance to mission range before calling physics engine
+          // Vres = 0.76 × vCruise (best-endurance speed, matches SR useMemo wrapper)
+          const Vres_dse = 0.76 * pS.vCruise;
+          const reserveDistKm_dse = Vres_dse * (pS.reserveMinutes || 20) * 60 / 1000;
+          const pSTotal = {...pS, range: pS.range + reserveDistKm_dse};
+          const R = runSizingFn(pSTotal);
           if (!R||!isFinite(R.MTOW)||R.MTOW>8000||R.MTOW<200) continue;
+          const missionRange_dse = +pS.range.toFixed(1);
+          const totalRange_dse   = +(pS.range + reserveDistKm_dse).toFixed(1);
           pts.push({
-            range:+pS.range.toFixed(1), payload:+pS.payload.toFixed(0),
+            range:totalRange_dse, missionRange:missionRange_dse,
+            payload:+pS.payload.toFixed(0),
             LD:+pS.LD.toFixed(2), sedCell:+pS.sedCell.toFixed(0),
             ewf:+pS.ewf.toFixed(3), AR:+pS.AR.toFixed(1),
             etaHov:+pS.etaHov.toFixed(3), etaSys:+pS.etaSys.toFixed(3),
@@ -4906,7 +4914,7 @@ function DesignSpacePanel({ params, SC, TTP, runSizingFn, onApply }) {
             emptyFrac:+(R.Wempty/R.MTOW*100).toFixed(1),
             SEDpack:+R.SEDpack.toFixed(1),
             feasible:R.feasible, pareto:false,
-            // Full-precision params for exact replay — avoids rounding mismatch on click
+            // Full-precision mission-range params for exact replay when clicking a dot
             _params:{
               range:pS.range, payload:pS.payload, LD:pS.LD, sedCell:pS.sedCell,
               ewf:pS.ewf, AR:pS.AR, etaHov:pS.etaHov, etaSys:pS.etaSys,
@@ -5036,7 +5044,7 @@ function DesignSpacePanel({ params, SC, TTP, runSizingFn, onApply }) {
               if(!payload?.length) return null;
               const d=payload[0].payload;
               return(<div style={{background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:6,padding:"8px 12px",fontSize:9,fontFamily:"'DM Mono',monospace",maxHeight:320,overflowY:"auto",zIndex:999}}>
-                {[["Range",d.range+" km"],["Payload",d.payload+" kg"],["MTOW",d.MTOW+" kg"],["Empty Wt",d.Wempty+" kg"],["Battery",d.Wbat+" kg"],["Energy",d.Etot+" kWh"],["Pack Cap",d.PackkWh+" kWh"],["Hover Pwr",d.Phov+" kW"],["Cruise Pwr",d.Pcr+" kW"],["L/D (actual)",d.LDact],["L/D (input)",d.LD],["Bat Frac",d.batFrac+"%"],["Empty Frac",d.emptyFrac+"%"],["Wing Span",d.bWing+" m"],["Wing Area",d.Swing+" m²"],["Wing Loading",d.WL+" N/m²"],["Static Margin",d.SM+"%"],["Tip Mach",d.TipMach],["RPM",d.RPM],["Cell SED",d.sedCell+" Wh/kg"],["Pack SED",d.SEDpack+" Wh/kg"],["AR",d.AR],["η_hov",d.etaHov],["η_sys",d.etaSys],["Status",d.feasible?"✅ Feasible":"❌ Infeasible"],["Pareto",d.pareto?"⭐ Yes":"—"]].map(([k,v])=>(
+                {[["Total Range",d.range+" km"],["Mission Range",(d.missionRange||d.range)+" km"],["Payload",d.payload+" km"],["MTOW",d.MTOW+" kg"],["Empty Wt",d.Wempty+" kg"],["Battery",d.Wbat+" kg"],["Energy",d.Etot+" kWh"],["Pack Cap",d.PackkWh+" kWh"],["Hover Pwr",d.Phov+" kW"],["Cruise Pwr",d.Pcr+" kW"],["L/D (actual)",d.LDact],["L/D (input)",d.LD],["Bat Frac",d.batFrac+"%"],["Empty Frac",d.emptyFrac+"%"],["Wing Span",d.bWing+" m"],["Wing Area",d.Swing+" m²"],["Wing Loading",d.WL+" N/m²"],["Static Margin",d.SM+"%"],["Tip Mach",d.TipMach],["RPM",d.RPM],["Cell SED",d.sedCell+" Wh/kg"],["Pack SED",d.SEDpack+" Wh/kg"],["AR",d.AR],["η_hov",d.etaHov],["η_sys",d.etaSys],["Status",d.feasible?"✅ Feasible":"❌ Infeasible"],["Pareto",d.pareto?"⭐ Yes":"—"]].map(([k,v])=>(
                   <div key={k} style={{display:"flex",gap:16,justifyContent:"space-between"}}><span style={{color:SC.muted}}>{k}</span><span style={{color:SC.text,fontWeight:700}}>{v}</span></div>
                 ))}
               </div>);
@@ -5139,8 +5147,20 @@ function SensPanel({params,SR,SC}){
         const v=Number(params[k]);
         if(!isFinite(v)) return null;
         let hi,lo;
-        try{hi=runSizing({...params,[k]:v*1.1});}catch{return null;}
-        try{lo=runSizing({...params,[k]:v*0.9});}catch{return null;}
+        try{
+          const Vres_s=0.76*(k==='vCruise'?v*1.1:params.vCruise);
+          const rDkm_s=Vres_s*(params.reserveMinutes||20)*60/1000;
+          const pHi={...params,[k]:v*1.1};
+          if(k==='range') pHi.range=v*1.1+rDkm_s; else pHi.range=params.range+(0.76*params.vCruise*(params.reserveMinutes||20)*60/1000);
+          hi=runSizing(pHi);
+        }catch{return null;}
+        try{
+          const Vres_s2=0.76*(k==='vCruise'?v*0.9:params.vCruise);
+          const rDkm_s2=Vres_s2*(params.reserveMinutes||20)*60/1000;
+          const pLo={...params,[k]:v*0.9};
+          if(k==='range') pLo.range=v*0.9+rDkm_s2; else pLo.range=params.range+(0.76*params.vCruise*(params.reserveMinutes||20)*60/1000);
+          lo=runSizing(pLo);
+        }catch{return null;}
         if(!hi||!lo) return null;
         const impact=Math.abs((hi.MTOW-base)-(lo.MTOW-base))/2;
         return {k,l,impact:+impact.toFixed(1),pct:+(impact/base*100).toFixed(2)};
@@ -5645,7 +5665,11 @@ export default function App(){
             AR:      Math.round(sampleParam(mcRanges.AR)*10)/10,
             payload: Math.round(sampleParam(mcRanges.payload)),
           };
-          const Rs=runSizing(pSample);
+          // Add reserve distance so Monte Carlo uses the same totalRange logic as the main sizer
+          const Vres_mc = 0.76 * pSample.vCruise;
+          const reserveDistKm_mc = Vres_mc * (pSample.reserveMinutes || 20) * 60 / 1000;
+          const pSampleTotal = {...pSample, range: pSample.range + reserveDistKm_mc};
+          const Rs=runSizing(pSampleTotal);
           if(!Rs||!isFinite(Rs.MTOW)||Rs.MTOW>6000||Rs.MTOW<500) { failCount++; continue; }
           MTOWs.push(Rs.MTOW);
           Etots.push(Rs.Etot);
