@@ -552,7 +552,7 @@ function runSizing(p) {
   /* Feasibility */
   const checks=[
     {label:"MTOW < 5700 kg",ok:MTOW<5700,val:`${MTOW.toFixed(1)} kg`},
-    {label:"Cruise range > 0 km",ok:CruiseRange>0,val:`${(CruiseRange/1000).toFixed(1)} km (climb+desc+res use ${((ClimbR+DescR+reserveDistM)/1000).toFixed(1)} km)`},
+    {label:"Cruise range > 0 km",ok:CruiseRange>0,val:`${(CruiseRange/1000).toFixed(1)} km cruise | mission ${+(p.range-reserveDistM/1000).toFixed(1)} km + res ${+(reserveDistM/1000).toFixed(1)} km`},
     {label:"Pack ≥ Mission E",ok:PackkWh>=Etot,val:`${PackkWh.toFixed(2)} ≥ ${Etot.toFixed(2)} kWh`},
     {label:"SM 5–25% MAC",ok:SM_vt>=0.05&&SM_vt<=0.25,val:`${(SM_vt*100).toFixed(1)}%`},
     {label:"Tip Mach < 0.70",ok:TipMach<0.70,val:`M${TipMach.toFixed(3)}`},
@@ -859,6 +859,7 @@ function runSizing(p) {
     Vstall:+Vstall.toFixed(2),VA:+VA.toFixed(2),VD:+VD.toFixed(2),
     vnData,rpData,rpFerryPoint,ferryRange:+ferryRange.toFixed(1),maxPayloadRp:+maxPayload.toFixed(0),polarData,powerSteps,socSteps,velSteps,energySteps,convData,twSweepData,tolSweepData,weightBreak,dragComp,tPhases,
     checks,feasible:checks.every(chk=>chk.ok),
+    missionRange:+(p.range-reserveDistM/1000).toFixed(1), reserveDistKm:+(reserveDistM/1000).toFixed(1), totalRange:+p.range.toFixed(1),
     Trotor:+Trotor.toFixed(1),TW_hover:+TW_hover.toFixed(3),TW_cruise:+TW_cruise.toFixed(3),
     itersR1,itersR2,tol,r2Converged,
     vtGamma_opt:+vtGamma_opt_deg.toFixed(1),Svt_total:+Svt_total.toFixed(3),Svt_panel:+Svt_panel.toFixed(3),governs_pitch:Svt_panel_pitch>=Svt_panel_yaw,ruddervator_combined_auth:+ruddervator_combined_auth.toFixed(3),delta_yaw_rv_deg:+delta_yaw_rv_deg.toFixed(2),
@@ -4620,7 +4621,7 @@ function AIAssistantPanel({ params, SR, SC, onParamChange, user }) {
           model:"llama-3.1-8b-instant",
           max_tokens:800,
           messages:[
-            {role:"system", content:`You are a knowledgeable aerospace engineering assistant specializing in eVTOL aircraft. You help engineers and students understand concepts, solve problems, and learn about aviation. The user is working on an eVTOL sizing tool. Current design context: MTOW=${SR?.MTOW||'unknown'}kg, range=${params.range}km, payload=${params.payload}kg, ${params.nPropHover} rotors. Answer clearly and helpfully. For technical questions give depth. For simple questions be concise.`},
+            {role:"system", content:`You are a knowledgeable aerospace engineering assistant specializing in eVTOL aircraft. You help engineers and students understand concepts, solve problems, and learn about aviation. The user is working on an eVTOL sizing tool. Current design context: MTOW=${SR?.MTOW||'unknown'}kg, missionRange=${params.range}km (total ${SR?(SR.totalRange||params.range):params.range}km incl. reserve), payload=${params.payload}kg, ${params.nPropHover} rotors. Answer clearly and helpfully. For technical questions give depth. For simple questions be concise.`},
             ...newHistory.slice(-10) // keep last 10 for context
           ]
         })
@@ -5194,7 +5195,7 @@ function SensPanel({params,SR,SC}){
 export default function App(){
   const[params,setParams]=useState({
     // ── Mission ──────────────────────────────────────────────────────────
-    payload:455,range:250,vCruise:67,cruiseAlt:1000,hoverHeight:15.24,
+    payload:455,range:190,vCruise:67,cruiseAlt:1000,hoverHeight:15.24,
     reserveMinutes:20,  // regulatory reserve time (20 min VFR / 30 min IFR per SC-VTOL / FAR 27)
     // ── Aerodynamics (calibrated vs Joby S4 / Archer Midnight / NASA NDARC) ──
     LD:14,AR:9,eOsw:0.85,clDesign:0.55,taper:0.45,tc:0.15,
@@ -5395,7 +5396,7 @@ export default function App(){
       ["C-rate hover",SR.CrateHov,""],["C-rate cruise",SR.CrateCr,""],
       ["","",""],
       ["=== INPUT PARAMETERS ===","",""],
-      ["Payload (kg)",params.payload,""],["Range (km)",params.range,""],
+      ["Payload (kg)",params.payload,""],["Mission Range (km)",params.range,""],["Reserve Range (km)",SR?(SR.reserveDistKm||0):"—",""],["Total Range (km)",SR?(SR.totalRange||params.range):params.range,""],
       ["Cruise Speed (m/s)",params.vCruise,""],["Cruise Alt (m)",params.cruiseAlt,""],
       ["L/D",params.LD,""],["AR",params.AR,""],["Oswald e",params.eOsw,""],
       ["Design CL",params.clDesign,""],["EWF",params.ewf,""],
@@ -5412,7 +5413,17 @@ export default function App(){
     if(user) addNotif(user.id,{title:"CSV Exported",body:"Results downloaded as spreadsheet.",type:"success"});
   };
 
-  const SR=useMemo(()=>{try{return runSizing({...params,customAirfoil:customAFData});}catch{return null;}},[params,customAFData]);
+  const SR=useMemo(()=>{
+    try{
+      // Reserve distance computed from reserveMinutes and cruise speed (matches physics engine)
+      // Vres = 0.76 × vCruise (best-endurance speed for electric)
+      const Vres_=0.76*params.vCruise;
+      const reserveDistKm_=Vres_*(params.reserveMinutes||20)*60/1000;
+      // totalRange = mission range + reserve range → fed into runSizing as p.range
+      const totalRange_=params.range+reserveDistKm_;
+      return runSizing({...params,range:totalRange_,customAirfoil:customAFData});
+    }catch{return null;}
+  },[params,customAFData]);
 
   // Track deltas for KPI header — show what changed after each slider move
   useEffect(()=>{
@@ -5992,7 +6003,7 @@ export default function App(){
                 </div>
                 <div style={{height:1,background:SC.border,margin:"2px 0"}}/>
                 {/* Reset */}
-                <button onClick={()=>{setParams({payload:455,range:250,vCruise:67,cruiseAlt:1000,hoverHeight:15.24,
+                <button onClick={()=>{setParams({payload:455,range:190,vCruise:67,cruiseAlt:1000,hoverHeight:15.24,
                     reserveMinutes:20,LD:14,AR:9,eOsw:0.85,clDesign:0.55,taper:0.45,tc:0.15,nPropHover:6,propDiam:3.0,twRatio:1.3,convTolExp:-6,
                     etaHov:0.70,etaSys:0.80,rateOfClimb:5.08,climbAngle:5,sedCell:300,etaBat:0.90,socMin:0.19,ewf:0.50,
                     fusLen:7.2,fusDiam:1.65,vtGamma:45,vtCh:0.45,vtCv:0.032,vtAR:2.5});setShowOverflow(false);}}
@@ -6095,10 +6106,28 @@ export default function App(){
           }}>
           <Acc title="Mission Requirements" icon="🛫">
             <Slider label="Payload" unit="kg" value={params.payload} min={100} max={900} step={5} onChange={set("payload")} note="Passengers + cargo"/>
-            <Slider label="Range" unit="km" value={params.range} min={50} max={500} step={10} onChange={set("range")}/>
+            <Slider label="Mission Range" unit="km" value={params.range} min={50} max={250} step={5} onChange={set("range")} note="Excludes reserve · total = mission + reserve"/>
+            {/* Reserve Range display — computed from reserveMinutes × Vres, read-only */}
+            {(()=>{
+              const Vres_sb=0.76*params.vCruise;
+              const resDist_sb=+(Vres_sb*(params.reserveMinutes||20)*60/1000).toFixed(1);
+              const totalRange_sb=+(params.range+resDist_sb).toFixed(1);
+              return(
+                <div style={{padding:"4px 0 6px",borderBottom:`1px solid ${SC.border}22`}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:3}}>
+                    <span style={{fontSize:10,color:SC.muted,fontFamily:"system-ui,sans-serif"}}>Reserve Range</span>
+                    <span style={{fontSize:11,fontWeight:700,color:SC.amber,fontFamily:"'DM Mono',monospace"}}>{resDist_sb} <span style={{fontSize:8,color:SC.dim}}>km</span></span>
+                  </div>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"3px 7px",background:`${SC.amber}11`,borderRadius:4,border:`1px solid ${SC.amber}33`}}>
+                    <span style={{fontSize:9,color:SC.amber,fontFamily:"system-ui,sans-serif",fontWeight:600}}>Total Range (mission+reserve)</span>
+                    <span style={{fontSize:12,fontWeight:800,color:SC.amber,fontFamily:"'DM Mono',monospace"}}>{totalRange_sb} <span style={{fontSize:8}}>km</span></span>
+                  </div>
+                </div>
+              );
+            })()}
+            <Slider label="Reserve Time" unit="min" value={params.reserveMinutes||20} min={20} max={45} step={5} onChange={set("reserveMinutes")} note="SC-VTOL VTOL.1035: 20 min VFR · 30 min IFR"/>
             <Slider label="Cruise Speed" unit="m/s" value={params.vCruise} min={30} max={120} step={1} onChange={set("vCruise")} note={SR?`Mach ${SR.Mach}`:""}/>
             <Slider label="Cruise Altitude" unit="m" value={params.cruiseAlt} min={200} max={3000} step={50} onChange={set("cruiseAlt")}/>
-            <Slider label="Reserve Time" unit="min" value={params.reserveMinutes||20} min={20} max={45} step={5} onChange={set("reserveMinutes")} note="20 min VFR (SC-VTOL) · 30 min IFR"/>
             <Slider label="VTOL Height" unit="m" value={params.hoverHeight} min={10} max={50} step={0.5} onChange={set("hoverHeight")}/>
           </Acc>
           <Acc title="Aerodynamics" icon="✈️">
@@ -6325,7 +6354,7 @@ export default function App(){
                     ["Peak Power",`${SR.Phov} kW`,SC.amber],
                     ["Cruise Power",`${SR.Pcr} kW`,SC.blue],
                     ["Cruise Speed",`${params.vCruise} m/s`,SC.green],
-                    ["Range",`${params.range} km`,SC.purple],
+                    ["Range",SR?`${SR.missionRange||params.range}+${SR.reserveDistKm||0}=${SR.totalRange||params.range} km`:`${params.range} km`,SC.purple],
                   ].map(([lbl,val,col])=>(
                     <div key={lbl} style={{background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:6,padding:"8px 10px",borderLeft:`2px solid ${col}`}}>
                       <div style={{fontSize:8,color:SC.muted,fontFamily:"'DM Mono',monospace",textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:3}}>{lbl}</div>
@@ -7051,7 +7080,7 @@ export default function App(){
                     {/* Key-point summary pills */}
                     <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
                       {[
-                        ["Design Point",`${params.payload} kg / ${params.range} km`,SC.amber],
+                        ["Design Point",`${params.payload} kg / ${SR?SR.totalRange:params.range} km total`,SC.amber],
                         ["Ferry Range",`0 kg / ${SR.ferryRange} km`,SC.teal],
                         ["Max Payload",`${SR.maxPayloadRp} kg / 0 km`,SC.red],
                       ].map(([lbl,val,col])=>(
@@ -7090,9 +7119,9 @@ export default function App(){
                         formatter={(v,n)=>[`${v} km`,"Range"]}
                         labelFormatter={v=>`Payload: ${v} kg`}/>
                       {/* Design range reference */}
-                      <ReferenceLine y={params.range} stroke={SC.amber}
+                      <ReferenceLine y={SR?SR.totalRange:params.range} stroke={SC.amber}
                         strokeDasharray="5 3"
-                        label={{value:`Design range ${params.range} km`,fill:SC.amber,
+                        label={{value:`Design range ${SR?SR.totalRange:params.range} km`,fill:SC.amber,
                           fontSize:10,position:"insideTopRight"}}/>
                       {/* Design payload reference */}
                       <ReferenceLine x={params.payload} stroke={SC.amber}
@@ -7113,7 +7142,7 @@ export default function App(){
                         connectNulls/>
                       {/* Design point dot */}
                       <Scatter
-                        data={[{payload:params.payload,range:params.range}]}
+                        data={[{payload:params.payload,range:SR?SR.totalRange:params.range}]}
                         fill={SC.amber} r={6} name="Design point"/>
                       {/* Ferry range dot */}
                       <Scatter
@@ -7127,7 +7156,7 @@ export default function App(){
                     gridTemplateColumns:"repeat(4,1fr)",gap:6}}>
                     {[
                       ["Ferry Range (no payload)",     `${SR.ferryRange} km`,       `0 kg`,       SC.teal],
-                      ["Design Point",                  `${params.range} km`,        `${params.payload} kg`, SC.amber],
+                      ["Design Point",                  `${SR?SR.totalRange:params.range} km`,`${params.payload} kg`, SC.amber],
                       ["Half-payload range",            (()=>{
                         const halfPay=Math.round(params.payload/2);
                         const pt=SR.rpData.find(d=>Math.abs(d.payload-halfPay)<SR.maxPayloadRp/20);
@@ -9144,7 +9173,7 @@ export default function App(){
               const daysPerYear       = 300;
               const flightsPerYear    = flightsPerDay * daysPerYear;
               const flightDuration_hr = SR.Tend / 3600;
-              const tripDist_km       = params.range;
+              const tripDist_km       = SR ? (SR.totalRange||params.range) : params.range;
               const nSeats            = Math.max(1, Math.round(params.payload / 90));
 
               // ── 2. ENERGY COST — charger round-trip efficiency only ─────────
