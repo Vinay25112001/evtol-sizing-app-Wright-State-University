@@ -27,17 +27,15 @@ function runSizing(p) {
   const Vcl=RoC/Math.sin(clAng*Math.PI/180);
   // Climb L/D derating: induced drag increases at climb AoA (user-adjustable, default 13%)
   const LDcl=p.LD*(1-(p.climbLDPenalty||0.13));
-  // Descent angle: derived from L/D glide ratio (matches MATLAB: Decent_Angle = -atand(1/L/D))
-  // Default = arctan(1/L/D) deg. User override via p.descentAngle preserved.
-  const desAng=p.descentAngle||(Math.atan(1/p.LD)*180/Math.PI);
-  const Vdc=RoC/Math.sin(desAng*Math.PI/180);  // no cruise-speed cap — matches MATLAB Decent_Velocity
-  // Reserve: loiter at best-endurance speed ≈ 0.76×cruise (min-power speed for electric)
-  // Reserve time: regulations define reserve by TIME, not distance.
-  // AC 21.17-4 / SC-VTOL VTOL.1035: 20 min VFR minimum (1,200 s).
-  // tres is computed directly from reserveMinutes — no longer derived from reserveRange/Vres.
-  // reserveRange is kept for CruiseRange geometry deduction only (distance aircraft flies during reserve).
-  const reserveMinutes = p.reserveMinutes || 20;  // VFR default; user can set 30 for IFR
-  const Vres=0.70*p.vCruise;  // best-endurance speed — matches MATLAB Reserve_Phase_velocity = 0.7×Vcruise
+  // Descent angle derived from L/D — matches MATLAB: Decent_Angle = -atand(1/L/D)
+  const desAng=Math.atan(1/p.LD)*180/Math.PI;
+  const Vdc=RoC/Math.sin(desAng*Math.PI/180);  // no cruise speed cap — matches MATLAB
+  // Reserve: distance-based — matches MATLAB: Reserve_Range=60 km, Vres=0.7×Vcruise
+  // Reserve_Time = Reserve_Range*1000 / Reserve_Phase_velocity (derived from distance)
+  const Vres=0.70*p.vCruise;
+  const reserveRange_m=(p.reserveRange||60)*1000;   // [m] default 60 km (FAA Part 135)
+  const tres_s=reserveRange_m/Vres;                  // reserve time derived from distance
+  const reserveDistM=reserveRange_m;                 // fixed distance deducted from cruise range
   const hvtol=p.hoverHeight;
   const ClimbR=(p.cruiseAlt-hvtol)/Math.tan(clAng*Math.PI/180);
   const DescR=(p.cruiseAlt-hvtol)/Math.tan(desAng*Math.PI/180);
@@ -58,8 +56,6 @@ function runSizing(p) {
     if(MTOW1>5700)break;
   }
 
-  const tres_s = (p.reserveRange||60)*1000/Vres;              // distance-based reserve time — matches MATLAB Reserve_Time = Reserve_Range*1000/Reserve_Phase_velocity
-  const reserveDistM = (p.reserveRange||60)*1000;              // = 60,000 m exactly, matches MATLAB Reserve_Range*1000
   const CruiseRange=p.range*1000-ClimbR-DescR-reserveDistM;  // actual cruise distance
 
   /* Round 2 — coupled MTOW+Energy  (T/W ratio applied to hover thrust) */
@@ -100,25 +96,26 @@ function runSizing(p) {
     // η_hov absorbs: non-uniform inflow, swirl losses, figure-of-merit deviation from ideal
     Pcl=(W/p.etaSys)*(RoC+Vcl/LDcl)/1000;
     Pcr=(W/p.etaSys)*(p.vCruise/LDact_i)/1000;   // uses computed LDact, not user-input p.LD
-    Pdc=(W/p.etaSys)*(-RoC+Vdc/LDcl)/1000;  // descent: uses climb L/D (derated)
-    // eVTOL rotors must keep spinning throughout descent for pitch/roll/yaw authority.
-    // Minimum control authority ≈ 22% hover power (Uber Elevate 2016 / eVTOL descent data).
-    Pdc=Math.max(0.22*Phov, Pdc);
-    Pres=(W/p.etaSys)*(Vres/LDact_i)/1000;   // uses computed LDact, not user-input p.LD
-    // Hover-to-climb transition: ~45 s at 65% hover power (rotor tilt / speed-up phase)
-    const ttrans=45, Ptrans=0.65*Phov;
+    Pdc=(W/p.etaSys)*(-RoC+Vdc/LDcl)/1000;  // descent power — matches MATLAB formula
+    Pres=(W/p.etaSys)*(Vres/LDact_i)/1000;
+    // Takeoff/landing hover times — matches MATLAB: Vertical_Takeoff/Landing_Time = hvtol/0.5
     tto=hvtol/0.5; tcl=ClimbR/Vcl; tcr=Math.max(0,CruiseRange/p.vCruise);
     tdc=DescR/Vdc; tld=hvtol/0.5; tres=tres_s;
-    Eto=Phov*(hvtol/0.5)/3600;  // hover-ascent energy only — matches MATLAB E_to = P_hover×Vertical_Takeoff_Time/3600
+    Eto=Phov*tto/3600;  // matches MATLAB: E_to = P_hover * Vertical_Takeoff_Time / 3600
     Ecl=Pcl*tcl/3600; Ecr=Pcr*tcr/3600;
-    Edc=Pdc*tdc/3600;  // Pdc already floored ≥0 above
+    Edc=Pdc*tdc/3600;
     Eld=Phov*tld/3600; Eres=Pres*tres/3600;
     Etot=Eto+Ecl+Ecr+Edc+Eld+Eres;
     Wempty=p.ewf*MTOW;
     // Battery C-rate derating: SED drops at high discharge rates (hover peaks 3–5C)
     // Approximate: SED_eff = sedCell × (1 - cRateDerate); default 8% for ~3-4C hover
     const sedEff=p.sedCell*(1-(p.cRateDerate||0.08));
-    Wbat=Etot*1000/((1-p.socMin)*sedEff*p.etaBat);  // correct SOC floor: 1/(1-SoCmin)=1.25 — matches MATLAB and paper Eq.9
+    // Dual-constraint battery sizing — matches MATLAB: Wbattery = max(W_E, W_P)
+    // W_E: energy limit  — exact (1-SoCmin) form, not (1+SoCmin) approximation
+    // W_P: power limit   — W_P = P_hover / SP_battery
+    const WE=Etot*1000/((1-p.socMin)*sedEff*p.etaBat);
+    const WP=Phov/(p.spBattery||1.0);
+    Wbat=Math.max(WE,WP);
     const mn=p.payload+Wempty+Wbat;
     const residual=Math.abs(mn-MTOW);
     energyH.push(+Etot.toFixed(3)); mtowH.push(+mn.toFixed(2));
@@ -502,11 +499,13 @@ function runSizing(p) {
       const Pc2=(W2/p.etaSys)*(RoC+Vcl/LDcl)/1000;
       const Pcr2=(W2/p.etaSys)*(p.vCruise/p.LD)/1000;
       const Pd2_raw=(W2/p.etaSys)*(-RoC+Vdc/LDcl)/1000;
-      const Pd2=Math.max(0.22*Ph2,Pd2_raw);
+      const Pd2=Pd2_raw;
       const Pr2=(W2/p.etaSys)*(Vres/p.LD)/1000;
       const Et2=Ph2*(hvtol/0.5)/3600+Pc2*tcl/3600+Pcr2*tcr/3600+Pd2*tdc/3600+Ph2*tld/3600+Pr2*tres_s/3600;
       const sedEff2=p.sedCell*(1-(p.cRateDerate||0.08));
-      const Wb2=Et2*1000/((1-p.socMin)*sedEff2*p.etaBat);
+      const WE2=Et2*1000/((1-p.socMin)*sedEff2*p.etaBat);
+      const WP2=Ph2/(p.spBattery||1.0);
+      const Wb2=Math.max(WE2,WP2);
       const mn=p.payload+p.ewf*m2+Wb2;
       if(Math.abs(mn-m2)<t){m2=mn;break;}
       m2=mn;
@@ -524,11 +523,13 @@ function runSizing(p) {
       const Pcl_tw=(W/p.etaSys)*(RoC+Vcl/LDcl)/1000;
       const Pcr_tw=(W/p.etaSys)*(p.vCruise/p.LD)/1000;
       const Pdc_tw_raw=(W/p.etaSys)*(-RoC+Vdc/LDcl)/1000;
-      const Pdc_tw=Math.max(0.22*Phov_tw,Pdc_tw_raw);
+      const Pdc_tw=Pdc_tw_raw;
       const Pres_tw=(W/p.etaSys)*(Vres/p.LD)/1000;
       const Etot_tw=Phov_tw*(hvtol/0.5)/3600+Pcl_tw*tcl/3600+Pcr_tw*tcr/3600+Pdc_tw*tdc/3600+Phov_tw*tld/3600+Pres_tw*tres_s/3600;
       const sedEff_tw=p.sedCell*(1-(p.cRateDerate||0.08));
-      const Wbat_tw=Etot_tw*1000/((1-p.socMin)*sedEff_tw*p.etaBat);
+      const WE_tw=Etot_tw*1000/((1-p.socMin)*sedEff_tw*p.etaBat);
+      const WP_tw=Phov_tw/(p.spBattery||1.0);
+      const Wbat_tw=Math.max(WE_tw,WP_tw);
       const mn=p.payload+p.ewf*m+Wbat_tw;
       if(Math.abs(mn-m)<1e-4){m=mn;break;}
       m=mn;
@@ -566,7 +567,6 @@ function runSizing(p) {
     {label:`Hover T/W ≥ ${TW.toFixed(2)}`,ok:TW>=1.0,val:`${TW.toFixed(2)} (Phov = ${Phov.toFixed(1)} kW)`},
     // Cross-parameter feasibility checks
     {label:"AR vs LD compatible",ok:LDact>=(p.LD*0.70),val:`Act L/D ${LDact.toFixed(1)} vs target ${p.LD} (min 70%)`},
-    {label:"Vdc ≤ vCruise",ok:Vdc<=p.vCruise,val:`${Vdc.toFixed(1)} m/s (cruise ${p.vCruise} m/s)`},
     {label:"Rotors: even & ≥ 4",ok:p.nPropHover>=4&&p.nPropHover%2===0,val:`${p.nPropHover} rotors`},
   ];
 
@@ -3217,6 +3217,33 @@ function DesignGallery({ SC, onLoadDesign }) {
 
   // Gallery seeded with representative eVTOL archetypes
   const GALLERY = [
+    { id:0, name:'🎓 My MATLAB Thesis Project', author:'Wright State University', config:'Lift+Cruise',
+      MTOW:3108, range:250, bWing:13.5, nProp:6, Drotor:3.0, payload:455, SM:14.0, Etot:205,
+      tags:['Thesis','WSU','MATLAB-Exact'], color:'#f59e0b',
+      params:{
+        // ── Mission (exact MATLAB values) ────────────────────────────────
+        payload:455, range:250, vCruise:67, cruiseAlt:1000,
+        rateOfClimb:5.08, climbAngle:5,
+        reserveRange:60,          // 60 km FAA Part 135 distance-based reserve
+        hoverHeight:15.24,
+        // ── Aerodynamics ─────────────────────────────────────────────────
+        LD:15,                    // Lift_to_Drag = 15
+        climbLDPenalty:0.13,      // 13% L/D penalty in climb
+        // ── Propulsion ───────────────────────────────────────────────────
+        nPropHover:6,             // No_Of_Prop_Hover = 6
+        propDiam:3.0,             // Prop_Diameter = 3 m
+        etaHov:0.63,              // Hover_Efficiency = 0.63
+        etaSys:0.765,             // System_Efficiency = 0.765
+        // ── Battery ──────────────────────────────────────────────────────
+        etaBat:0.90,              // Battery_Efficiency = 0.90
+        sedCell:275,              // SED_pack = 275 Wh/kg
+        spBattery:1.0,            // SP_battery = 1.0 kW/kg
+        socMin:0.20,              // SoCmin = 0.20
+        cRateDerate:0.0,          // no C-rate derating in MATLAB baseline
+        // ── Structure ────────────────────────────────────────────────────
+        ewf:0.52,                 // Empty_Weight_Fraction = 0.52
+      }
+    },
     { id:1, name:'Trail1 — WSU Baseline', author:'Wright State Univ.', config:'Lift+Cruise',
       MTOW:2721, range:150, bWing:12.67, nProp:6, Drotor:3.0, payload:400, SM:14.2, Etot:95,
       tags:['Research','Hybrid','6-rotor'], color:'#3b82f6',
