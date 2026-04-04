@@ -91,13 +91,13 @@ function runSizing(p) {
     // ── HOVER POWER at T/W=1.0 (steady hover equilibrium) ─────────────────
     // T/W ratio is a structural margin for climb/OEI — NOT applied to steady hover.
     // In hover: each rotor supports W/N (not W*TW/N). Motors sized for TW but fly at W.
-    const DL=(W)/(Math.PI*Math.pow(p.propDiam/2,2)*p.nPropHover);  // T/W=1.0
-    Phov=(W/p.etaHov)*Math.sqrt(DL/(2*rhoHov))/1000;  // uses hover-altitude density
+    const DL=(W)/(Math.PI*Math.pow(p.propDiam/2,2)*p.nPropHover);
+    Phov=(W/p.etaHov)*Math.sqrt(DL/(2*rhoMSL))/1000;  // matches MATLAB: uses Density_MSL=1.225
     // η_hov absorbs: non-uniform inflow, swirl losses, figure-of-merit deviation from ideal
     Pcl=(W/p.etaSys)*(RoC+Vcl/LDcl)/1000;
-    Pcr=(W/p.etaSys)*(p.vCruise/LDact_i)/1000;   // uses computed LDact, not user-input p.LD
+    Pcr=(W/p.etaSys)*(p.vCruise/p.LD)/1000;   // matches MATLAB: P_cruise uses fixed Lift_to_Drag
     Pdc=(W/p.etaSys)*(-RoC+Vdc/LDcl)/1000;  // descent power — matches MATLAB formula
-    Pres=(W/p.etaSys)*(Vres/LDact_i)/1000;
+    Pres=(W/p.etaSys)*(Vres/p.LD)/1000;      // matches MATLAB: P_reserve uses fixed Lift_to_Drag
     // Takeoff/landing hover times — matches MATLAB: Vertical_Takeoff/Landing_Time = hvtol/0.5
     tto=hvtol/0.5; tcl=ClimbR/Vcl; tcr=Math.max(0,CruiseRange/p.vCruise);
     tdc=DescR/Vdc; tld=hvtol/0.5; tres=tres_s;
