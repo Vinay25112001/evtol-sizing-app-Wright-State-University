@@ -24,23 +24,18 @@ function runSizing(p) {
   const Thov=T0eff-L*(p.hoverHeight||15.24);
   const rhoHov=rhoMSL*Math.pow(Thov/T0eff,(-g0/(-L*Rgas))-1);
   const RoC=p.rateOfClimb,clAng=p.climbAngle;
-  // Issue 2 fix: separate rate of descent — defaults to RoC if not set.
-  // eVTOL descent rates are often lower than climb rates due to VRS margins and passenger comfort.
-  const RoD=p.rateOfDescent||RoC;
   const Vcl=RoC/Math.sin(clAng*Math.PI/180);
   // Climb L/D derating: induced drag increases at climb AoA (user-adjustable, default 13%)
   const LDcl=p.LD*(1-(p.climbLDPenalty||0.13));
-  // Descent angle: user-set (default 6°) — independent of L/D to avoid algebraic cancellation
-  const desAng=p.descentAngle||6;
-  // Issue 2 fix: Vdc uses RoD (not RoC) — correct vertical rate for descent geometry
-  const Vdc=Math.min(RoD/Math.sin(desAng*Math.PI/180),p.vCruise);  // cap at cruise speed
-  // Reserve: loiter at best-endurance speed ≈ 0.76×cruise (min-power speed for electric)
-  // Reserve time: regulations define reserve by TIME, not distance.
-  // AC 21.17-4 / SC-VTOL VTOL.1035: 20 min VFR minimum (1,200 s).
-  // tres is computed directly from reserveMinutes — no longer derived from reserveRange/Vres.
-  // reserveRange is kept for CruiseRange geometry deduction only (distance aircraft flies during reserve).
-  const reserveMinutes = p.reserveMinutes || 20;  // VFR default; user can set 30 for IFR
-  const Vres=0.76*p.vCruise;  // best-endurance loiter speed for electric (min-power speed)
+  // Descent angle derived from L/D — matches MATLAB: Decent_Angle = -atand(1/L/D)
+  const desAng=Math.atan(1/p.LD)*180/Math.PI;
+  const Vdc=RoC/Math.sin(desAng*Math.PI/180);  // no cruise speed cap — matches MATLAB
+  // Reserve: distance-based — matches MATLAB: Reserve_Range=60 km, Vres=0.7×Vcruise
+  // Reserve_Time = Reserve_Range*1000 / Reserve_Phase_velocity (derived from distance)
+  const Vres=0.70*p.vCruise;
+  const reserveRange_m=(p.reserveRange||60)*1000;   // [m] default 60 km (FAA Part 135)
+  const tres_s=reserveRange_m/Vres;                  // reserve time derived from distance
+  const reserveDistM=reserveRange_m;                 // fixed distance deducted from cruise range
   const hvtol=p.hoverHeight;
   const ClimbR=(p.cruiseAlt-hvtol)/Math.tan(clAng*Math.PI/180);
   const DescR=(p.cruiseAlt-hvtol)/Math.tan(desAng*Math.PI/180);
@@ -61,8 +56,6 @@ function runSizing(p) {
     if(MTOW1>5700)break;
   }
 
-  const tres_s = reserveMinutes * 60;                         // reserve time in seconds (regulatory)
-  const reserveDistM = Vres * tres_s;                         // distance flown during reserve (m)
   const CruiseRange=p.range*1000-ClimbR-DescR-reserveDistM;  // actual cruise distance
 
   /* Round 2 — coupled MTOW+Energy  (T/W ratio applied to hover thrust) */
@@ -103,32 +96,28 @@ function runSizing(p) {
     // η_hov absorbs: non-uniform inflow, swirl losses, figure-of-merit deviation from ideal
     Pcl=(W/p.etaSys)*(RoC+Vcl/LDcl)/1000;
     Pcr=(W/p.etaSys)*(p.vCruise/LDact_i)/1000;   // uses computed LDact, not user-input p.LD
-    // Issue 2 fix: use RoD (rate of descent) — gravity does work at RoD, not RoC
-    Pdc=(W/p.etaSys)*(-RoD+Vdc/LDcl)/1000;  // descent: uses climb L/D (derated)
-    // eVTOL rotors must keep spinning throughout descent for pitch/roll/yaw authority.
-    // Minimum control authority ≈ 22% hover power (Uber Elevate 2016 / eVTOL descent data).
-    Pdc=Math.max(0.22*Phov, Pdc);
+    Pdc=(W/p.etaSys)*(-RoC+Vdc/LDcl)/1000;  // descent power — matches MATLAB formula
     Pres=(W/p.etaSys)*(Vres/LDact_i)/1000;   // uses computed LDact, not user-input p.LD
     // Hover-to-climb transition: ~45 s at 65% hover power (rotor tilt / speed-up phase)
     const ttrans=45, Ptrans=0.65*Phov;
-    // Issue 1 fix: t = Δh / vertical_rate  (NOT horizontal_dist / airspeed)
-    // Mixing horizontal distance with path-speed underestimates time by cos(γ).
-    // Using altitude and RoC/RoD is also the standard in conceptual sizing — both
-    // are direct design requirements, no trig needed.
-    const h_phase=p.cruiseAlt-hvtol;
-    tto=hvtol/0.5+ttrans; tcl=h_phase/RoC; tcr=Math.max(0,CruiseRange/p.vCruise);
-    tdc=h_phase/RoD; tld=hvtol/0.5; tres=tres_s;
+    tto=hvtol/0.5+ttrans; tcl=ClimbR/Vcl; tcr=Math.max(0,CruiseRange/p.vCruise);
+    tdc=DescR/Vdc; tld=hvtol/0.5; tres=tres_s;
     // Eto includes hover ascent + transition power
     Eto=(Phov*(hvtol/0.5)+Ptrans*ttrans)/3600;
     Ecl=Pcl*tcl/3600; Ecr=Pcr*tcr/3600;
-    Edc=Pdc*tdc/3600;  // Pdc already floored ≥0 above
+    Edc=Pdc*tdc/3600;
     Eld=Phov*tld/3600; Eres=Pres*tres/3600;
     Etot=Eto+Ecl+Ecr+Edc+Eld+Eres;
     Wempty=p.ewf*MTOW;
     // Battery C-rate derating: SED drops at high discharge rates (hover peaks 3–5C)
     // Approximate: SED_eff = sedCell × (1 - cRateDerate); default 8% for ~3-4C hover
     const sedEff=p.sedCell*(1-(p.cRateDerate||0.08));
-    Wbat=Etot*1000*(1+p.socMin)/(sedEff*p.etaBat);
+    // Dual-constraint battery sizing — matches MATLAB: Wbattery = max(W_E, W_P)
+    // W_E: energy limit  — exact (1-SoCmin) form, not (1+SoCmin) approximation
+    // W_P: power limit   — W_P = P_hover / SP_battery
+    const WE=Etot*1000/((1-p.socMin)*sedEff*p.etaBat);
+    const WP=Phov/(p.spBattery||1.0);
+    Wbat=Math.max(WE,WP);
     const mn=p.payload+Wempty+Wbat;
     const residual=Math.abs(mn-MTOW);
     energyH.push(+Etot.toFixed(3)); mtowH.push(+mn.toFixed(2));
@@ -507,19 +496,19 @@ function runSizing(p) {
     for(let o=0;o<200;o++){
       n2=o+1;
       const W2=m2*g0;
-      // Bug fix: DL at T/W=1.0 — consistent with main loop (T/W only sizes motors, not hover equilibrium)
-      const DL2=(W2)/(Math.PI*Math.pow(p.propDiam/2,2)*p.nPropHover);
+      const DL2=(W2*TW)/(Math.PI*Math.pow(p.propDiam/2,2)*p.nPropHover);
       const Ph2=(W2/p.etaHov)*Math.sqrt(DL2/(2*rhoHov))/1000;
       const Pc2=(W2/p.etaSys)*(RoC+Vcl/LDcl)/1000;
       const Pcr2=(W2/p.etaSys)*(p.vCruise/p.LD)/1000;
-      // Bug fix: use RoD (descent rate) not RoC in descent power
-      const Pd2_raw=(W2/p.etaSys)*(-RoD+Vdc/LDcl)/1000;
-      const Pd2=Math.max(0.22*Ph2,Pd2_raw);
+      const Pd2_raw=(W2/p.etaSys)*(-RoC+Vdc/LDcl)/1000;
+      const Pd2=Pd2_raw;
       const Pr2=(W2/p.etaSys)*(Vres/p.LD)/1000;
       const ttrans2=45,Ptrans2=0.65*Ph2;
       const Et2=(Ph2*(hvtol/0.5)+Ptrans2*ttrans2)/3600+Pc2*tcl/3600+Pcr2*tcr/3600+Pd2*tdc/3600+Ph2*tld/3600+Pr2*tres_s/3600;
       const sedEff2=p.sedCell*(1-(p.cRateDerate||0.08));
-      const Wb2=Et2*1000*(1+p.socMin)/(sedEff2*p.etaBat);
+      const WE2=Et2*1000/((1-p.socMin)*sedEff2*p.etaBat);
+      const WP2=Ph2/(p.spBattery||1.0);
+      const Wb2=Math.max(WE2,WP2);
       const mn=p.payload+p.ewf*m2+Wb2;
       if(Math.abs(mn-m2)<t){m2=mn;break;}
       m2=mn;
@@ -536,13 +525,15 @@ function runSizing(p) {
       const Phov_tw=(W/p.etaHov)*Math.sqrt(DLtw/(2*rhoHov))/1000;               // T/W=1.0
       const Pcl_tw=(W/p.etaSys)*(RoC+Vcl/LDcl)/1000;
       const Pcr_tw=(W/p.etaSys)*(p.vCruise/p.LD)/1000;
-      const Pdc_tw_raw=(W/p.etaSys)*(-RoD+Vdc/LDcl)/1000;  // Bug fix: RoD not RoC
-      const Pdc_tw=Math.max(0.22*Phov_tw,Pdc_tw_raw);
+      const Pdc_tw_raw=(W/p.etaSys)*(-RoC+Vdc/LDcl)/1000;
+      const Pdc_tw=Pdc_tw_raw;
       const Pres_tw=(W/p.etaSys)*(Vres/p.LD)/1000;
       const ttrans_tw=45,Ptrans_tw=0.65*Phov_tw;
       const Etot_tw=(Phov_tw*(hvtol/0.5)+Ptrans_tw*ttrans_tw)/3600+Pcl_tw*tcl/3600+Pcr_tw*tcr/3600+Pdc_tw*tdc/3600+Phov_tw*tld/3600+Pres_tw*tres_s/3600;
       const sedEff_tw=p.sedCell*(1-(p.cRateDerate||0.08));
-      const Wbat_tw=Etot_tw*1000*(1+p.socMin)/(sedEff_tw*p.etaBat);
+      const WE_tw=Etot_tw*1000/((1-p.socMin)*sedEff_tw*p.etaBat);
+      const WP_tw=Phov_tw/(p.spBattery||1.0);
+      const Wbat_tw=Math.max(WE_tw,WP_tw);
       const mn=p.payload+p.ewf*m+Wbat_tw;
       if(Math.abs(mn-m)<1e-4){m=mn;break;}
       m=mn;
@@ -871,7 +862,6 @@ function runSizing(p) {
     SEDpack:+SEDpack.toFixed(1),Nseries,Npar,Ncells,PackV:+PackV.toFixed(0),PackAh:+PackAh.toFixed(1),
     PackkWh:+PackkWh.toFixed(3),CrateHov:+CrateHov.toFixed(2),CrateCr:+CrateCr.toFixed(2),Pheat:+Pheat.toFixed(1),
     Vstall:+Vstall.toFixed(2),VA:+VA.toFixed(2),VD:+VD.toFixed(2),
-    rhoCr:+rhoCr.toFixed(5),  // Bug fix: export cruise density for V-n diagram (was always falling back to MSL)
     vnData,rpData,rpFerryPoint,ferryRange:+ferryRange.toFixed(1),maxPayloadRp:+maxPayload.toFixed(0),polarData,powerSteps,socSteps,velSteps,energySteps,convData,twSweepData,tolSweepData,weightBreak,dragComp,tPhases,
     checks,feasible:checks.every(chk=>chk.ok),
     Trotor:+Trotor.toFixed(1),TW_hover:+TW_hover.toFixed(3),TW_cruise:+TW_cruise.toFixed(3),
@@ -1817,11 +1807,10 @@ function generateReport(p, SR, branding={}) {
   const muSLd=1.789e-5;
   const muCrd=muSLd*Math.pow(Tcrd/T0effd,0.75);
   const RoCd=p.rateOfClimb, clAngd=p.climbAngle;
-  const RoDd=p.rateOfDescent||RoCd;  // Issue 2 fix: separate descent rate for display
   const Vcld=RoCd/Math.sin(clAngd*Math.PI/180);
   const LDcld=p.LD*(1-(p.climbLDPenalty||0.13));
   const desAngd=p.descentAngle||6;
-  const Vdcd=Math.min(RoDd/Math.sin(desAngd*Math.PI/180),p.vCruise);
+  const Vdcd=Math.min(RoCd/Math.sin(desAngd*Math.PI/180),p.vCruise);
   const Vresd=0.76*p.vCruise;
   const hvtold=p.hoverHeight;
   const ClimbRd=(p.cruiseAlt-hvtold)/Math.tan(clAngd*Math.PI/180);
@@ -1912,9 +1901,9 @@ function generateReport(p, SR, branding={}) {
   // ── D3. MISSION PHASE TIMING ─────────────────────────────────────────
   const sd3 = sec("timing","D3. Mission Phase Timing & Distance Analysis",`
   ${eq("t_{TO} = \\frac{h_{hov}}{0.5} = \\frac{"+hvtold+"}{0.5} = "+fmt(SR.tto,0)+"\\text{ s}","Takeoff hover time — average vertical speed = 0.5 m/s")}
-  ${eq("t_{cl} = \\frac{\\Delta h}{\\dot{h}_{cl}} = \\frac{"+fmt(p.cruiseAlt-hvtold,1)+"}{"+RoCd+"} = "+fmt(SR.tcl,0)+"\\text{ s}","Climb duration — altitude / RoC (Issue 1 fix: not d_{cl}/V_{cl})")}
+  ${eq("t_{cl} = \\frac{d_{cl}}{V_{cl}} = \\frac{"+fmt(ClimbRd,1)+"}{"+fmt(Vcld,2)+"} = "+fmt(SR.tcl,0)+"\\text{ s}","Climb duration")}
   ${eq("t_{cr} = \\frac{d_{cr}}{V_{cr}} = \\frac{"+fmt(CruiseRanged,1)+"}{"+p.vCruise+"} = "+fmt(SR.tcr,0)+"\\text{ s}","Cruise duration")}
-  ${eq("t_{dc} = \\frac{\\Delta h}{\\dot{h}_{dc}} = \\frac{"+fmt(p.cruiseAlt-hvtold,1)+"}{"+RoDd+"} = "+fmt(SR.tdc,0)+"\\text{ s}","Descent duration — altitude / RoD (Issue 1 fix: not d_{dc}/V_{dc})")}
+  ${eq("t_{dc} = \\frac{d_{dc}}{V_{dc}} = \\frac{"+fmt(DescRd,1)+"}{"+fmt(Vdcd,2)+"} = "+fmt(SR.tdc,0)+"\\text{ s}","Descent duration")}
   ${eq("t_{ld} = \\frac{h_{hov}}{0.5} = "+fmt(SR.tld,0)+"\\text{ s}","Landing hover time")}
   ${eq("t_{res} = t_{res,min} = "+reserveMinutesd+"\\text{ min} = "+tres_sd+"\\text{ s} \\quad (\\text{regulatory minimum, SC-VTOL VTOL.1035})","Reserve duration — time-based, not distance-based")}
   ${eq("T_{mission} = "+fmt(SR.tto,0)+"+"+fmt(SR.tcl,0)+"+"+fmt(SR.tcr,0)+"+"+fmt(SR.tdc,0)+"+"+fmt(SR.tld,0)+"+"+fmt(SR.tres,0)+" = "+fmt(SR.Tend,0)+"\\text{ s} = "+fmt(SR.Tend/60,1)+"\\text{ min}","Total mission time")}
@@ -5239,14 +5228,11 @@ export default function App(){
           E=power*t/3600; break;
         }
         case"descent":{
-          const RoD_mb=params.rateOfDescent||params.rateOfClimb; // Issue 2 fix
           const ang=(ph.angle||4)*Math.PI/180;
-          const Vdc=RoD_mb/Math.sin(ang);
+          const Vdc=params.rateOfClimb/Math.sin(ang);
           const LDcl=params.LD*(1-0.13);
-          power=Math.max(0,(W/params.etaSys)*(-RoD_mb+Vdc/LDcl)/1000);
-          dist=(ph.distance||4)*1000;
-          // Issue 1 fix: t = horizontal_dist / horizontal_speed = dist / (Vdc*cos(ang))
-          t=dist/(Vdc*Math.cos(ang));
+          power=Math.max(0,(W/params.etaSys)*(-params.rateOfClimb+Vdc/LDcl)/1000);
+          dist=(ph.distance||4)*1000; t=dist/Vdc;
           E=power*t/3600; break;
         }
         case"cruise":case"divert":{
@@ -5892,7 +5878,6 @@ export default function App(){
             <Slider label="Hover FOM η" unit="" value={params.etaHov} min={0.4} max={0.85} step={0.01} onChange={set("etaHov")} note="Optimised eVTOL rotor: 0.65–0.75"/>
             <Slider label="System η" unit="" value={params.etaSys} min={0.5} max={0.95} step={0.01} onChange={set("etaSys")} note="Motor+inverter chain: 0.78–0.85"/>
             <Slider label="Rate of Climb" unit="m/s" value={params.rateOfClimb} min={1} max={12} step={0.1} onChange={set("rateOfClimb")}/>
-            <Slider label="Rate of Descent" unit="m/s" value={params.rateOfDescent||params.rateOfClimb} min={1} max={12} step={0.1} onChange={set("rateOfDescent")} note="Defaults to RoC if unset; eVTOL often lower due to VRS margin"/>
             <Slider label="Climb Angle" unit="°" value={params.climbAngle} min={2} max={15} step={0.5} onChange={set("climbAngle")}/>
             <Slider label="Descent Angle" unit="°" value={params.descentAngle||6} min={2} max={15} step={0.5} onChange={set("descentAngle")} note="6° typical IFR approach; steeper → slower Vdc"/>
             <Slider label="Climb L/D Penalty" unit="" value={params.climbLDPenalty||0.13} min={0.02} max={0.25} step={0.01} onChange={set("climbLDPenalty")} note="Induced drag increase during climb (0.13 = 13%)"/>
@@ -9972,9 +9957,7 @@ export default function App(){
               const nPosLimit=3.5,nNegLimit=-1.5,nUltPos=nPosLimit*1.5,nUltNeg=nNegLimit*1.5;
               // Gust load factors per CS-23 Amd 5 / FAR Part 23
               const Kg=0.88*params.AR/(5.3+params.AR); // alleviation factor
-              // Bug fix: use finite-wing CLα (Raymer Eq.12.6) — consistent with stability section.
-              // Old formula 2π(1+0.77·tc) is a 2D thickness correction; overestimates CLα by ~30% at AR=8.
-              const CLa=2*Math.PI*params.AR/(2+Math.sqrt(params.AR**2+4));  // finite-wing lift slope
+              const CLa=2*Math.PI*(1+0.77*params.tc);   // lift curve slope
               const mu=2*(WL)/(rhoMSL*VC*CLa*SR.MAC);
               const Ug_cruise=15.2,Ug_dive=7.6; // gust velocities m/s (CS-23)
               const ngust_c=1+(Kg*rhoMSL*Ug_cruise*VC*CLa)/(2*WL);
@@ -9996,14 +9979,10 @@ export default function App(){
               const T_remaining = (N-1)*T_per_motor; // OEI: (N-1) motors at full thrust
               const T_required  = MTOW*g;            // must support aircraft weight
               const OEI_margin_pct = ((T_remaining-T_required)/T_required*100);
-              // Bug fix: OEI power uses actuator disk scaling P ∝ T^1.5, NOT equal power-split.
-              // Equal-split (Phov_tot/(N-1)) ignores that higher disk loading requires more power.
-              // Derivation: each remaining rotor lifts W/(N-1) at new DL_oei = W/((N-1)·A)
-              //   P_oei_total = (W/η) · sqrt(DL_oei/(2ρ)) = P_hover_total · sqrt(N/(N-1))
-              //   P_per_motor_OEI = P_oei_total / (N-1)
-              // Error of old formula for N=6: underestimates by ~9%; for N=4: ~15%
-              const P_oei_total = Phov_tot * Math.sqrt(N / (N-1));  // actuator disk scaling
-              const P_per_motor_OEI = P_oei_total / (N-1);          // per remaining motor (W)
+              // OEI power: remaining motors must each produce W/(N-1) thrust
+              // Power scales with thrust (actuator disk: P ∝ T^1.5), but for display
+              // use equal power-sharing: P_oei = Phov_tot/(N-1)
+              const P_per_motor_OEI = Phov_tot/(N-1);  // each remaining motor (W)
               const P_overhead_pct  = ((P_per_motor_OEI-P_per_motor)/P_per_motor*100);
               const motorSurvivable=P_per_motor_OEI<=(SR.PpeakKW*1000); // within peak rating?
               // Yaw moment from OEI (assume symmetric layout, worst-case arm = propDiam)
