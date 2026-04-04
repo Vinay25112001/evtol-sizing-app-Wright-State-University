@@ -1598,7 +1598,7 @@ function generateReport(p, SR, branding={}) {
   const s3 = sec("weight","3. Weight & Energy Sizing (Iterative)",`
   <p>The MTOW is found by simultaneously converging the weight and energy fractions using a nested iterative scheme. The battery mass fraction is:</p>
   ${eq("f_{bat} = \\frac{g_0 \\cdot SR}{(L/D)\\,\\eta_{sys}\\,\\text{SED}_{cell}\\times 3600}","Battery mass fraction (range-energy method)")}
-  ${eq("W_{bat} = \\frac{E_{total}\\times 1000\\,(1+\\text{SoC}_{min})}{\\text{SED}_{cell}\\,\\eta_{bat}}","Battery mass from total mission energy")}
+  ${eq("W_E = \\frac{E_{total}\\times 1000}{(1-\\text{SoC}_{min})\\,\\text{SED}_{eff}\\,\\eta_{bat}},\\quad W_P = \\frac{P_{hov}}{SP_{bat}},\\quad W_{bat}=\\max(W_E,\\,W_P)","Dual-constraint battery: energy limit + power limit (actual sizing method)")}
   ${eq("\\text{MTOW} = m_{pay} + f_{EW}\\cdot\\text{MTOW} + W_{bat}","Weight closure equation (solved iteratively)")}
   ${table(["Quantity","Symbol","Value","Unit"],[
     row("MTOW (initial)","MTOW<sub>1</sub>",fmt(SR.MTOW1,1),"kg"),
@@ -1679,7 +1679,9 @@ function generateReport(p, SR, branding={}) {
 
   // ── 7. BATTERY ───────────────────────────────────────────────────────
   const s7 = sec("battery","7. Battery System Sizing",`
-  ${eq("W_{bat} = \\frac{E_{total}\\times 1000\\,(1+\\text{SoC}_{min})}{\\text{SED}_{cell}\\,\\eta_{bat}} = \\frac{"+fmt(SR.Etot,3)+"\\times 1000\\times(1+"+p.socMin+")}{"+p.sedCell+"\\times"+p.etaBat+"} = "+fmt(SR.Wbat,1)+"\\text{ kg}","Battery mass")}
+  ${eq("\\text{SED}_{eff} = \\text{SED}_{cell}\\times(1-\\delta_{C}) = "+p.sedCell+"\\times(1-"+(p.cRateDerate??0.08)+") = "+fmt(sedEffd,1)+"\\text{ Wh/kg}","Effective SED after C-rate derating")}
+  ${eq("W_E = \\frac{E_{total}\\times 1000}{(1-\\text{SoC}_{min})\\,\\text{SED}_{eff}\\,\\eta_{bat}} = \\frac{"+fmt(SR.Etot,3)+"\\times 1000}{(1-"+p.socMin+")\\times "+fmt(sedEffd,1)+"\\times "+p.etaBat+"} = "+fmt(WEd,1)+"\\text{ kg}","Energy-limited battery mass")}
+  ${eq("W_P = \\frac{P_{hov}}{SP_{bat}} = \\frac{"+fmt(SR.Phov,1)+"}{"+((p.spBattery)||1.0)+"} = "+fmt(WPd,1)+"\\text{ kg},\\quad W_{bat} = \\max(W_E,W_P) = "+fmt(SR.Wbat,1)+"\\text{ kg}","Power-limited mass and dual-constraint result")}
   ${eq("\\text{SED}_{pack} = \\frac{E_{total}}{W_{bat}} = "+fmt(SR.SEDpack,1)+"\\text{ Wh/kg}","Pack-level specific energy density")}
   ${eq("N_{series} = \\text{round}\\!\\left(\\frac{V_{pack}}{V_{cell}}\\right) = \\text{round}\\!\\left(\\frac{800}{3.6}\\right) = "+SR.Nseries,"Series cell count for 800V pack")}
   ${table(["Parameter","Symbol","Value","Unit"],[
@@ -1816,6 +1818,10 @@ function generateReport(p, SR, branding={}) {
   const reserveDistMd=Vresd*tres_sd;
   const CruiseRanged=p.range*1000-ClimbRd-DescRd-reserveDistMd;
   const bfd=(g0d*p.range*1000)/(p.LD*p.etaSys*p.sedCell*3600);
+  // Dual-constraint battery vars — mirrors sizing engine exactly
+  const sedEffd=p.sedCell*(1-(p.cRateDerate??0.08));
+  const WEd=SR.Etot*1000/((1-p.socMin)*sedEffd*p.etaBat);
+  const WPd=SR.Phov/(p.spBattery||1.0);
   const lambdaFd=p.fusLen/p.fusDiam;
   const Swwd=2*SR.Swing*(1+0.25*p.tc*(1+p.taper*0.25));
   const SwfWetd=Math.PI*p.fusDiam*p.fusLen*Math.pow(1-2/lambdaFd,2/3)*(1+1/lambdaFd**2);
@@ -1890,7 +1896,7 @@ function generateReport(p, SR, branding={}) {
   ${eq("P_{cr} = \\frac{W\\,V_{cr}}{\\eta_{sys}\\,(L/D)} = \\frac{"+fmt(SR.MTOW*g0d,1)+"\\times "+p.vCruise+"}{"+p.etaSys+"\\times "+p.LD+"} \\div 1000 = "+fmt(SR.Pcr,2)+"\\text{ kW}","Cruise power")}
   ${eq("P_{dc} = \\frac{W}{\\eta_{sys}}\\!\\left(-\\dot{h}+\\frac{V_{dc}}{(L/D)_{cl}}\\right)\\!\\div 1000 = "+fmt(SR.Pdc,2)+"\\text{ kW}","Descent power")}
   ${eq("P_{res} = \\frac{W\\,V_{res}}{\\eta_{sys}\\,(L/D)} \\div 1000 = "+fmt(SR.Pres,2)+"\\text{ kW}","Reserve power")}
-  ${eq("W_{bat} = \\frac{E_{total}\\times 1000\\,(1+\\text{SoC}_{min})}{\\text{SED}_{cell}\\,\\eta_{bat}} = \\frac{"+fmt(SR.Etot,3)+"\\times 1000\\times(1+"+p.socMin+")}{"+p.sedCell+"\\times "+p.etaBat+"} = "+fmt(SR.Wbat,2)+"\\text{ kg}","Battery mass from total energy")}
+  ${eq("W_E = \\frac{E_{total}\\times 1000}{(1-\\text{SoC}_{min})\\,\\text{SED}_{eff}\\,\\eta_{bat}} = \\frac{"+fmt(SR.Etot,3)+"\\times 1000}{(1-"+p.socMin+")\\times "+fmt(sedEffd,1)+"\\times "+p.etaBat+"} = "+fmt(WEd,2)+"\\text{ kg},\\quad W_P = \\frac{"+fmt(SR.Phov,1)+"}{"+((p.spBattery)||1.0)+"} = "+fmt(WPd,2)+"\\text{ kg},\\quad W_{bat}=\\max(W_E,W_P)="+fmt(SR.Wbat,2)+"\\text{ kg}","Dual-constraint battery — energy limit + power limit")}
   ${eq("\\text{MTOW} = "+p.payload+" + "+fmt(SR.Wempty,2)+" + "+fmt(SR.Wbat,2)+" = "+fmt(SR.MTOW,2)+"\\text{ kg} \\quad \\checkmark\\text{ Converged}","Final weight closure")}
   `);
 
@@ -1992,7 +1998,7 @@ function generateReport(p, SR, branding={}) {
   // ── D8. BATTERY PACK ARCHITECTURE ────────────────────────────────────
   const sd8 = sec("battcalc","D8. Battery Pack Architecture & Sizing",`
   <p>Cell specs: NMC Li-ion, V<sub>cell</sub> = 3.6 V, Q<sub>cell</sub> = 5.0 Ah. Bus voltage = 800 V DC.</p>
-  ${eq("W_{bat} = \\frac{E_{total}\\times 1000\\,(1+\\text{SoC}_{min})}{\\text{SED}_{cell}\\,\\eta_{bat}} = \\frac{"+fmt(SR.Etot,3)+"\\times 1000\\times(1+"+p.socMin+")}{"+p.sedCell+"\\times "+p.etaBat+"} = "+fmt(SR.Wbat,2)+"\\text{ kg}","Battery mass")}
+  ${eq("W_E = \\frac{E_{total}\\times 1000}{(1-\\text{SoC}_{min})\\,\\text{SED}_{eff}\\,\\eta_{bat}} = \\frac{"+fmt(SR.Etot,3)+"\\times 1000}{(1-"+p.socMin+")\\times "+fmt(sedEffd,1)+"\\times "+p.etaBat+"} = "+fmt(WEd,2)+"\\text{ kg},\\;W_P="+fmt(WPd,2)+"\\text{ kg},\\;W_{bat}=\\max(W_E,W_P)="+fmt(SR.Wbat,2)+"\\text{ kg}","Dual-constraint battery mass (energy + power limits)")}
   ${eq("\\text{SED}_{pack} = E_{total}\\times 1000/W_{bat} = "+fmt(SR.SEDpack,1)+"\\text{ Wh/kg}","Pack energy density")}
   ${eq("N_s = \\text{round}(800/3.6) = "+Nseriesd+", \\quad Q_{req} = E_{total}\\times 1000/800 = "+fmt(PackAhReqd,2)+"\\text{ Ah}","Series cells and required capacity")}
   ${eq("N_p = \\lceil "+fmt(PackAhReqd,2)+"/5.0 \\rceil = "+Npard+", \\quad N_{cells} = "+Nseriesd+"\\times "+Npard+" = "+Nseriesd*Npard,"Parallel strings and total cells")}
