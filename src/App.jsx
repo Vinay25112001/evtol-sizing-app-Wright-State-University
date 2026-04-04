@@ -571,7 +571,6 @@ function runSizing(p) {
     {label:`Hover T/W ≥ ${TW.toFixed(2)}`,ok:TW>=1.0,val:`${TW.toFixed(2)} (Phov = ${Phov.toFixed(1)} kW)`},
     // Cross-parameter feasibility checks
     {label:"AR vs LD compatible",ok:LDact>=(p.LD*0.70),val:`Act L/D ${LDact.toFixed(1)} vs target ${p.LD} (min 70%)`},
-    {label:"Vdc ≤ vCruise",ok:Vdc<=p.vCruise,val:`${Vdc.toFixed(1)} m/s (cruise ${p.vCruise} m/s)`},
     {label:"Rotors: even & ≥ 4",ok:p.nPropHover>=4&&p.nPropHover%2===0,val:`${p.nPropHover} rotors`},
   ];
 
