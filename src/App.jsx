@@ -5984,14 +5984,10 @@ export default function App(){
                         const html=generateReport(params,SR,pdfBranding);
                         const blob=new Blob([html],{type:"text/html;charset=utf-8"});
                         const url=URL.createObjectURL(blob);
-                        // Try opening in new tab first (auto-print triggers inside the HTML)
-                        const newTab=window.open(url,"_blank","noopener,noreferrer");
-                        if(!newTab){
-                          // Fallback: force direct file download if tab was blocked
-                          const a=document.createElement("a");
-                          a.href=url; a.download="eVTOL_Sizing_Report.html";
-                          document.body.appendChild(a); a.click(); document.body.removeChild(a);
-                        }
+                        // Anchor click with target=_blank is NEVER blocked (direct user gesture)
+                        const a=document.createElement("a");
+                        a.href=url; a.target="_blank"; a.rel="noopener noreferrer";
+                        document.body.appendChild(a); a.click(); document.body.removeChild(a);
                         setTimeout(()=>URL.revokeObjectURL(url),30000);
                         if(user){
                           addNotif(user.id,{title:"PDF Report Opened",body:"Use Ctrl+P → Save as PDF to export.",type:"success"});
