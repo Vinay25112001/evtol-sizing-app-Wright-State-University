@@ -1597,7 +1597,7 @@ function generateReport(p, SR, branding={}) {
   const s3 = sec("weight","3. Weight & Energy Sizing (Iterative)",`
   <p>The MTOW is found by simultaneously converging the weight and energy fractions using a nested iterative scheme. The battery mass fraction is:</p>
   ${eq("f_{bat} = \\frac{g_0 \\cdot SR}{(L/D)\\,\\eta_{sys}\\,\\text{SED}_{cell}\\times 3600}","Battery mass fraction (range-energy method)")}
-  ${eq("W_{bat} = \\frac{E_{total}\\times 1000\\,(1+\\text{SoC}_{min})}{\\text{SED}_{cell}\\,\\eta_{bat}}","Battery mass from total mission energy")}
+  ${eq("W_E = \\frac{E_{total}\\times 1000}{(1-\\text{SoC}_{min})\\,\\text{SED}_{eff}\\,\\eta_{bat}},\\quad W_P = \\frac{P_{hov}}{SP_{bat}},\\quad W_{bat}=\\max(W_E,W_P)","Dual-constraint battery mass (energy & power limits)")}
   ${eq("\\text{MTOW} = m_{pay} + f_{EW}\\cdot\\text{MTOW} + W_{bat}","Weight closure equation (solved iteratively)")}
   ${table(["Quantity","Symbol","Value","Unit"],[
     row("MTOW (initial)","MTOW<sub>1</sub>",fmt(SR.MTOW1,1),"kg"),
@@ -1678,7 +1678,7 @@ function generateReport(p, SR, branding={}) {
 
   // ── 7. BATTERY ───────────────────────────────────────────────────────
   const s7 = sec("battery","7. Battery System Sizing",`
-  ${eq("W_{bat} = \\frac{E_{total}\\times 1000\\,(1+\\text{SoC}_{min})}{\\text{SED}_{cell}\\,\\eta_{bat}} = \\frac{"+fmt(SR.Etot,3)+"\\times 1000\\times(1+"+p.socMin+")}{"+p.sedCell+"\\times"+p.etaBat+"} = "+fmt(SR.Wbat,1)+"\\text{ kg}","Battery mass")}
+  ${eq("W_E = \\frac{E_{total}\\times 1000}{(1-\\text{SoC}_{min})\\,\\text{SED}_{eff}\\,\\eta_{bat}} = \\frac{"+fmt(SR.Etot,3)+"\\times 1000}{(1-"+p.socMin+")\\times"+p.sedCell+"\\times"+p.etaBat+"} = "+fmt(SR.Wbat,1)+"\\text{ kg},\\quad W_P=\\frac{P_{hov}}{SP_{bat}}="+fmt(SR.Phov,1)+"\\text{ kW},\\;W_{bat}=\\max(W_E,W_P)","Dual-constraint battery mass (energy + power limits)")}
   ${eq("\\text{SED}_{pack} = \\frac{E_{total}}{W_{bat}} = "+fmt(SR.SEDpack,1)+"\\text{ Wh/kg}","Pack-level specific energy density")}
   ${eq("N_{series} = \\text{round}\\!\\left(\\frac{V_{pack}}{V_{cell}}\\right) = \\text{round}\\!\\left(\\frac{800}{3.6}\\right) = "+SR.Nseries,"Series cell count for 800V pack")}
   ${table(["Parameter","Symbol","Value","Unit"],[
@@ -1889,7 +1889,7 @@ function generateReport(p, SR, branding={}) {
   ${eq("P_{cr} = \\frac{W\\,V_{cr}}{\\eta_{sys}\\,(L/D)} = \\frac{"+fmt(SR.MTOW*g0d,1)+"\\times "+p.vCruise+"}{"+p.etaSys+"\\times "+p.LD+"} \\div 1000 = "+fmt(SR.Pcr,2)+"\\text{ kW}","Cruise power")}
   ${eq("P_{dc} = \\frac{W}{\\eta_{sys}}\\!\\left(-\\dot{h}+\\frac{V_{dc}}{(L/D)_{cl}}\\right)\\!\\div 1000 = "+fmt(SR.Pdc,2)+"\\text{ kW}","Descent power")}
   ${eq("P_{res} = \\frac{W\\,V_{res}}{\\eta_{sys}\\,(L/D)} \\div 1000 = "+fmt(SR.Pres,2)+"\\text{ kW}","Reserve power")}
-  ${eq("W_{bat} = \\frac{E_{total}\\times 1000\\,(1+\\text{SoC}_{min})}{\\text{SED}_{cell}\\,\\eta_{bat}} = \\frac{"+fmt(SR.Etot,3)+"\\times 1000\\times(1+"+p.socMin+")}{"+p.sedCell+"\\times "+p.etaBat+"} = "+fmt(SR.Wbat,2)+"\\text{ kg}","Battery mass from total energy")}
+  ${eq("W_E = \\frac{E_{total}\\times 1000}{(1-\\text{SoC}_{min})\\,\\text{SED}_{eff}\\,\\eta_{bat}} = \\frac{"+fmt(SR.Etot,3)+"\\times 1000}{(1-"+p.socMin+")\\times"+p.sedCell+"\\times "+p.etaBat+"} = "+fmt(SR.Wbat,2)+"\\text{ kg},\\quad W_P=\\frac{P_{hov}}{SP_{bat}}="+fmt(SR.Phov,1)+"\\text{ kW},\\;W_{bat}=\\max(W_E,W_P)","Dual-constraint battery mass (energy + power limits)")}
   ${eq("\\text{MTOW} = "+p.payload+" + "+fmt(SR.Wempty,2)+" + "+fmt(SR.Wbat,2)+" = "+fmt(SR.MTOW,2)+"\\text{ kg} \\quad \\checkmark\\text{ Converged}","Final weight closure")}
   `);
 
@@ -1991,7 +1991,7 @@ function generateReport(p, SR, branding={}) {
   // ── D8. BATTERY PACK ARCHITECTURE ────────────────────────────────────
   const sd8 = sec("battcalc","D8. Battery Pack Architecture & Sizing",`
   <p>Cell specs: NMC Li-ion, V<sub>cell</sub> = 3.6 V, Q<sub>cell</sub> = 5.0 Ah. Bus voltage = 800 V DC.</p>
-  ${eq("W_{bat} = \\frac{E_{total}\\times 1000\\,(1+\\text{SoC}_{min})}{\\text{SED}_{cell}\\,\\eta_{bat}} = \\frac{"+fmt(SR.Etot,3)+"\\times 1000\\times(1+"+p.socMin+")}{"+p.sedCell+"\\times "+p.etaBat+"} = "+fmt(SR.Wbat,2)+"\\text{ kg}","Battery mass")}
+  ${eq("W_E = \\frac{E_{total}\\times 1000}{(1-\\text{SoC}_{min})\\,\\text{SED}_{eff}\\,\\eta_{bat}} = \\frac{"+fmt(SR.Etot,3)+"\\times 1000}{(1-"+p.socMin+")\\times"+p.sedCell+"\\times "+p.etaBat+"} = "+fmt(SR.Wbat,2)+"\\text{ kg},\\quad W_P=\\frac{P_{hov}}{SP_{bat}}="+fmt(SR.Phov,1)+"\\text{ kW},\\;W_{bat}=\\max(W_E,W_P)","Dual-constraint battery mass (energy + power limits)")}
   ${eq("\\text{SED}_{pack} = E_{total}\\times 1000/W_{bat} = "+fmt(SR.SEDpack,1)+"\\text{ Wh/kg}","Pack energy density")}
   ${eq("N_s = \\text{round}(800/3.6) = "+Nseriesd+", \\quad Q_{req} = E_{total}\\times 1000/800 = "+fmt(PackAhReqd,2)+"\\text{ Ah}","Series cells and required capacity")}
   ${eq("N_p = \\lceil "+fmt(PackAhReqd,2)+"/5.0 \\rceil = "+Npard+", \\quad N_{cells} = "+Nseriesd+"\\times "+Npard+" = "+Nseriesd*Npard,"Parallel strings and total cells")}
@@ -3218,7 +3218,7 @@ function DesignGallery({ SC, onLoadDesign }) {
   // Gallery seeded with representative eVTOL archetypes
   const GALLERY = [
     { id:0, name:'🎓 My MATLAB Thesis Project', author:'Wright State University', config:'Lift+Cruise',
-      MTOW:3108, range:250, bWing:13.5, nProp:6, Drotor:3.0, payload:455, SM:14.0, Etot:205,
+      MTOW:2969, range:250, bWing:13.5, nProp:6, Drotor:3.0, payload:455, SM:14.0, Etot:192,
       tags:['Thesis','WSU','MATLAB-Exact'], color:'#f59e0b',
       params:{
         // ── Mission (exact MATLAB values) ────────────────────────────────
@@ -6968,14 +6968,14 @@ export default function App(){
                           <div style={{fontSize:10,color:col,fontFamily:"'DM Mono',monospace",fontWeight:700,
                             writingMode:"vertical-rl",textOrientation:"mixed",transform:"rotate(180deg)",
                             letterSpacing:"0.05em",lineHeight:1,marginBottom:4,whiteSpace:"nowrap"}}>
-                            {lbl}={x}m
+                            {lbl}={(+x).toFixed(2)}m
                           </div>
                           <div style={{width:2,height:"100%",background:col,opacity:0.85,borderRadius:1,minHeight:60}}/>
                         </div>);
                       })}
                     </div>
-                    {[["CG (MTOW)",`${SR.xCGtotal} m`],["Wing AC",`${(1.45+SR.Xac).toFixed(3)} m`],
-                      ["Neutral Point",`${SR.xNP} m`],["Static Margin",`${(SR.SM*100).toFixed(1)}% MAC`],
+                    {[["CG (MTOW)",`${(+SR.xCGtotal).toFixed(2)} m`],["Wing AC",`${(1.45+SR.Xac).toFixed(2)} m`],
+                      ["Neutral Point",`${(+SR.xNP).toFixed(2)} m`],["Static Margin",`${(SR.SM*100).toFixed(1)}% MAC`],
                       ["MAC",`${SR.MAC} m`],["Status",SR.SM>=0.05&&SR.SM<=0.25?"✅ OK (5–25%)":SR.SM<0.05?"⚠️ Too small":"⚠️ Too large"],
                     ].map(([k,v],i)=>(
                       <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:`1px solid #0f131a`}}>
@@ -7067,8 +7067,8 @@ export default function App(){
                     </div>);
                   })()}
                   <div style={{display:"flex",gap:18,marginTop:8,padding:"5px 8px",background:"#0a0d14",borderRadius:4}}>
-                    {[["OEW CG",`${SR.xCGempty} m`,"#64748b"],["MTOW CG",`${SR.xCGtotal} m`,SC.amber],
-                      ["NP",`${SR.xNP} m`,SC.blue],["ΔCG travel",`${Math.abs(SR.xCGtotal-SR.xCGempty).toFixed(3)} m`,SC.green]
+                    {[["OEW CG",`${(+SR.xCGempty).toFixed(2)} m`,"#64748b"],["MTOW CG",`${(+SR.xCGtotal).toFixed(2)} m`,SC.amber],
+                      ["NP",`${(+SR.xNP).toFixed(2)} m`,SC.blue],["ΔCG travel",`${Math.abs(SR.xCGtotal-SR.xCGempty).toFixed(2)} m`,SC.green]
                     ].map(([l,v,col])=>(
                       <div key={l} style={{display:"flex",flexDirection:"column",gap:2}}>
                         <span style={{fontSize:8,color:"#64748b",fontFamily:"'DM Mono',monospace"}}>{l}</span>
