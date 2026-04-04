@@ -109,7 +109,7 @@ function runSizing(p) {
     Wempty=p.ewf*MTOW;
     // Battery C-rate derating: SED drops at high discharge rates (hover peaks 3–5C)
     // Approximate: SED_eff = sedCell × (1 - cRateDerate); default 8% for ~3-4C hover
-    const sedEff=p.sedCell*(1-(p.cRateDerate||0.08));
+    const sedEff=p.sedCell*(1-(p.cRateDerate??0.08));
     // Dual-constraint battery sizing — matches MATLAB: Wbattery = max(W_E, W_P)
     // W_E: energy limit  — exact (1-SoCmin) form, not (1+SoCmin) approximation
     // W_P: power limit   — W_P = P_hover / SP_battery
@@ -427,7 +427,7 @@ function runSizing(p) {
   // Segment B: design → ferry range (reduce payload, add battery weight to freed mass)
   // Segment C: payload=0 (ferry) — flat at max range
   // For fixed-MTOW eVTOL: all freed payload weight → battery (same MTOW)
-  const sedEff_rp = p.sedCell*(1-(p.cRateDerate||0.08));
+  const sedEff_rp = p.sedCell*(1-(p.cRateDerate??0.08));
   const minBatKg  = (Eto+Eld)*1000*(1+p.socMin)/(sedEff_rp*p.etaBat); // min bat for hover phases
   const maxPayload= Math.max(0, MTOW-Wempty-minBatKg);  // hard upper limit on payload
   const ferryRange= (()=>{
@@ -502,7 +502,7 @@ function runSizing(p) {
       const Pd2=Pd2_raw;
       const Pr2=(W2/p.etaSys)*(Vres/p.LD)/1000;
       const Et2=Ph2*(hvtol/0.5)/3600+Pc2*tcl/3600+Pcr2*tcr/3600+Pd2*tdc/3600+Ph2*tld/3600+Pr2*tres_s/3600;
-      const sedEff2=p.sedCell*(1-(p.cRateDerate||0.08));
+      const sedEff2=p.sedCell*(1-(p.cRateDerate??0.08));
       const WE2=Et2*1000/((1-p.socMin)*sedEff2*p.etaBat);
       const WP2=Ph2/(p.spBattery||1.0);
       const Wb2=Math.max(WE2,WP2);
@@ -526,7 +526,7 @@ function runSizing(p) {
       const Pdc_tw=Pdc_tw_raw;
       const Pres_tw=(W/p.etaSys)*(Vres/p.LD)/1000;
       const Etot_tw=Phov_tw*(hvtol/0.5)/3600+Pcl_tw*tcl/3600+Pcr_tw*tcr/3600+Pdc_tw*tdc/3600+Phov_tw*tld/3600+Pres_tw*tres_s/3600;
-      const sedEff_tw=p.sedCell*(1-(p.cRateDerate||0.08));
+      const sedEff_tw=p.sedCell*(1-(p.cRateDerate??0.08));
       const WE_tw=Etot_tw*1000/((1-p.socMin)*sedEff_tw*p.etaBat);
       const WP_tw=Phov_tw/(p.spBattery||1.0);
       const Wbat_tw=Math.max(WE_tw,WP_tw);
@@ -5909,7 +5909,7 @@ export default function App(){
             <Slider label="Cell SED" unit="Wh/kg" value={params.sedCell} min={150} max={500} step={5} onChange={set("sedCell")} note="Joby/Archer 2025: ~300 Wh/kg cell"/>
             <Slider label="Battery η" unit="" value={params.etaBat} min={0.70} max={0.99} step={0.01} onChange={set("etaBat")}/>
             <Slider label="Min SoC" unit="" value={params.socMin} min={0.05} max={0.40} step={0.01} onChange={set("socMin")}/>
-            <Slider label="C-Rate SED Derate" unit="" value={params.cRateDerate||0.08} min={0.0} max={0.20} step={0.01} onChange={set("cRateDerate")} note="SED loss at peak hover C-rate (8% default for ~3-4C)"/>
+            <Slider label="C-Rate SED Derate" unit="" value={params.cRateDerate??0.08} min={0.0} max={0.20} step={0.01} onChange={set("cRateDerate")} note="SED loss at peak hover C-rate (8% default for ~3-4C)"/>
           </Acc>
           <Acc title="V-Tail Design" icon="🦋">
             <Slider label="Dihedral Angle Γ" unit="°" value={params.vtGamma} min={20} max={70} step={1} onChange={set("vtGamma")}
