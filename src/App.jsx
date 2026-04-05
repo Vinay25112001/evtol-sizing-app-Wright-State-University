@@ -5219,6 +5219,218 @@ function SensPanel({params,SR,SC}){
   );
 }
 
+/* ── Interactive Donut: Phase Duration ── */
+function PhaseDurationPie({SR,SC,PHC,TTP}){
+  const [activeIdx,setActiveIdx]=useState(null);
+  const data=[{n:"T/O",v:SR.tto},{n:"Climb",v:SR.tcl},{n:"Cruise",v:SR.tcr},{n:"Descent",v:SR.tdc},{n:"Land",v:SR.tld},{n:"Reserve",v:SR.tres}];
+  const total=data.reduce((s,d)=>s+d.v,0);
+  const active=activeIdx!==null?data[activeIdx]:null;
+  return(
+    <div style={{position:"relative"}}>
+      <ResponsiveContainer width="100%" height={195}>
+        <PieChart>
+          <Pie data={data} dataKey="v" nameKey="n" cx="50%" cy="50%"
+            innerRadius={45} outerRadius={80} paddingAngle={3}
+            onMouseEnter={(_,i)=>setActiveIdx(i)} onMouseLeave={()=>setActiveIdx(null)}>
+            {PHC.map((clr,i)=><Cell key={i} fill={clr} opacity={activeIdx===null||activeIdx===i?1:0.35} stroke={activeIdx===i?clr:"none"} strokeWidth={activeIdx===i?2:0}/>)}
+          </Pie>
+          <Tooltip {...TTP} formatter={(v)=>[`${v} s (${(v/total*100).toFixed(1)}%)`,"Duration"]}/>
+          <Legend iconSize={8} wrapperStyle={{fontSize:11,color:SC.muted}}/>
+        </PieChart>
+      </ResponsiveContainer>
+      <div style={{position:"absolute",top:"38%",left:"50%",transform:"translate(-50%,-50%)",textAlign:"center",pointerEvents:"none"}}>
+        {active?(
+          <><div style={{fontSize:13,fontWeight:800,color:PHC[activeIdx],fontFamily:"'DM Mono',monospace"}}>{active.v}s</div>
+          <div style={{fontSize:8,color:SC.muted}}>{active.n}</div>
+          <div style={{fontSize:8,color:PHC[activeIdx]}}>{(active.v/total*100).toFixed(1)}%</div></>
+        ):(
+          <><div style={{fontSize:11,fontWeight:700,color:SC.amber,fontFamily:"'DM Mono',monospace"}}>{total}s</div>
+          <div style={{fontSize:8,color:SC.muted}}>total</div></>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ── Interactive Donut: CD0 Drag Buildup ── */
+function DragPie({SR,SC,TTP}){
+  const [activeIdx,setActiveIdx]=useState(null);
+  const dragColors=["#3b82f6","#ef4444","#22c55e","#f59e0b","#8b5cf6","#ec4899","#06b6d4"];
+  const total=SR.dragComp.reduce((s,d)=>s+d.val,0);
+  const active=activeIdx!==null?SR.dragComp[activeIdx]:null;
+  return(
+    <div style={{position:"relative"}}>
+      <ResponsiveContainer width="100%" height={215}>
+        <PieChart>
+          <Pie data={SR.dragComp} dataKey="val" nameKey="name" cx="50%" cy="50%"
+            innerRadius={48} outerRadius={85} paddingAngle={3}
+            onMouseEnter={(_,i)=>setActiveIdx(i)} onMouseLeave={()=>setActiveIdx(null)}>
+            {dragColors.map((clr,i)=><Cell key={i} fill={clr} opacity={activeIdx===null||activeIdx===i?1:0.3} stroke={activeIdx===i?clr:"none"} strokeWidth={activeIdx===i?2:0}/>)}
+          </Pie>
+          <Tooltip {...TTP} formatter={(v)=>[v.toFixed(5),"CD₀"]}/>
+          <Legend iconSize={8} wrapperStyle={{fontSize:12,color:SC.muted}}/>
+        </PieChart>
+      </ResponsiveContainer>
+      <div style={{position:"absolute",top:"40%",left:"50%",transform:"translate(-50%,-50%)",textAlign:"center",pointerEvents:"none"}}>
+        {active?(
+          <><div style={{fontSize:11,fontWeight:800,color:dragColors[activeIdx],fontFamily:"'DM Mono',monospace"}}>{active.val.toFixed(5)}</div>
+          <div style={{fontSize:8,color:SC.muted,maxWidth:60}}>{active.name}</div>
+          <div style={{fontSize:8,color:dragColors[activeIdx]}}>{(active.val/total*100).toFixed(1)}%</div></>
+        ):(
+          <><div style={{fontSize:10,fontWeight:700,color:SC.amber,fontFamily:"'DM Mono',monospace"}}>{total.toFixed(4)}</div>
+          <div style={{fontSize:7,color:SC.muted}}>CD₀ total</div></>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ── Interactive Donut: MTOW Composition ── */
+function MTOWPie({SR,params,SC,TTP}){
+  const [activeIdx,setActiveIdx]=useState(null);
+  const wtData=[{name:"Empty",val:SR.Wempty},{name:"Battery",val:SR.Wbat},{name:"Payload",val:params.payload}];
+  const wtColors=[SC.blue,SC.amber,SC.green];
+  const active=activeIdx!==null?wtData[activeIdx]:null;
+  return(
+    <div style={{position:"relative"}}>
+      <ResponsiveContainer width="100%" height={190}>
+        <PieChart>
+          <Pie data={wtData} dataKey="val" nameKey="name" cx="50%" cy="50%"
+            innerRadius={48} outerRadius={82} paddingAngle={4}
+            onMouseEnter={(_,i)=>setActiveIdx(i)} onMouseLeave={()=>setActiveIdx(null)}>
+            {wtColors.map((clr,i)=><Cell key={i} fill={clr} opacity={activeIdx===null||activeIdx===i?1:0.3} stroke={activeIdx===i?clr:"none"} strokeWidth={activeIdx===i?2:0}/>)}
+          </Pie>
+          <Tooltip {...TTP} formatter={(v,n)=>[`${v.toFixed(1)} kg (${(v/SR.MTOW*100).toFixed(1)}%)`,n]}/>
+          <Legend iconSize={8} wrapperStyle={{fontSize:12,color:SC.muted}}/>
+        </PieChart>
+      </ResponsiveContainer>
+      <div style={{position:"absolute",top:"38%",left:"50%",transform:"translate(-50%,-50%)",textAlign:"center",pointerEvents:"none"}}>
+        {active?(
+          <><div style={{fontSize:13,fontWeight:800,color:wtColors[activeIdx],fontFamily:"'DM Mono',monospace"}}>{active.val.toFixed(0)}</div>
+          <div style={{fontSize:7,color:SC.muted}}>kg</div>
+          <div style={{fontSize:9,color:wtColors[activeIdx]}}>{(active.val/SR.MTOW*100).toFixed(1)}%</div></>
+        ):(
+          <><div style={{fontSize:13,fontWeight:700,color:SC.amber,fontFamily:"'DM Mono',monospace"}}>{SR.MTOW}</div>
+          <div style={{fontSize:7,color:SC.muted}}>kg MTOW</div></>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ── Sensitivity Analysis Panel (Performance tab) ── */
+function SensitivityAnalysis({params,SR,SC,TTP}){
+  const [sensData,setSensData]=useState(null);
+  const [sensRunning,setSensRunning]=useState(false);
+  const [sensParam,setSensParam]=useState("ewf");
+  const SENS_PARAMS=[
+    {k:"ewf",    l:"Empty Wt Fraction", base:params.ewf},
+    {k:"LD",     l:"Lift-to-Drag L/D",  base:params.LD},
+    {k:"sedCell",l:"Cell SED (Wh/kg)",   base:params.sedCell},
+    {k:"payload",l:"Payload (kg)",        base:params.payload},
+    {k:"etaHov", l:"Hover FOM",           base:params.etaHov},
+    {k:"propDiam",l:"Rotor Dia (m)",       base:params.propDiam},
+  ];
+  const runSens=()=>{
+    setSensRunning(true);
+    setTimeout(()=>{
+      const deltas=[-0.20,-0.15,-0.10,-0.05,0,0.05,0.10,0.15,0.20];
+      const results={};
+      SENS_PARAMS.forEach(({k,base})=>{
+        results[k]=deltas.map(d=>{
+          try{
+            const R=runSizing({...params,[k]:base*(1+d)});
+            return{delta:+(d*100).toFixed(0),MTOW:R.MTOW,Wbat:R.Wbat,Etot:R.Etot};
+          }catch{return null;}
+        }).filter(Boolean);
+      });
+      setSensData(results); setSensRunning(false);
+    },20);
+  };
+  const cur=SENS_PARAMS.find(p=>p.k===sensParam);
+  const data=sensData?sensData[sensParam]:null;
+  const baseRow=data?data.find(r=>r.delta===0):null;
+  return(
+    <div style={{background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:8,padding:"14px 16px"}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,flexWrap:"wrap",gap:8}}>
+        <div>
+          <div style={{fontSize:12,fontWeight:700,color:SC.text,fontFamily:"system-ui,sans-serif"}}>📊 Sensitivity Analysis — ±20% Parameter Sweep</div>
+          <div style={{fontSize:9,color:SC.muted,fontFamily:"system-ui,sans-serif",marginTop:2}}>How MTOW, battery mass and total energy respond to each parameter variation (MATLAB-style)</div>
+        </div>
+        <button type="button" onClick={runSens} disabled={sensRunning}
+          style={{padding:"7px 18px",background:sensRunning?"transparent":`linear-gradient(135deg,${SC.amber},#f97316)`,
+            border:`1px solid ${sensRunning?SC.border:SC.amber}`,borderRadius:6,
+            color:sensRunning?SC.muted:"#07090f",fontSize:11,fontWeight:800,
+            cursor:sensRunning?"not-allowed":"pointer",fontFamily:"system-ui,sans-serif"}}>
+          {sensRunning?"⏳ Computing…":"▶ Run Sensitivity"}
+        </button>
+      </div>
+      {sensData&&(
+        <>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>
+            {SENS_PARAMS.map(({k,l})=>(
+              <button key={k} type="button" onClick={()=>setSensParam(k)}
+                style={{padding:"4px 12px",borderRadius:4,fontSize:9,fontWeight:600,cursor:"pointer",
+                  fontFamily:"'DM Mono',monospace",border:`1px solid ${sensParam===k?SC.amber:SC.border}`,
+                  background:sensParam===k?`${SC.amber}22`:"transparent",color:sensParam===k?SC.amber:SC.muted}}>
+                {l}
+              </button>
+            ))}
+          </div>
+          {data&&(
+            <div style={{display:"grid",gridTemplateColumns:"1fr auto",gap:16,alignItems:"start"}}>
+              <div>
+                <div style={{fontSize:10,color:SC.muted,marginBottom:6,fontFamily:"system-ui,sans-serif"}}>
+                  {cur.l} — base: <b style={{color:SC.amber}}>{cur.base}</b>
+                  {baseRow&&<> · base MTOW: <b style={{color:SC.amber}}>{baseRow.MTOW} kg</b></>}
+                </div>
+                <ResponsiveContainer width="100%" height={220}>
+                  <LineChart data={data} margin={{top:8,right:20,left:10,bottom:20}}>
+                    <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
+                    <XAxis dataKey="delta" tick={{fontSize:10,fill:SC.muted}} label={{value:"Parameter change (%)",position:"insideBottom",offset:-8,fontSize:11,fill:SC.muted}}/>
+                    <YAxis yAxisId="left" tick={{fontSize:10,fill:SC.muted}} label={{value:"Mass (kg)",angle:-90,position:"insideLeft",offset:10,fontSize:11,fill:SC.muted}}/>
+                    <YAxis yAxisId="right" orientation="right" tick={{fontSize:10,fill:SC.muted}} label={{value:"Energy (kWh)",angle:90,position:"insideRight",offset:10,fontSize:11,fill:SC.muted}}/>
+                    <Tooltip {...TTP} formatter={(v,n)=>[typeof v==="number"?v.toFixed(1):v,n]} labelFormatter={v=>`Δ${v}%`}/>
+                    <ReferenceLine x={0} yAxisId="left" stroke={SC.muted} strokeDasharray="3 3"/>
+                    <Line yAxisId="left" type="monotone" dataKey="MTOW" stroke={SC.amber} strokeWidth={2.5} dot={{r:3}} name="MTOW (kg)"/>
+                    <Line yAxisId="left" type="monotone" dataKey="Wbat" stroke={SC.blue} strokeWidth={2} dot={{r:3}} name="W_bat (kg)"/>
+                    <Line yAxisId="right" type="monotone" dataKey="Etot" stroke={SC.teal} strokeWidth={2} dot={{r:3}} name="Energy (kWh)" strokeDasharray="5 3"/>
+                    <Legend iconSize={10} wrapperStyle={{fontSize:11,color:SC.muted,paddingTop:4}}/>
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+              <div style={{minWidth:200}}>
+                <table style={{borderCollapse:"collapse",fontSize:9,fontFamily:"'DM Mono',monospace",width:"100%"}}>
+                  <thead><tr style={{borderBottom:`1px solid ${SC.border}`}}>
+                    {["Δ%","MTOW","Wbat","E"].map(h=><th key={h} style={{padding:"4px 8px",color:SC.muted,fontWeight:600,textAlign:"right"}}>{h}</th>)}
+                  </tr></thead>
+                  <tbody>{data.map(r=>{
+                    const isBase=r.delta===0;
+                    const mtowDelta=baseRow?r.MTOW-baseRow.MTOW:0;
+                    return(<tr key={r.delta} style={{background:isBase?`${SC.amber}11`:"transparent",borderBottom:`1px solid ${SC.border}22`}}>
+                      <td style={{padding:"3px 8px",color:r.delta<0?SC.teal:r.delta>0?SC.red:SC.amber,textAlign:"right",fontWeight:isBase?700:400}}>{r.delta>0?"+":""}{r.delta}%</td>
+                      <td style={{padding:"3px 8px",color:SC.text,textAlign:"right",fontWeight:isBase?700:400}}>
+                        {r.MTOW}{!isBase&&<span style={{fontSize:8,color:mtowDelta>0?SC.red:SC.teal}}> {mtowDelta>0?"+":""}{mtowDelta.toFixed(0)}</span>}
+                      </td>
+                      <td style={{padding:"3px 8px",color:SC.blue,textAlign:"right"}}>{r.Wbat}</td>
+                      <td style={{padding:"3px 8px",color:SC.teal,textAlign:"right"}}>{r.Etot}</td>
+                    </tr>);
+                  })}</tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+      {!sensData&&!sensRunning&&(
+        <div style={{textAlign:"center",padding:"28px 0",color:SC.dim,fontSize:10,fontFamily:"system-ui,sans-serif"}}>
+          Click <b style={{color:SC.amber}}>▶ Run Sensitivity</b> to sweep 6 parameters ±20% and see how MTOW, battery mass and energy respond.
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function App(){
   const[params,setParams]=useState({
     // ── Mission ──────────────────────────────────────────────────────────
@@ -6664,43 +6876,7 @@ export default function App(){
                 {/* Phase Duration + Energy Radar */}
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
                   <Panel title="Phase Duration (s)" ht={240}>
-                    {(()=>{
-                      const [activeIdx,setActiveIdx]=useState(null);
-                      const data=[{n:"T/O",v:SR.tto},{n:"Climb",v:SR.tcl},{n:"Cruise",v:SR.tcr},{n:"Descent",v:SR.tdc},{n:"Land",v:SR.tld},{n:"Reserve",v:SR.tres}];
-                      const total=data.reduce((s,d)=>s+d.v,0);
-                      const active=activeIdx!==null?data[activeIdx]:null;
-                      return(
-                        <div style={{position:"relative"}}>
-                          <ResponsiveContainer width="100%" height={195}>
-                            <PieChart>
-                              <Pie data={data} dataKey="v" nameKey="n" cx="50%" cy="50%"
-                                innerRadius={45} outerRadius={80} paddingAngle={3}
-                                onMouseEnter={(_,i)=>setActiveIdx(i)}
-                                onMouseLeave={()=>setActiveIdx(null)}>
-                                {PHC.map((clr,i)=><Cell key={i} fill={clr} opacity={activeIdx===null||activeIdx===i?1:0.35} stroke={activeIdx===i?clr:"none"} strokeWidth={activeIdx===i?2:0}/>)}
-                              </Pie>
-                              <Tooltip {...TTP} formatter={(v)=>[`${v} s (${(v/total*100).toFixed(1)}%)`,"Duration"]}/>
-                              <Legend iconSize={8} wrapperStyle={{fontSize:11,color:SC.muted}}/>
-                            </PieChart>
-                          </ResponsiveContainer>
-                          {/* Center label */}
-                          <div style={{position:"absolute",top:"38%",left:"50%",transform:"translate(-50%,-50%)",textAlign:"center",pointerEvents:"none"}}>
-                            {active?(
-                              <>
-                                <div style={{fontSize:13,fontWeight:800,color:PHC[activeIdx],fontFamily:"'DM Mono',monospace"}}>{active.v}s</div>
-                                <div style={{fontSize:8,color:SC.muted}}>{active.n}</div>
-                                <div style={{fontSize:8,color:PHC[activeIdx]}}>{(active.v/total*100).toFixed(1)}%</div>
-                              </>
-                            ):(
-                              <>
-                                <div style={{fontSize:11,fontWeight:700,color:SC.amber,fontFamily:"'DM Mono',monospace"}}>{total}s</div>
-                                <div style={{fontSize:8,color:SC.muted}}>total</div>
-                              </>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })()}
+                    <PhaseDurationPie SR={SR} SC={SC} PHC={PHC} TTP={TTP}/>
                   </Panel>
                   <Panel title="Energy per Phase — Radar (kWh)" ht={240}>
                     <ResponsiveContainer width="100%" height={195}>
@@ -6730,42 +6906,7 @@ export default function App(){
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
                   <Panel title="CD₀ Breakdown (Raymer Buildup)" ht={265}>
-                    {(()=>{
-                      const [activeIdx,setActiveIdx]=useState(null);
-                      const dragColors=["#3b82f6","#ef4444","#22c55e","#f59e0b","#8b5cf6","#ec4899","#06b6d4"];
-                      const total=SR.dragComp.reduce((s,d)=>s+d.val,0);
-                      const active=activeIdx!==null?SR.dragComp[activeIdx]:null;
-                      return(
-                        <div style={{position:"relative"}}>
-                          <ResponsiveContainer width="100%" height={215}>
-                            <PieChart>
-                              <Pie data={SR.dragComp} dataKey="val" nameKey="name" cx="50%" cy="50%"
-                                innerRadius={48} outerRadius={85} paddingAngle={3}
-                                onMouseEnter={(_,i)=>setActiveIdx(i)}
-                                onMouseLeave={()=>setActiveIdx(null)}>
-                                {dragColors.map((clr,i)=><Cell key={i} fill={clr} opacity={activeIdx===null||activeIdx===i?1:0.3} stroke={activeIdx===i?clr:"none"} strokeWidth={activeIdx===i?2:0}/>)}
-                              </Pie>
-                              <Tooltip {...TTP} formatter={(v)=>[v.toFixed(5),"CD₀"]}/>
-                              <Legend iconSize={8} wrapperStyle={{fontSize:12,color:SC.muted}}/>
-                            </PieChart>
-                          </ResponsiveContainer>
-                          <div style={{position:"absolute",top:"40%",left:"50%",transform:"translate(-50%,-50%)",textAlign:"center",pointerEvents:"none"}}>
-                            {active?(
-                              <>
-                                <div style={{fontSize:11,fontWeight:800,color:dragColors[activeIdx],fontFamily:"'DM Mono',monospace"}}>{active.val.toFixed(5)}</div>
-                                <div style={{fontSize:8,color:SC.muted,maxWidth:60}}>{active.name}</div>
-                                <div style={{fontSize:8,color:dragColors[activeIdx]}}>{(active.val/total*100).toFixed(1)}%</div>
-                              </>
-                            ):(
-                              <>
-                                <div style={{fontSize:10,fontWeight:700,color:SC.amber,fontFamily:"'DM Mono',monospace"}}>{total.toFixed(4)}</div>
-                                <div style={{fontSize:7,color:SC.muted}}>CD₀ total</div>
-                              </>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })()}
+                    <DragPie SR={SR} SC={SC} TTP={TTP}/>
                   </Panel>
                   <Panel title="Airfoil Selection Score" ht={265}>
                     <div style={{fontSize:9,color:SC.muted,fontFamily:"'DM Mono',monospace",marginBottom:6}}>
@@ -7315,138 +7456,7 @@ export default function App(){
                 </div>
 
                 {/* ── Sensitivity Analysis (MATLAB-style ±20% sweep) ── */}
-                {(()=>{
-                  const [sensData,setSensData]=useState(null);
-                  const [sensRunning,setSensRunning]=useState(false);
-                  const [sensParam,setSensParam]=useState("ewf");
-                  const SENS_PARAMS=[
-                    {k:"ewf",    l:"Empty Wt Fraction",base:params.ewf},
-                    {k:"LD",     l:"Lift-to-Drag L/D", base:params.LD},
-                    {k:"sedCell",l:"Cell SED (Wh/kg)",  base:params.sedCell},
-                    {k:"payload",l:"Payload (kg)",       base:params.payload},
-                    {k:"etaHov", l:"Hover FOM",          base:params.etaHov},
-                    {k:"propDiam",l:"Rotor Diameter (m)", base:params.propDiam},
-                  ];
-                  const runSens=()=>{
-                    setSensRunning(true);
-                    setTimeout(()=>{
-                      const deltas=[-0.20,-0.15,-0.10,-0.05,0,0.05,0.10,0.15,0.20];
-                      const results={};
-                      SENS_PARAMS.forEach(({k,base})=>{
-                        results[k]=deltas.map(d=>{
-                          try{
-                            const pv=base*(1+d);
-                            const R=runSizing({...params,[k]:pv});
-                            return{delta:+(d*100).toFixed(0),MTOW:R.MTOW,Wbat:R.Wbat,Etot:R.Etot,pv:+pv.toFixed(3)};
-                          }catch{return null;}
-                        }).filter(Boolean);
-                      });
-                      setSensData(results); setSensRunning(false);
-                    },20);
-                  };
-                  const cur=SENS_PARAMS.find(p=>p.k===sensParam);
-                  const data=sensData?sensData[sensParam]:null;
-                  const baseRow=data?data.find(r=>r.delta===0):null;
-                  return(
-                    <div style={{background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:8,padding:"14px 16px"}}>
-                      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,flexWrap:"wrap",gap:8}}>
-                        <div>
-                          <div style={{fontSize:12,fontWeight:700,color:SC.text,fontFamily:"system-ui,sans-serif"}}>📊 Sensitivity Analysis — ±20% Parameter Sweep</div>
-                          <div style={{fontSize:9,color:SC.muted,fontFamily:"system-ui,sans-serif",marginTop:2}}>How MTOW, battery mass and total energy respond to each parameter variation (MATLAB-style)</div>
-                        </div>
-                        <button type="button" onClick={runSens} disabled={sensRunning}
-                          style={{padding:"7px 18px",background:sensRunning?"transparent":`linear-gradient(135deg,${SC.amber},#f97316)`,
-                            border:`1px solid ${sensRunning?SC.border:SC.amber}`,borderRadius:6,
-                            color:sensRunning?SC.muted:"#07090f",fontSize:11,fontWeight:800,
-                            cursor:sensRunning?"not-allowed":"pointer",fontFamily:"system-ui,sans-serif"}}>
-                          {sensRunning?"⏳ Computing…":"▶ Run Sensitivity"}
-                        </button>
-                      </div>
-
-                      {sensData&&(
-                        <>
-                          {/* Parameter selector tabs */}
-                          <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>
-                            {SENS_PARAMS.map(({k,l})=>(
-                              <button key={k} type="button" onClick={()=>setSensParam(k)}
-                                style={{padding:"4px 12px",borderRadius:4,fontSize:9,fontWeight:600,cursor:"pointer",
-                                  fontFamily:"'DM Mono',monospace",border:`1px solid ${sensParam===k?SC.amber:SC.border}`,
-                                  background:sensParam===k?`${SC.amber}22`:"transparent",color:sensParam===k?SC.amber:SC.muted}}>
-                                {l}
-                              </button>
-                            ))}
-                          </div>
-
-                          {/* Chart + table for selected param */}
-                          {data&&(
-                            <div style={{display:"grid",gridTemplateColumns:"1fr auto",gap:16,alignItems:"start"}}>
-                              <div>
-                                <div style={{fontSize:10,color:SC.muted,marginBottom:6,fontFamily:"system-ui,sans-serif"}}>
-                                  {cur.l} — base: <b style={{color:SC.amber}}>{cur.base}</b>
-                                  {baseRow&&<> · base MTOW: <b style={{color:SC.amber}}>{baseRow.MTOW} kg</b></>}
-                                </div>
-                                <ResponsiveContainer width="100%" height={220}>
-                                  <LineChart data={data} margin={{top:8,right:20,left:10,bottom:20}}>
-                                    <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
-                                    <XAxis dataKey="delta" tick={{fontSize:10,fill:SC.muted}}
-                                      label={{value:"Parameter change (%)",position:"insideBottom",offset:-8,fontSize:11,fill:SC.muted}}/>
-                                    <YAxis yAxisId="left" tick={{fontSize:10,fill:SC.muted}}
-                                      label={{value:"Mass (kg)",angle:-90,position:"insideLeft",offset:10,fontSize:11,fill:SC.muted}}/>
-                                    <YAxis yAxisId="right" orientation="right" tick={{fontSize:10,fill:SC.muted}}
-                                      label={{value:"Energy (kWh)",angle:90,position:"insideRight",offset:10,fontSize:11,fill:SC.muted}}/>
-                                    <Tooltip {...TTP}
-                                      formatter={(v,n)=>[typeof v==="number"?v.toFixed(1):v, n]}
-                                      labelFormatter={v=>`Δ${v}%`}/>
-                                    <ReferenceLine x={0} yAxisId="left" stroke={SC.muted} strokeDasharray="3 3"/>
-                                    <Line yAxisId="left" type="monotone" dataKey="MTOW" stroke={SC.amber} strokeWidth={2.5} dot={{r:3}} name="MTOW (kg)"/>
-                                    <Line yAxisId="left" type="monotone" dataKey="Wbat" stroke={SC.blue} strokeWidth={2} dot={{r:3}} name="W_bat (kg)"/>
-                                    <Line yAxisId="right" type="monotone" dataKey="Etot" stroke={SC.teal} strokeWidth={2} dot={{r:3}} name="Energy (kWh)" strokeDasharray="5 3"/>
-                                    <Legend iconSize={10} wrapperStyle={{fontSize:11,color:SC.muted,paddingTop:4}}/>
-                                  </LineChart>
-                                </ResponsiveContainer>
-                              </div>
-                              {/* Data table */}
-                              <div style={{minWidth:200}}>
-                                <table style={{borderCollapse:"collapse",fontSize:9,fontFamily:"'DM Mono',monospace",width:"100%"}}>
-                                  <thead>
-                                    <tr style={{borderBottom:`1px solid ${SC.border}`}}>
-                                      {["Δ%","MTOW","Wbat","E"].map(h=>(
-                                        <th key={h} style={{padding:"4px 8px",color:SC.muted,fontWeight:600,textAlign:"right"}}>{h}</th>
-                                      ))}
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {data.map(r=>{
-                                      const isBase=r.delta===0;
-                                      const mtowDelta=baseRow?r.MTOW-baseRow.MTOW:0;
-                                      return(
-                                        <tr key={r.delta} style={{background:isBase?`${SC.amber}11`:"transparent",borderBottom:`1px solid ${SC.border}22`}}>
-                                          <td style={{padding:"3px 8px",color:r.delta<0?SC.teal:r.delta>0?SC.red:SC.amber,textAlign:"right",fontWeight:isBase?700:400}}>{r.delta>0?"+":""}{r.delta}%</td>
-                                          <td style={{padding:"3px 8px",color:SC.text,textAlign:"right",fontWeight:isBase?700:400}}>
-                                            {r.MTOW}
-                                            {!isBase&&<span style={{fontSize:8,color:mtowDelta>0?SC.red:SC.teal}}> {mtowDelta>0?"+":""}{mtowDelta.toFixed(0)}</span>}
-                                          </td>
-                                          <td style={{padding:"3px 8px",color:SC.blue,textAlign:"right"}}>{r.Wbat}</td>
-                                          <td style={{padding:"3px 8px",color:SC.teal,textAlign:"right"}}>{r.Etot}</td>
-                                        </tr>
-                                      );
-                                    })}
-                                  </tbody>
-                                </table>
-                              </div>
-                            </div>
-                          )}
-                        </>
-                      )}
-
-                      {!sensData&&!sensRunning&&(
-                        <div style={{textAlign:"center",padding:"28px 0",color:SC.dim,fontSize:10,fontFamily:"system-ui,sans-serif"}}>
-                          Click <b style={{color:SC.amber}}>▶ Run Sensitivity</b> to sweep all 6 key parameters ±20% and see how MTOW, battery mass, and total energy respond.
-                        </div>
-                      )}
-                    </div>
-                  );
-                })()}
+                <SensitivityAnalysis params={params} SR={SR} SC={SC} TTP={TTP}/>
               </div>
             )}
 
@@ -7589,42 +7599,7 @@ export default function App(){
                 </Panel>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
                   <Panel title="MTOW Composition" ht={235}>
-                    {(()=>{
-                      const [activeIdx,setActiveIdx]=useState(null);
-                      const wtData=[{name:"Empty",val:SR.Wempty},{name:"Battery",val:SR.Wbat},{name:"Payload",val:params.payload}];
-                      const wtColors=[SC.blue,SC.amber,SC.green];
-                      const active=activeIdx!==null?wtData[activeIdx]:null;
-                      return(
-                        <div style={{position:"relative"}}>
-                          <ResponsiveContainer width="100%" height={190}>
-                            <PieChart>
-                              <Pie data={wtData} dataKey="val" nameKey="name" cx="50%" cy="50%"
-                                innerRadius={48} outerRadius={82} paddingAngle={4}
-                                onMouseEnter={(_,i)=>setActiveIdx(i)}
-                                onMouseLeave={()=>setActiveIdx(null)}>
-                                {wtColors.map((clr,i)=><Cell key={i} fill={clr} opacity={activeIdx===null||activeIdx===i?1:0.3} stroke={activeIdx===i?clr:"none"} strokeWidth={activeIdx===i?2:0}/>)}
-                              </Pie>
-                              <Tooltip {...TTP} formatter={(v,n)=>[`${v.toFixed(1)} kg (${(v/SR.MTOW*100).toFixed(1)}%)`,n]}/>
-                              <Legend iconSize={8} wrapperStyle={{fontSize:12,color:SC.muted}}/>
-                            </PieChart>
-                          </ResponsiveContainer>
-                          <div style={{position:"absolute",top:"38%",left:"50%",transform:"translate(-50%,-50%)",textAlign:"center",pointerEvents:"none"}}>
-                            {active?(
-                              <>
-                                <div style={{fontSize:13,fontWeight:800,color:wtColors[activeIdx],fontFamily:"'DM Mono',monospace"}}>{active.val.toFixed(0)}</div>
-                                <div style={{fontSize:7,color:SC.muted}}>kg</div>
-                                <div style={{fontSize:9,color:wtColors[activeIdx]}}>{(active.val/SR.MTOW*100).toFixed(1)}%</div>
-                              </>
-                            ):(
-                              <>
-                                <div style={{fontSize:13,fontWeight:700,color:SC.amber,fontFamily:"'DM Mono',monospace"}}>{SR.MTOW}</div>
-                                <div style={{fontSize:7,color:SC.muted}}>kg MTOW</div>
-                              </>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })()}
+                    <MTOWPie SR={SR} params={params} SC={SC} TTP={TTP}/>
                   </Panel>
                   <Panel title="Feasibility Checks" ht={235}>
                     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7,marginTop:4}}>
