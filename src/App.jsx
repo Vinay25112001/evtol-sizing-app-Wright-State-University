@@ -6063,25 +6063,68 @@ export default function App(){
                 style={{background:"transparent",border:`1px solid ${SC.border}`,borderRadius:6,
                   color:SC.muted,fontSize:14,cursor:"pointer",padding:"5px 10px"}}>✕ Close</button>
             </div>
+
+            {/* Text fields */}
             {[
               ["Author / Engineer Name","authorName","Your full name"],
               ["University / Organization","university","e.g. Wright State University"],
               ["Project Title","projectTitle","e.g. eVTOL Sizing Analysis"],
-              ["Logo URL (optional)","logoUrl","https://...logo.png"],
               ["Report Date","date",new Date().toLocaleDateString()],
             ].map(([lbl,key,ph])=>(
               <div key={key} style={{marginBottom:12}}>
                 <div style={{fontSize:10,color:SC.muted,fontFamily:"'DM Mono',monospace",
                   textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:5}}>{lbl}</div>
-                <input value={pdfBranding[key]} onChange={evt=>setPdfBranding(prev_b=>({...prev_b,[key]:evt.target.value}))}
+                <input value={pdfBranding[key]||""} onChange={evt=>setPdfBranding(prev_b=>({...prev_b,[key]:evt.target.value}))}
                   placeholder={ph} type="text"
                   style={{width:"100%",boxSizing:"border-box",background:SC.bg,border:`1px solid ${SC.border}`,
                     borderRadius:6,color:SC.text,fontSize:12,padding:"8px 12px",
                     fontFamily:"'DM Mono',monospace",outline:"none"}}
-                  onFocus={evt => evt.target.style.borderColor=SC.amber}
-                  onBlur={evt => evt.target.style.borderColor=SC.border}/>
+                  onFocus={evt=>evt.target.style.borderColor=SC.amber}
+                  onBlur={evt=>evt.target.style.borderColor=SC.border}/>
               </div>
             ))}
+
+            {/* Logo — file upload (always works) */}
+            <div style={{marginBottom:12}}>
+              <div style={{fontSize:10,color:SC.muted,fontFamily:"'DM Mono',monospace",
+                textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:5}}>Logo Image</div>
+              <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                {/* Upload button */}
+                <label style={{flex:1,display:"flex",alignItems:"center",gap:8,padding:"8px 12px",
+                  background:SC.bg,border:`1px solid ${SC.border}`,borderRadius:6,cursor:"pointer",
+                  fontSize:11,color:SC.muted,fontFamily:"'DM Mono',monospace"}}>
+                  <span style={{fontSize:16}}>📁</span>
+                  <span>{pdfBranding.logoUrl&&pdfBranding.logoUrl.startsWith("data:")?"✓ Logo loaded — click to change":"Upload logo from computer"}</span>
+                  <input type="file" accept="image/*" style={{display:"none"}}
+                    onChange={evt=>{
+                      const file=evt.target.files?.[0];
+                      if(!file) return;
+                      const reader=new FileReader();
+                      reader.onload=e2=>setPdfBranding(prev=>({...prev,logoUrl:e2.target.result}));
+                      reader.readAsDataURL(file);
+                    }}/>
+                </label>
+                {/* Clear button — only shown when logo is set */}
+                {pdfBranding.logoUrl&&(
+                  <button type="button" onClick={()=>setPdfBranding(prev=>({...prev,logoUrl:""}))}
+                    style={{padding:"8px 10px",background:"transparent",border:`1px solid ${SC.border}`,
+                      borderRadius:6,color:SC.red,fontSize:11,cursor:"pointer"}}>✕</button>
+                )}
+              </div>
+              {/* Logo preview */}
+              {pdfBranding.logoUrl&&pdfBranding.logoUrl.startsWith("data:")&&(
+                <div style={{marginTop:8,padding:"8px 12px",background:SC.bg,borderRadius:6,
+                  border:`1px solid ${SC.border}`,display:"flex",alignItems:"center",gap:10}}>
+                  <img src={pdfBranding.logoUrl} alt="Logo preview"
+                    style={{height:40,maxWidth:120,objectFit:"contain",borderRadius:4}}/>
+                  <span style={{fontSize:9,color:SC.green,fontFamily:"'DM Mono',monospace"}}>✓ Will appear on PDF cover</span>
+                </div>
+              )}
+              <div style={{fontSize:9,color:SC.dim,marginTop:5,fontFamily:"'DM Mono',monospace"}}>
+                Save the image from your browser first (right-click → Save image), then upload it here.
+              </div>
+            </div>
+
             <div style={{marginTop:6,padding:"8px 12px",background:`${SC.green}11`,
               border:`1px solid ${SC.green}44`,borderRadius:6,fontSize:10,color:SC.green,
               fontFamily:"'DM Mono',monospace"}}>
@@ -6191,12 +6234,24 @@ export default function App(){
                 )}
                 {/* PDF Report — no auth required */}
                 {SR&&(
-                  <button type="button" onClick={()=>{
+                  <button type="button" onClick={async ()=>{
                       try{
-                        const html=generateReport(params,SR,pdfBranding);
+                        let brandingWithLogo={...pdfBranding};
+                        // Only fetch if it's a URL (not already Base64 from file upload)
+                        if(pdfBranding?.logoUrl && !pdfBranding.logoUrl.startsWith("data:")){
+                          try{
+                            const resp=await fetch(pdfBranding.logoUrl);
+                            const ab=await resp.arrayBuffer();
+                            const mime=resp.headers.get("content-type")||"image/png";
+                            const b64=btoa(String.fromCharCode(...new Uint8Array(ab)));
+                            brandingWithLogo={...pdfBranding,logoUrl:`data:${mime};base64,${b64}`};
+                          }catch{
+                            brandingWithLogo={...pdfBranding,logoUrl:""};
+                          }
+                        }
+                        const html=generateReport(params,SR,brandingWithLogo);
                         const blob=new Blob([html],{type:"text/html;charset=utf-8"});
                         const url=URL.createObjectURL(blob);
-                        // Anchor click with target=_blank is NEVER blocked (direct user gesture)
                         const a=document.createElement("a");
                         a.href=url; a.target="_blank"; a.rel="noopener noreferrer";
                         document.body.appendChild(a); a.click(); document.body.removeChild(a);
