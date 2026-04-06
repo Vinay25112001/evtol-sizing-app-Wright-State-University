@@ -976,7 +976,7 @@ function generateVSP3File(p, SR) {
 
   // ── CENTER PUSHER ROTOR ───────────────────────────────────────────────
   const xPusher   = fL;
-  const dPusher   = Drot * 0.75;
+  const dPusher   = Drot * 0.5;
 
   // ── WINGTIP NACELLES + TILTING ROTORS ────────────────────────────────
   // FIX 3 — EXACT WINGTIP Y (Y-axis):
