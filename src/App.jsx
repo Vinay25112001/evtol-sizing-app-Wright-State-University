@@ -5510,11 +5510,139 @@ export default function App(){
       meta:{...meta, mtow:SR?.MTOW, range:params?.range, payload:params?.payload,
             sedCell:params?.sedCell, timestamp:new Date().toISOString()},
     };
+    // Save to in-app gallery (localStorage)
     setSavedPlots(prev=>{
-      const next=[entry,...prev].slice(0,20); // cap at 20
+      const next=[entry,...prev].slice(0,20);
       try{localStorage.setItem("evtol_savedPlots",JSON.stringify(next));}catch(_){}
       return next;
     });
+    // Download as PNG to user local PC/mobile using offscreen Canvas
+    try{
+      const W=900, H=520;
+      const canvas=document.createElement("canvas");
+      canvas.width=W; canvas.height=H;
+      const ctx=canvas.getContext("2d");
+      // Background
+      ctx.fillStyle="#0f172a"; ctx.fillRect(0,0,W,H);
+      // Border
+      ctx.strokeStyle="#334155"; ctx.lineWidth=1.5;
+      ctx.strokeRect(1,1,W-2,H-2);
+      // Title
+      ctx.fillStyle="#f59e0b";
+      ctx.font="bold 14px 'DM Mono',monospace";
+      ctx.fillText((entry.label||"Plot").slice(0,80),20,28);
+      // Subtitle meta
+      const metaStr=[
+        entry.meta.mtow?`MTOW: ${Number(entry.meta.mtow).toFixed(0)}kg`:"",
+        entry.meta.range?`Range: ${entry.meta.range}km`:"",
+        entry.meta.payload?`Payload: ${entry.meta.payload}kg`:"",
+        entry.meta.sedCell?`SED: ${entry.meta.sedCell}Wh/kg`:"",
+        new Date(entry.meta.timestamp).toLocaleString(),
+      ].filter(Boolean).join("  ·  ");
+      ctx.fillStyle="#64748b"; ctx.font="11px 'DM Mono',monospace";
+      ctx.fillText(metaStr.slice(0,110),20,48);
+      // Chart area
+      const pad={l:64,r:24,t:68,b:52};
+      const cW=W-pad.l-pad.r, cH=H-pad.t-pad.b;
+      const rows=Array.isArray(data)&&data.length>0?data:[];
+      if(rows.length>0){
+        const keys=Object.keys(rows[0]);
+        const xKey=keys[0];
+        const yKeys=keys.slice(1).filter(k=>{
+          const vals=rows.map(r=>Number(r[k]));
+          return vals.some(v=>!isNaN(v));
+        });
+        // Collect all numeric Y values across all yKeys for scaling
+        const allY=rows.flatMap(r=>yKeys.map(k=>Number(r[k]))).filter(v=>!isNaN(v));
+        const yMin=allY.length?Math.min(...allY):0;
+        const yMax=allY.length?Math.max(...allY):1;
+        const yRange=yMax-yMin||1;
+        // Grid lines
+        const gridCount=5;
+        ctx.strokeStyle="#1e293b"; ctx.lineWidth=1;
+        for(let g=0;g<=gridCount;g++){
+          const gy=pad.t+cH*(1-g/gridCount);
+          ctx.beginPath(); ctx.moveTo(pad.l,gy); ctx.lineTo(pad.l+cW,gy); ctx.stroke();
+          const yVal=(yMin+(yMax-yMin)*g/gridCount);
+          ctx.fillStyle="#475569"; ctx.font="10px 'DM Mono',monospace";
+          ctx.textAlign="right";
+          ctx.fillText(yVal.toFixed(Math.abs(yVal)<10?2:0),pad.l-6,gy+4);
+        }
+        ctx.textAlign="left";
+        // X axis labels
+        const step=Math.max(1,Math.floor(rows.length/8));
+        rows.forEach((r,i)=>{
+          if(i%step!==0&&i!==rows.length-1) return;
+          const x=pad.l+(i/(rows.length-1||1))*cW;
+          ctx.fillStyle="#475569"; ctx.font="10px 'DM Mono',monospace";
+          ctx.textAlign="center";
+          const xv=r[xKey];
+          const lbl=typeof xv==="number"?Number(xv).toFixed(Number(xv)<10?2:1):String(xv).slice(0,8);
+          ctx.fillText(lbl,x,pad.t+cH+18);
+        });
+        ctx.textAlign="left";
+        // Axis lines
+        ctx.strokeStyle="#334155"; ctx.lineWidth=1.5;
+        ctx.beginPath();
+        ctx.moveTo(pad.l,pad.t); ctx.lineTo(pad.l,pad.t+cH);
+        ctx.lineTo(pad.l+cW,pad.t+cH); ctx.stroke();
+        // Series colours
+        const COLORS=["#f59e0b","#3b82f6","#22c55e","#f43f5e","#a78bfa","#06d6a0","#fb923c"];
+        yKeys.forEach((yk,si)=>{
+          const col=COLORS[si%COLORS.length];
+          const pts=rows.map((r,i)=>({
+            x:pad.l+(i/(rows.length-1||1))*cW,
+            y:pad.t+cH-(((Number(r[yk])-yMin)/yRange)*cH),
+            v:Number(r[yk]),
+          })).filter(p=>!isNaN(p.y));
+          if(pts.length===0) return;
+          // Detect bar chart (≤8 rows → bars, else line)
+          if(rows.length<=10&&yKeys.length===1){
+            const bW=Math.max(4,(cW/rows.length)*0.6);
+            pts.forEach(p=>{
+              const barH=pad.t+cH-p.y;
+              ctx.fillStyle=col+"cc";
+              ctx.beginPath();
+              ctx.roundRect(p.x-bW/2,p.y,bW,barH,3);
+              ctx.fill();
+            });
+          } else {
+            ctx.strokeStyle=col; ctx.lineWidth=2.2;
+            ctx.shadowColor=col; ctx.shadowBlur=4;
+            ctx.beginPath();
+            pts.forEach((p,i)=>i===0?ctx.moveTo(p.x,p.y):ctx.lineTo(p.x,p.y));
+            ctx.stroke();
+            ctx.shadowBlur=0;
+          }
+          // Legend entry
+          const lx=pad.l+si*160, ly=H-16;
+          ctx.fillStyle=col; ctx.fillRect(lx,ly-8,18,3);
+          ctx.fillStyle="#94a3b8"; ctx.font="10px 'DM Mono',monospace";
+          ctx.fillText(yk.slice(0,16),lx+22,ly);
+        });
+      } else {
+        ctx.fillStyle="#475569"; ctx.font="13px 'DM Mono',monospace";
+        ctx.textAlign="center";
+        ctx.fillText("No data available for this plot",W/2,H/2);
+        ctx.textAlign="left";
+      }
+      // Watermark
+      ctx.fillStyle="#1e293b"; ctx.font="10px 'DM Mono',monospace";
+      ctx.textAlign="right";
+      ctx.fillText("eVTOL Sizer v2.0 — Wright State University",W-16,H-8);
+      ctx.textAlign="left";
+      // Export PNG
+      canvas.toBlob(blob=>{
+        if(!blob) return;
+        const url=URL.createObjectURL(blob);
+        const a=document.createElement("a");
+        const safeName=(entry.label||"plot").replace(/[^a-z0-9_]/gi,"_").slice(0,60);
+        a.href=url; a.download=`eVTOL_${safeName}.png`;
+        document.body.appendChild(a); a.click();
+        document.body.removeChild(a);
+        setTimeout(()=>URL.revokeObjectURL(url),2000);
+      },"image/png");
+    }catch(e){console.warn("Plot PNG export failed:",e);}
   };
   const deleteSavedPlot=(id)=>setSavedPlots(prev=>{
     const next=prev.filter(p=>p.id!==id);
@@ -6041,8 +6169,8 @@ export default function App(){
         setActiveGroup(2); setTab(TAB_GROUPS[2].tabs[0]); } // Ctrl+A → Analysis
       if(mod&&evt.key==="q"){ evt.preventDefault();
         setActiveGroup(3); setTab(TAB_GROUPS[3].tabs[0]); } // Ctrl+Q → Simulation
-      if(mod&&evt.key==="t"){ evt.preventDefault();
-        setActiveGroup(4); setTab(TAB_GROUPS[4].tabs[0]); } // Ctrl+T → Tools
+      if(mod&&evt.key==="b"){ evt.preventDefault();
+        setActiveGroup(4); setTab(TAB_GROUPS[4].tabs[0]); } // Ctrl+B → Tools
       if(mod&&evt.key==="z"&&!evt.shiftKey){ evt.preventDefault(); undo(); }
       if(mod&&(evt.key==="y"||(evt.key==="z"&&evt.shiftKey))){ evt.preventDefault(); redo(); }
       if(mod&&evt.key==="s"){
@@ -6599,7 +6727,7 @@ export default function App(){
                       // jump to first tab in group if current tab isn't in this group
                       if(!grp.tabs.includes(tab)) setTab(grp.tabs[0]);
                     }}
-                    title={gi===0?"Design (Ctrl+D)":gi===1?"Physics (Ctrl+P)":gi===2?"Analysis (Ctrl+A)":gi===3?"Simulation (Ctrl+Q)":gi===4?"Tools (Ctrl+T)":grp.label}
+                    title={gi===0?"Design (Ctrl+D)":gi===1?"Physics (Ctrl+P)":gi===2?"Analysis (Ctrl+A)":gi===3?"Simulation (Ctrl+Q)":gi===4?"Tools (Ctrl+B)":grp.label}
                     style={{padding:"4px 14px",border:`1px solid ${isActive?grp.color:SC.border}`,
                       borderBottom:"none",borderRadius:"5px 5px 0 0",cursor:"pointer",
                       background:isActive?`${grp.color}18`:"transparent",
@@ -6766,7 +6894,7 @@ export default function App(){
                   </div>
                 )}
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-                  <Panel title="Power per Phase (kW)" ht={255}>
+                  <Panel title="Power per Phase (kW)" ht={255} onSave={()=>savePlot(`Power per Phase — MTOW ${SR.MTOW.toFixed(0)}kg`,[{ph:"T/O",v:SR.Phov},{ph:"Climb",v:SR.Pcl},{ph:"Cruise",v:SR.Pcr},{ph:"Descent",v:SR.Pdc},{ph:"Land",v:SR.Phov},{ph:"Reserve",v:SR.Pres}],{note:"Power per phase (kW)"})}>
                     <ResponsiveContainer width="100%" height={205}>
                       <BarChart data={[{ph:"T/O",v:SR.Phov},{ph:"Climb",v:SR.Pcl},{ph:"Cruise",v:SR.Pcr},{ph:"Descent",v:SR.Pdc},{ph:"Land",v:SR.Phov},{ph:"Reserve",v:SR.Pres}]}
                         margin={{top:5,right:8,left:-15,bottom:0}}>
@@ -6778,7 +6906,7 @@ export default function App(){
                       </BarChart>
                     </ResponsiveContainer>
                   </Panel>
-                  <Panel title="Energy per Phase (kWh)" ht={255}>
+                  <Panel title="Energy per Phase (kWh)" ht={255} onSave={()=>savePlot(`Energy per Phase — MTOW ${SR.MTOW.toFixed(0)}kg`,[{ph:"T/O",v:SR.Eto},{ph:"Climb",v:SR.Ecl},{ph:"Cruise",v:SR.Ecr},{ph:"Descent",v:SR.Edc},{ph:"Land",v:SR.Eld},{ph:"Reserve",v:SR.Eres}],{note:"Energy per phase (kWh)"})}>
                     <ResponsiveContainer width="100%" height={205}>
                       <BarChart data={[{ph:"T/O",v:SR.Eto},{ph:"Climb",v:SR.Ecl},{ph:"Cruise",v:SR.Ecr},{ph:"Descent",v:SR.Edc},{ph:"Land",v:SR.Eld},{ph:"Reserve",v:SR.Eres}]}
                         margin={{top:5,right:8,left:-15,bottom:0}}>
@@ -6867,7 +6995,7 @@ export default function App(){
                 </Panel>
 
                 {/* Energy vs Time — NEW */}
-                <Panel title="Cumulative Energy Consumed vs Mission Time (kWh)" ht={270}>
+                <Panel title="Cumulative Energy Consumed vs Mission Time (kWh)" ht={270} onSave={()=>savePlot(`Cumulative Energy — MTOW ${SR.MTOW.toFixed(0)}kg · ${params.range}km`,SR.missionProfile||[],{note:"Cumulative energy consumed vs mission time"})}>
                   <ResponsiveContainer width="100%" height={220}>
                     <AreaChart data={SR.energySteps} margin={{top:5,right:16,left:-5,bottom:16}}>
                       <defs><linearGradient id="eg" x1="0" y1="0" x2="0" y2="1">
@@ -6926,7 +7054,7 @@ export default function App(){
                 </Panel>
 
                                 {/* Velocity vs Time */}
-                <Panel title="Velocity vs Mission Time (m/s)" ht={230}>
+                <Panel title="Velocity vs Mission Time (m/s)" ht={230} onSave={()=>savePlot(`Velocity Profile — MTOW ${SR.MTOW.toFixed(0)}kg · Vcr=${params.vCruise}m/s`,SR.missionProfile||[],{note:"Velocity vs mission time"})}>
                   <ResponsiveContainer width="100%" height={185}>
                     <AreaChart data={SR.velSteps} margin={{top:5,right:16,left:-5,bottom:16}}>
                       <defs><linearGradient id="vg" x1="0" y1="0" x2="0" y2="1">
@@ -6947,7 +7075,7 @@ export default function App(){
                 </Panel>
 
                 {/* ── Combined Power + Energy vs Time (dual Y-axis) ── */}
-                <Panel title="Power & Energy vs Mission Time — Combined (Dual Axis)">
+                <Panel title="Power & Energy vs Mission Time — Combined (Dual Axis)" onSave={()=>savePlot(`Power & Energy Combined — MTOW ${SR.MTOW.toFixed(0)}kg · ${params.range}km`,SR.missionProfile||[],{note:"Power & energy vs mission time, dual axis"})}>
                   <div style={{fontSize:10,color:SC.muted,fontFamily:"'DM Mono',monospace",marginBottom:8,paddingLeft:4}}>
                     <span style={{color:SC.amber,fontWeight:700}}>■ Power (kW)</span> on left axis &nbsp;·&nbsp;
                     <span style={{color:SC.green,fontWeight:700}}>■ Phase Energy (kWh)</span> on right axis — both plotted step-wise per phase, matching the MATLAB reference.
@@ -7022,7 +7150,7 @@ export default function App(){
                 </Panel>
 
                 {/* Phase Power vs Phase Energy vs Phase Time — NEW grouped bar chart */}
-                <Panel title="Phase Comparison — Power (kW) · Energy (kWh) · Duration (s)">
+                <Panel title="Phase Comparison — Power (kW) · Energy (kWh) · Duration (s)" onSave={()=>savePlot(`Phase Comparison — MTOW ${SR.MTOW.toFixed(0)}kg`,[{ph:"T/O",power:SR.Phov,energy:SR.Eto,time:SR.tto},{ph:"Climb",power:SR.Pcl,energy:SR.Ecl,time:SR.tcl},{ph:"Cruise",power:SR.Pcr,energy:SR.Ecr,time:SR.tcr},{ph:"Descent",power:SR.Pdc,energy:SR.Edc,time:SR.tdc},{ph:"Land",power:SR.Phov,energy:SR.Eld,time:SR.tld},{ph:"Reserve",power:SR.Pres,energy:SR.Eres,time:SR.tres}],{note:"Phase comparison — power, energy & duration"})}>
                   <div style={{fontSize:10,color:SC.muted,fontFamily:"'DM Mono',monospace",marginBottom:8,paddingLeft:4}}>
                     Grouped bars show the three key metrics for each mission phase. Each metric is normalised relative to its maximum value so all three can be compared on the same axis.
                     Raw values shown in the data table below.
@@ -7108,10 +7236,10 @@ export default function App(){
 
                 {/* Phase Duration + Energy Radar */}
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-                  <Panel title="Phase Duration (s)" ht={240}>
+                  <Panel title="Phase Duration (s)" ht={240} onSave={()=>savePlot(`Phase Duration — MTOW ${SR.MTOW.toFixed(0)}kg`,[{ph:"T/O",t:SR.tto},{ph:"Climb",t:SR.tcl},{ph:"Cruise",t:SR.tcr},{ph:"Descent",t:SR.tdc},{ph:"Land",t:SR.tld},{ph:"Reserve",t:SR.tres}],{note:"Phase duration (s)"})}>
                     <PhaseDurationPie SR={SR} SC={SC} PHC={PHC} TTP={TTP}/>
                   </Panel>
-                  <Panel title="Energy per Phase — Radar (kWh)" ht={240}>
+                  <Panel title="Energy per Phase — Radar (kWh)" ht={240} onSave={()=>savePlot(`Energy Radar — MTOW ${SR.MTOW.toFixed(0)}kg`,[{ph:"T/O",E:SR.Eto},{ph:"Climb",E:SR.Ecl},{ph:"Cruise",E:SR.Ecr},{ph:"Desc",E:SR.Edc},{ph:"Land",E:SR.Eld},{ph:"Res",E:SR.Eres}],{note:"Energy per phase radar (kWh)"})}>
                     <ResponsiveContainer width="100%" height={195}>
                       <RadarChart data={[{ph:"T/O",E:SR.Eto},{ph:"Climb",E:SR.Ecl},{ph:"Cruise",E:SR.Ecr},{ph:"Desc",E:SR.Edc},{ph:"Land",E:SR.Eld},{ph:"Res",E:SR.Eres}]}>
                         <PolarGrid stroke={SC.border}/>
@@ -7138,7 +7266,7 @@ export default function App(){
                   <KPI label="Wing Loading" value={SR.WL} unit="N/m²"/><KPI label="Reynolds ×10⁶" value={(SR.Re_/1e6).toFixed(2)} unit=""/>
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-                  <Panel title="CD₀ Breakdown (Raymer Buildup)" ht={265}>
+                  <Panel title="CD₀ Breakdown (Raymer Buildup)" ht={265} onSave={()=>savePlot(`CD0 Breakdown — AR=${params.AR} · L/D=${SR.LDact?.toFixed(1)}`,SR.dragComp||[],{note:"CD0 drag buildup by component"})}>
                     <DragPie SR={SR} SC={SC} TTP={TTP}/>
                   </Panel>
                   <Panel title="Airfoil Selection Score" ht={265}>
@@ -7266,7 +7394,7 @@ export default function App(){
                 </Panel>
 
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
-                  <Panel title="Drag Polar" ht={235}>
+                  <Panel title="Drag Polar" ht={235} onSave={()=>savePlot(`Drag Polar — AR=${params.AR} · L/D=${SR.LDact?.toFixed(1)}`,SR.polarData||[],{note:"Drag polar (CL vs CD)"})}>
                     <ResponsiveContainer width="100%" height={185}>
                       <LineChart data={SR.polarData} margin={{top:5,right:8,left:-20,bottom:0}}>
                         <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
@@ -7277,7 +7405,7 @@ export default function App(){
                       </LineChart>
                     </ResponsiveContainer>
                   </Panel>
-                  <Panel title="Lift Curve" ht={235}>
+                  <Panel title="Lift Curve" ht={235} onSave={()=>savePlot(`Lift Curve — AR=${params.AR} · CLmax=${SR.CLmax?.toFixed(2)||"?"}`,SR.liftData||[],{note:"Lift curve (AoA vs CL)"})}>
                     <ResponsiveContainer width="100%" height={185}>
                       <LineChart data={SR.polarData} margin={{top:5,right:8,left:-20,bottom:0}}>
                         <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
@@ -7289,7 +7417,7 @@ export default function App(){
                       </LineChart>
                     </ResponsiveContainer>
                   </Panel>
-                  <Panel title="L/D Ratio" ht={235}>
+                  <Panel title="L/D Ratio" ht={235} onSave={()=>savePlot(`L/D Ratio — AR=${params.AR} · L/Dmax=${SR.LDact?.toFixed(1)}`,SR.ldData||[],{note:"L/D ratio vs AoA"})}>
                     <ResponsiveContainer width="100%" height={185}>
                       <AreaChart data={SR.polarData} margin={{top:5,right:8,left:-20,bottom:0}}>
                         <defs><linearGradient id="ldg" x1="0" y1="0" x2="0" y2="1">
@@ -7752,7 +7880,7 @@ export default function App(){
                   </Panel>
                 </div>
                 {/* CG Travel Range */}
-                <Panel title="CG Travel Range — OEW → MTOW (loading envelope)">
+                <Panel title="CG Travel Range — OEW → MTOW (loading envelope)" onSave={()=>savePlot(`CG Travel — MTOW ${SR.MTOW.toFixed(0)}kg · SM=${(SR.SM_vt*100).toFixed(1)}%`,SR.cgEnvelope||[],{note:"CG travel range OEW to MTOW"})}>
                   {(()=>{
                     // Build CG sweep: from OEW (no payload, no battery) → MTOW
                     // Intermediate: add battery first, then payload (worst-case forward/aft)
@@ -8238,7 +8366,7 @@ export default function App(){
                   </div>
                 </div>
 
-                <Panel title={`MTOW Convergence History — Actual Run at ε = 10^${params.convTolExp} (${SR.itersR2} R2 iters${SR.r2Converged?"":", cap hit"})`} ht={280}>
+                <Panel title={`MTOW Convergence History — Actual Run at ε = 10^${params.convTolExp} (${SR.itersR2} R2 iters${SR.r2Converged?"":", cap hit"})`} ht={280} onSave={()=>savePlot(`MTOW Convergence — ε=10^${params.convTolExp}`,SR.convData||[],{note:"MTOW convergence history"})}>
                   <ResponsiveContainer width="100%" height={230}>
                     <LineChart data={SR.convData} margin={{top:5,right:20,left:-10,bottom:0}}>
                       <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
@@ -8252,7 +8380,7 @@ export default function App(){
                   </ResponsiveContainer>
                 </Panel>
 
-                <Panel title="Energy Convergence History" ht={255}>
+                <Panel title="Energy Convergence History" ht={255} onSave={()=>savePlot(`Energy Convergence — MTOW ${SR.MTOW.toFixed(0)}kg`,SR.energyH?.map((v,i)=>({iter:i,Energy:v}))||[],{note:"Energy convergence history (kWh)"})}>
                   <ResponsiveContainer width="100%" height={205}>
                     <LineChart data={SR.convData.filter(d=>d.Energy!=null)} margin={{top:5,right:20,left:-10,bottom:0}}>
                       <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
@@ -8266,7 +8394,7 @@ export default function App(){
                 </Panel>
 
                 {/* Residual log plot */}
-                <Panel title={`Residual Convergence — log₁₀(|ΔW₀|) per Iteration  [ε = ${SR.tol.toExponential(0)} → log₁₀(ε) = ${params.convTolExp}]`} ht={270}>
+                <Panel title={`Residual Convergence — log₁₀(|ΔW₀|) per Iteration  [ε = ${SR.tol.toExponential(0)} → log₁₀(ε) = ${params.convTolExp}]`} ht={270} onSave={()=>savePlot(`Residual Convergence — ε=10^${params.convTolExp}`,SR.convData?.filter(d=>d.logResidual!=null)||[],{note:"Residual convergence log10 per iteration"})}>
                   <div style={{fontSize:10,color:SC.muted,marginBottom:4,paddingLeft:4}}>
                     Each bar shows log₁₀ of the MTOW change per iteration. Convergence when bar drops below the <span style={{color:"#22d3ee"}}>ε threshold line</span>.
                   </div>
@@ -8314,7 +8442,7 @@ export default function App(){
                 </Panel>
 
                 {/* T/W vs MTOW Trade Chart */}
-                <Panel title={`T/W Ratio vs MTOW — Round 1 vs Round 2 at T/W = ${params.twRatio.toFixed(2)}`} ht={320}>
+                <Panel title={`T/W Ratio vs MTOW — Round 1 vs Round 2 at T/W = ${params.twRatio.toFixed(2)}`} ht={320} onSave={()=>savePlot(`T/W vs MTOW — T/W=${params.twRatio}`,SR.twSweep||[],{note:"T/W ratio sensitivity on MTOW"})}>
                   <div style={{fontSize:10,color:SC.muted,marginBottom:6,paddingLeft:4}}>
                     Round 1 is flat (T/W doesn't affect energy-only sizing). Round 2 scales as T/W^1.5 — higher thrust margin → higher hover power → heavier battery → higher MTOW.
                     Current T/W = <span style={{color:SC.amber,fontWeight:700}}>{params.twRatio.toFixed(2)}</span> highlighted.
@@ -8552,7 +8680,7 @@ export default function App(){
                     </div>
 
                     {/* MTOW Probability Distribution */}
-                    <Panel title={`MTOW Probability Distribution — ${mcResults.N.toLocaleString()} Monte Carlo Samples`} ht={320}>
+                    <Panel title={`MTOW Probability Distribution — ${mcResults.N.toLocaleString()} Monte Carlo Samples`} ht={320} onSave={()=>savePlot(`MC MTOW Distribution — N=${mcResults.N}`,mcResults.hist||[],{note:"Monte Carlo MTOW probability distribution"})}>
                       <div style={{fontSize:10,color:SC.muted,marginBottom:6,paddingLeft:4,fontFamily:"'DM Mono',monospace"}}>
                         Each bar = count of designs in that MTOW bin. Bell shape confirms normal convergence.
                         <span style={{color:SC.amber}}> Nominal MTOW = {SR.MTOW} kg</span> (deterministic).
@@ -8582,7 +8710,7 @@ export default function App(){
                     </Panel>
 
                     {/* CDF */}
-                    <Panel title="Cumulative Distribution Function (CDF) — MTOW" ht={290}>
+                    <Panel title="Cumulative Distribution Function (CDF) — MTOW" ht={290} onSave={()=>savePlot(`MC MTOW CDF — N=${mcResults.N}`,mcResults.cdf||[],{note:"Monte Carlo MTOW cumulative distribution"})}>
                       <div style={{fontSize:10,color:SC.muted,marginBottom:6,paddingLeft:4,fontFamily:"'DM Mono',monospace"}}>
                         Read as: <span style={{color:SC.green}}>P(MTOW ≤ x)</span>. The <span style={{color:SC.amber}}>P90 line</span> shows that 90% of all possible designs have MTOW below this value.
                         This is the key output for design margin decisions.
@@ -8611,7 +8739,7 @@ export default function App(){
 
                     {/* Other distributions row */}
                     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-                      <Panel title="Total Energy Distribution (kWh)" ht={240}>
+                      <Panel title="Total Energy Distribution (kWh)" ht={240} onSave={()=>savePlot(`MC Energy Distribution — N=${mcResults.N}`,mcResults.energyHist||[],{note:"Monte Carlo total energy distribution (kWh)"})}>
                         <ResponsiveContainer width="100%" height={195}>
                           <BarChart data={mcResults.Etot.hist} margin={{top:5,right:10,left:-10,bottom:16}}>
                             <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
@@ -8625,7 +8753,7 @@ export default function App(){
                           </BarChart>
                         </ResponsiveContainer>
                       </Panel>
-                      <Panel title="Static Margin Distribution (% MAC)" ht={240}>
+                      <Panel title="Static Margin Distribution (% MAC)" ht={240} onSave={()=>savePlot(`MC Static Margin — N=${mcResults?.N||0}`,mcResults?.SM?.hist||[],{note:"Monte Carlo static margin distribution (% MAC)"})}>
                         <ResponsiveContainer width="100%" height={195}>
                           <BarChart data={mcResults.SM.hist} margin={{top:5,right:10,left:-10,bottom:16}}>
                             <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
@@ -8645,7 +8773,7 @@ export default function App(){
                           </BarChart>
                         </ResponsiveContainer>
                       </Panel>
-                      <Panel title="Hover Power Distribution (kW)" ht={240}>
+                      <Panel title="Hover Power Distribution (kW)" ht={240} onSave={()=>savePlot(`MC Hover Power Distribution — N=${mcResults.N}`,mcResults.phovHist||[],{note:"Monte Carlo hover power distribution (kW)"})}>
                         <ResponsiveContainer width="100%" height={195}>
                           <BarChart data={mcResults.Phov.hist} margin={{top:5,right:10,left:-10,bottom:16}}>
                             <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
@@ -8659,7 +8787,7 @@ export default function App(){
                           </BarChart>
                         </ResponsiveContainer>
                       </Panel>
-                      <Panel title="Battery Mass Distribution (kg)" ht={240}>
+                      <Panel title="Battery Mass Distribution (kg)" ht={240} onSave={()=>savePlot(`MC Battery Mass Distribution — N=${mcResults.N}`,mcResults.batHist||[],{note:"Monte Carlo battery mass distribution (kg)"})}>
                         <ResponsiveContainer width="100%" height={195}>
                           <BarChart data={mcResults.Wbat.hist} margin={{top:5,right:10,left:-10,bottom:16}}>
                             <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
@@ -9332,7 +9460,7 @@ export default function App(){
 
                 {/* SPL vs Distance table + chart */}
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-                  <Panel title="A-weighted SPL vs Distance from Aircraft">
+                  <Panel title="A-weighted SPL vs Distance from Aircraft" onSave={()=>savePlot(`Noise SPL — ${params.nPropHover} rotors · D=${params.propDiam}m`,SR.noisePts||[],{note:"A-weighted SPL vs distance (dBA)"})}>
                     <ResponsiveContainer width="100%" height={260}>
                       <LineChart
                         data={[
@@ -9412,7 +9540,7 @@ export default function App(){
                 </div>
 
                 {/* BPF Harmonics spectrum */}
-                <Panel title="BPF Tonal Spectrum — First 4 Harmonics (A-weighted)" ht={270}>
+                <Panel title="BPF Tonal Spectrum — First 4 Harmonics (A-weighted)" ht={270} onSave={()=>savePlot(`BPF Spectrum — ${params.nPropHover} rotors · RPM=${SR.RPM?.toFixed(0)||"?"}`,SR.bpfData||[],{note:"BPF tonal spectrum, first 4 harmonics (A-weighted dBA)"})}>
                   <div style={{fontSize:10,color:SC.muted,fontFamily:"'DM Mono',monospace",marginBottom:8}}>
                     Tonal noise at integer multiples of BPF = {SR.BPF.toFixed(1)} Hz.
                     Higher harmonics attenuate at ~6 dB/octave. A-weighting penalises low frequencies.
@@ -9918,7 +10046,7 @@ export default function App(){
 
                 {/* Cost breakdown + battery degradation */}
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-                  <Panel title="Cost Breakdown per Flight ($)" ht={280}>
+                  <Panel title="Cost Breakdown per Flight ($)" ht={280} onSave={()=>savePlot(`Cost Breakdown — Range ${params.range}km`,SR.costBreakdown||[],{note:"Cost breakdown per flight ($)"})}>
                     <ResponsiveContainer width="100%" height={235}>
                       <PieChart>
                         <Pie data={costParts} dataKey="val" nameKey="name"
@@ -9930,7 +10058,7 @@ export default function App(){
                       </PieChart>
                     </ResponsiveContainer>
                   </Panel>
-                  <Panel title="Battery Pack Degradation vs Charge Cycles" ht={280}>
+                  <Panel title="Battery Pack Degradation vs Charge Cycles" ht={280} onSave={()=>savePlot(`Battery Degradation — SED=${params.sedCell}Wh/kg`,SR.degradationData||[],{note:"Battery pack degradation vs charge cycles"})}>
                     <ResponsiveContainer width="100%" height={235}>
                       <AreaChart data={degradationData} margin={{top:5,right:15,left:-10,bottom:0}}>
                         <defs><linearGradient id="dg" x1="0" y1="0" x2="0" y2="1">
@@ -10005,7 +10133,7 @@ export default function App(){
                 </Panel>
 
                 {/* Sensitivity bar chart */}
-                <Panel title="Cost Driver Analysis — % of Total Flight Cost">
+                <Panel title="Cost Driver Analysis — % of Total Flight Cost" onSave={()=>savePlot(`Cost Drivers — Range ${params.range}km`,SR.costBreakdown||[],{note:"Cost driver analysis % of total flight cost"})}>
                   <ResponsiveContainer width="100%" height={220}>
                     <BarChart
                       layout="vertical"
@@ -10035,7 +10163,7 @@ export default function App(){
                 </Panel>
 
                 {/* Profit vs Load Factor curve */}
-                <Panel title="Profit vs Load Factor — Fare Scenario Sensitivity" ht={300}>
+                <Panel title="Profit vs Load Factor — Fare Scenario Sensitivity" ht={300} onSave={()=>savePlot(`Profit vs Load Factor — Range ${params.range}km`,SR.profitData||[],{note:"Profit vs load factor, fare scenario sensitivity"})}>
                   <div style={{fontSize:10,color:SC.muted,fontFamily:"'DM Mono',monospace",marginBottom:6,paddingLeft:4}}>
                     Per-flight profit at each load factor for three market fare scenarios.
                     Zero-crossing = break-even LF. Above zero = profitable.
