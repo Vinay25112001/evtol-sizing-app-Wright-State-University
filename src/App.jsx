@@ -4486,6 +4486,9 @@ Respond in plain text, clearly structured. Be specific about rule IDs and numeri
    ════════════════════════════════════════════════════════════════════════ */
 function AIAssistantPanel({ params, SR, SC, onParamChange, user }) {
   const [mode,     setMode]     = useState('design'); // 'design' | 'chat'
+  // Keep a ref to the latest SR so async callbacks always read the current value
+  const srRef = useRef(SR);
+  useEffect(()=>{ srRef.current = SR; }, [SR]);
 
   // ── SUPABASE CONFIG ──
   const SB_URL = "https://obribjypwwrbhsyjllua.supabase.co";
@@ -4823,7 +4826,20 @@ function AIAssistantPanel({ params, SR, SC, onParamChange, user }) {
         const {p:rp, R:rR} = relaxed;
         inject(rp);
         setIterCount(c=>c+1);
-        setMessages(prev=>[...prev,{role:'assistant',content:`✅ Feasible design found (relaxed constraints):\nRange reduced to ${rp.range}km, Payload to ${rp.payload}kg\n\nMTOW: ${rR.MTOW}kg | Battery: ${rR.Wbat}kg (${(rR.Wbat/rR.MTOW*100).toFixed(1)}%) | Energy: ${rR.Etot}kWh | L/D: ${rR.LDact} | Span: ${rR.bWing}m\n\n✅ All parameters injected into your app.`}]);
+        setMessages(prev=>[...prev,{role:'assistant',content:`⏳ Calculating final results...`}]);
+        await new Promise(r=>setTimeout(r,120));
+        const liveRx = srRef.current;
+        const fx1 = v=>(typeof v==='number'&&isFinite(v))?v.toFixed(1):'—';
+        const fx2 = v=>(typeof v==='number'&&isFinite(v))?v.toFixed(2):'—';
+        setMessages(prev=>{
+          const msgs=[...prev];
+          msgs[msgs.length-1]={...msgs[msgs.length-1],content:
+            `✅ Feasible design found (relaxed constraints):\nRange reduced to ${rp.range}km, Payload to ${rp.payload}kg\n\n`+
+            `MTOW: ${fx1(liveRx.MTOW)}kg | Battery: ${fx1(liveRx.Wbat)}kg (${liveRx.MTOW?((liveRx.Wbat/liveRx.MTOW)*100).toFixed(1):'—'}%) | `+
+            `Energy: ${fx2(liveRx.Etot)}kWh | L/D: ${fx2(liveRx.LDact)} | Span: ${fx2(liveRx.bWing)}m\n\n✅ All parameters injected into your app.`
+          };
+          return msgs;
+        });
         setThinking(false); return;
       }
 
@@ -4833,21 +4849,34 @@ function AIAssistantPanel({ params, SR, SC, onParamChange, user }) {
       inject(bestP);
       setIterCount(c=>c+1);
 
-      /* Step 4: Show results immediately */
-      setMessages(prev=>[...prev,{role:'assistant',content:
-        `✅ FEASIBLE DESIGN FOUND — injected into all app tabs:\n\n` +
-        `MTOW:        ${bestR.MTOW} kg\n` +
-        `Battery:     ${bestR.Wbat} kg  (${(bestR.Wbat/bestR.MTOW*100).toFixed(1)}% of MTOW)\n` +
-        `Total Energy:${bestR.Etot} kWh\n` +
-        `Hover Power: ${bestR.Phov} kW\n` +
-        `Cruise Power:${bestR.Pcr} kW\n` +
-        `Wing Span:   ${bestR.bWing} m\n` +
-        `L/D (actual):${bestR.LDact}\n` +
-        `Static Margin:${(bestR.SM_vt*100).toFixed(1)}%\n` +
-        `Tip Mach:    ${bestR.TipMach}\n\n` +
-        `Key design: ${bestP.sedCell}Wh/kg cells · AR=${bestP.AR} · ${bestP.nPropHover}×${bestP.propDiam}m rotors · ewf=${bestP.ewf}\n\n` +
-        `⏳ Getting engineering summary...`
-      }]);
+      /* Step 4: Show placeholder — then update with live SR values once React re-renders */
+      setMessages(prev=>[...prev,{role:'assistant',content:`⏳ Calculating final results...`}]);
+
+      // Wait two frames for React to re-render SR with the injected params
+      await new Promise(r=>setTimeout(r,120));
+      const liveR = srRef.current;  // SR is now recomputed from injected params
+      const fmt1 = v => (typeof v==='number'&&isFinite(v)) ? v.toFixed(1) : '—';
+      const fmt2 = v => (typeof v==='number'&&isFinite(v)) ? v.toFixed(2) : '—';
+      const fmt0 = v => (typeof v==='number'&&isFinite(v)) ? Math.round(v).toString() : '—';
+
+      setMessages(prev=>{
+        const msgs=[...prev];
+        msgs[msgs.length-1]={...msgs[msgs.length-1],content:
+          `✅ FEASIBLE DESIGN FOUND — injected into all app tabs:\n\n` +
+          `MTOW:         ${fmt1(liveR.MTOW)} kg\n` +
+          `Battery:      ${fmt1(liveR.Wbat)} kg  (${liveR.MTOW?((liveR.Wbat/liveR.MTOW)*100).toFixed(1):'—'}% of MTOW)\n` +
+          `Total Energy: ${fmt2(liveR.Etot)} kWh\n` +
+          `Hover Power:  ${fmt1(liveR.Phov)} kW\n` +
+          `Cruise Power: ${fmt1(liveR.Pcr)} kW\n` +
+          `Wing Span:    ${fmt2(liveR.bWing)} m\n` +
+          `L/D (actual): ${fmt2(liveR.LDact)}\n` +
+          `Static Margin:${liveR.SM_vt!=null?((liveR.SM_vt)*100).toFixed(1):'—'}%\n` +
+          `Tip Mach:     ${fmt2(liveR.TipMach)}\n\n` +
+          `Key design: ${bestP.sedCell}Wh/kg cells · AR=${bestP.AR} · ${bestP.nPropHover}×${bestP.propDiam.toFixed(2)}m rotors · ewf=${bestP.ewf.toFixed(4)}\n\n` +
+          `⏳ Getting engineering summary...`
+        };
+        return msgs;
+      });
 
       /* Step 5: Get AI summary */
       const summary = await getSummary(bestR, bestP, userMsg);
