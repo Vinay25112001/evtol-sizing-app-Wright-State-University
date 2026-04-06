@@ -8240,7 +8240,7 @@ export default function App(){
                   </ResponsiveContainer>
                 </Panel>
 
-                <Panel title="Energy Convergence History" ht={255} onSave={true})||[],{note:"Energy convergence history (kWh)"})}>
+                <Panel title="Energy Convergence History" ht={255} onSave={true}>
                   <ResponsiveContainer width="100%" height={205}>
                     <LineChart data={SR.convData.filter(d=>d.Energy!=null)} margin={{top:5,right:20,left:-10,bottom:0}}>
                       <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
