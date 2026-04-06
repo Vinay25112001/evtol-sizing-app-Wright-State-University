@@ -5601,37 +5601,7 @@ export default function App(){
   });
   const[tab,setTab]=useState(0);
   const[activeGroup,setActiveGroup]=useState(0);
-  // Saved Plots gallery state — persisted to localStorage
-  const[savedPlots,setSavedPlots]=useState(()=>{
-    try{
-      const s=localStorage.getItem("evtol_savedPlots");
-      return s?JSON.parse(s):[];
-    }catch(_){return [];}
-  });
-  const[showSavedPlots,setShowSavedPlots]=useState(false);
-  // Helper: save a named plot snapshot into the gallery
-  // savePlot: saves metadata to in-app gallery (localStorage).
-  // The actual PNG download is handled by capturePanel() in the Panel component,
-  // which grabs the real rendered SVG from the DOM.
-  const savePlot=(label,data,meta={})=>{
-    const entry={
-      id:Date.now(),
-      label:label||`Plot — ${new Date().toLocaleTimeString()}`,
-      data,
-      meta:{...meta, mtow:SR?.MTOW, range:params?.range, payload:params?.payload,
-            sedCell:params?.sedCell, timestamp:new Date().toISOString()},
-    };
-    setSavedPlots(prev=>{
-      const next=[entry,...prev].slice(0,20);
-      try{localStorage.setItem("evtol_savedPlots",JSON.stringify(next));}catch(_){}
-      return next;
-    });
-  };
-  const deleteSavedPlot=(id)=>setSavedPlots(prev=>{
-    const next=prev.filter(p=>p.id!==id);
-    try{localStorage.setItem("evtol_savedPlots",JSON.stringify(next));}catch(_){}
-    return next;
-  });
+
   const[showOverflow,setShowOverflow]=useState(false);
   const[sidebarOpen,setSidebarOpen]=useState(()=>localStorage.getItem("sb")!=="0");
   const[user,setUser]=useState(()=>getSession());
@@ -6173,7 +6143,7 @@ export default function App(){
     };
     window.addEventListener("keydown",onKey);
     return()=>window.removeEventListener("keydown",onKey);
-  },[SR,user,params,tab,activeGroup,savePlot]);
+  },[SR,user,params,tab,activeGroup]);
   const undo=()=>{
     const stack=undoStackRef.current;
     if(!stack.length) return;
@@ -6375,18 +6345,6 @@ export default function App(){
 
         {/* Action buttons — primary visible, secondary behind ••• */}
         <div style={{display:"flex",gap:6,marginLeft:"auto",alignItems:"center",position:"relative"}}>
-          {/* Saved Plots Gallery toggle */}
-          <button type="button" onClick={()=>setShowSavedPlots(v=>!v)}
-            title="Toggle Saved Plots Gallery"
-            style={{padding:"5px 11px",
-              background:showSavedPlots?`${SC.amber}22`:"transparent",
-              border:`1px solid ${showSavedPlots?SC.amber:SC.border}`,
-              borderRadius:4,color:showSavedPlots?SC.amber:SC.muted,
-              fontSize:10,cursor:"pointer",fontWeight:700,lineHeight:1,
-              fontFamily:"'DM Mono',monospace",transition:"all 0.15s"}}>
-            📊{savedPlots.length>0?` ${savedPlots.length}`:""}
-          </button>
-
           {/* Dark/Light toggle — always visible, purely iconic */}
           <button onClick={()=>setDarkMode(d=>!d)} type="button"
             title={darkMode?"Switch to Light Mode":"Switch to Dark Mode"}
@@ -6745,87 +6703,6 @@ export default function App(){
 
           <div style={{flex:1,overflowY:"auto",padding:"14px 18px 28px",background:SC.bg}}>
 
-            {/* ── SAVED PLOTS GALLERY OVERLAY ──────────────────────────────────────── */}
-            {showSavedPlots&&(
-              <div style={{marginBottom:16,background:SC.panel,border:`1px solid ${SC.amber}44`,borderRadius:10,padding:"14px 16px"}}>
-                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
-                  <div>
-                    <div style={{fontSize:9,color:SC.amber,fontFamily:"'DM Mono',monospace",letterSpacing:"0.12em",marginBottom:2}}>SAVED PLOTS GALLERY</div>
-                    <div style={{fontSize:13,fontWeight:700,color:SC.text,fontFamily:"system-ui,sans-serif"}}>
-                      {savedPlots.length} snapshot{savedPlots.length!==1?"s":""} saved
-                    </div>
-                  </div>
-                  <button type="button" onClick={()=>setShowSavedPlots(false)}
-                    style={{padding:"5px 12px",background:"transparent",border:`1px solid ${SC.border}`,
-                      borderRadius:6,color:SC.muted,fontSize:10,cursor:"pointer",
-                      fontFamily:"'DM Mono',monospace"}}>✕ Close Gallery</button>
-                </div>
-                {savedPlots.length===0&&(
-                  <div style={{textAlign:"center",padding:"28px 0",color:SC.dim,fontSize:11,
-                    fontFamily:"'DM Mono',monospace"}}>
-                    No saved plots yet. Use the 💾 Save Plot button on any chart to capture a snapshot.
-                  </div>
-                )}
-                {savedPlots.length>0&&(
-                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:12}}>
-                    {savedPlots.map(plot=>(
-                      <div key={plot.id} style={{background:SC.bg,border:`1px solid ${SC.border}`,
-                        borderRadius:8,padding:"12px 14px",position:"relative"}}>
-                        <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:8}}>
-                          <div>
-                            <div style={{fontSize:11,fontWeight:700,color:SC.amber,
-                              fontFamily:"'DM Mono',monospace",marginBottom:2}}>{plot.label}</div>
-                            <div style={{fontSize:9,color:SC.dim,fontFamily:"'DM Mono',monospace"}}>
-                              {new Date(plot.meta.timestamp).toLocaleString()}
-                            </div>
-                          </div>
-                          <button type="button" onClick={()=>deleteSavedPlot(plot.id)}
-                            style={{padding:"2px 8px",background:"transparent",border:`1px solid ${SC.border}`,
-                              borderRadius:4,color:SC.red,fontSize:9,cursor:"pointer",
-                              fontFamily:"'DM Mono',monospace",flexShrink:0,marginLeft:8}}>✕</button>
-                        </div>
-                        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:10}}>
-                          {[["MTOW",plot.meta.mtow?`${plot.meta.mtow.toFixed?plot.meta.mtow.toFixed(0):plot.meta.mtow} kg`:"—"],
-                            ["Range",plot.meta.range?`${plot.meta.range} km`:"—"],
-                            ["Payload",plot.meta.payload?`${plot.meta.payload} kg`:"—"],
-                            ["SED",plot.meta.sedCell?`${plot.meta.sedCell} Wh/kg`:"—"],
-                          ].map(([k,v])=>(
-                            <div key={k} style={{background:SC.panel,borderRadius:4,padding:"5px 8px"}}>
-                              <div style={{fontSize:8,color:SC.dim,fontFamily:"'DM Mono',monospace"}}>{k}</div>
-                              <div style={{fontSize:11,fontWeight:700,color:SC.text,fontFamily:"'DM Mono',monospace"}}>{v}</div>
-                            </div>
-                          ))}
-                        </div>
-                        {plot.data&&plot.data.length>0&&(
-                          <div style={{overflow:"hidden",borderRadius:4,border:`1px solid ${SC.border}44`}}>
-                            <ResponsiveContainer width="100%" height={120}>
-                              <LineChart data={plot.data} margin={{top:4,right:4,left:-30,bottom:4}}>
-                                <XAxis dataKey={Object.keys(plot.data[0]||{})[0]}
-                                  tick={{fontSize:7,fill:SC.dim}} tickLine={false} axisLine={false}/>
-                                <YAxis tick={{fontSize:7,fill:SC.dim}} tickLine={false} axisLine={false}/>
-                                <Tooltip contentStyle={{background:SC.panel,border:`1px solid ${SC.border}`,
-                                  borderRadius:4,fontSize:9,fontFamily:"'DM Mono',monospace"}}
-                                  labelStyle={{color:SC.muted}} itemStyle={{color:SC.amber}}/>
-                                {Object.keys(plot.data[0]||{}).slice(1).map((key,ki)=>(
-                                  <Line key={key} type="monotone" dataKey={key}
-                                    stroke={[SC.amber,SC.blue,SC.green,SC.red][ki%4]}
-                                    strokeWidth={1.5} dot={false}/>
-                                ))}
-                              </LineChart>
-                            </ResponsiveContainer>
-                          </div>
-                        )}
-                        {plot.meta.note&&(
-                          <div style={{marginTop:6,fontSize:9,color:SC.muted,
-                            fontFamily:"'DM Mono',monospace",fontStyle:"italic"}}>{plot.meta.note}</div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
             {/* Shared design banner — shown when ?design= is in URL */}
             {sharedDesignId&&(
               <PublicDesignBanner shareId={sharedDesignId} onLoad={params=>setParams(prev=>({...prev,...params}))} C={SC}/>
@@ -6877,7 +6754,7 @@ export default function App(){
                   </div>
                 )}
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-                  <Panel title="Power per Phase (kW)" ht={255} onSave={()=>savePlot(`Power per Phase — MTOW ${SR.MTOW.toFixed(0)}kg`,[{ph:"T/O",v:SR.Phov},{ph:"Climb",v:SR.Pcl},{ph:"Cruise",v:SR.Pcr},{ph:"Descent",v:SR.Pdc},{ph:"Land",v:SR.Phov},{ph:"Reserve",v:SR.Pres}],{note:"Power per phase (kW)"})}>
+                  <Panel title="Power per Phase (kW)" ht={255} onSave={true}>
                     <ResponsiveContainer width="100%" height={205}>
                       <BarChart data={[{ph:"T/O",v:SR.Phov},{ph:"Climb",v:SR.Pcl},{ph:"Cruise",v:SR.Pcr},{ph:"Descent",v:SR.Pdc},{ph:"Land",v:SR.Phov},{ph:"Reserve",v:SR.Pres}]}
                         margin={{top:5,right:8,left:-15,bottom:0}}>
@@ -6889,7 +6766,7 @@ export default function App(){
                       </BarChart>
                     </ResponsiveContainer>
                   </Panel>
-                  <Panel title="Energy per Phase (kWh)" ht={255} onSave={()=>savePlot(`Energy per Phase — MTOW ${SR.MTOW.toFixed(0)}kg`,[{ph:"T/O",v:SR.Eto},{ph:"Climb",v:SR.Ecl},{ph:"Cruise",v:SR.Ecr},{ph:"Descent",v:SR.Edc},{ph:"Land",v:SR.Eld},{ph:"Reserve",v:SR.Eres}],{note:"Energy per phase (kWh)"})}>
+                  <Panel title="Energy per Phase (kWh)" ht={255} onSave={true}>
                     <ResponsiveContainer width="100%" height={205}>
                       <BarChart data={[{ph:"T/O",v:SR.Eto},{ph:"Climb",v:SR.Ecl},{ph:"Cruise",v:SR.Ecr},{ph:"Descent",v:SR.Edc},{ph:"Land",v:SR.Eld},{ph:"Reserve",v:SR.Eres}]}
                         margin={{top:5,right:8,left:-15,bottom:0}}>
@@ -6958,7 +6835,7 @@ export default function App(){
                 </div>
 
                 {/* Power vs Time */}
-                <Panel title="Power vs Mission Time (kW)" ht={270} onSave={()=>savePlot(`Power vs Time — MTOW ${SR.MTOW.toFixed(0)}kg`,SR.missionProfile||[],{note:"Power vs mission time"})}>
+                <Panel title="Power vs Mission Time (kW)" ht={270} onSave={true}}>
                   <ResponsiveContainer width="100%" height={220}>
                     <AreaChart data={SR.powerSteps} margin={{top:5,right:16,left:-5,bottom:16}}>
                       <defs><linearGradient id="pg" x1="0" y1="0" x2="0" y2="1">
@@ -6978,7 +6855,7 @@ export default function App(){
                 </Panel>
 
                 {/* Energy vs Time — NEW */}
-                <Panel title="Cumulative Energy Consumed vs Mission Time (kWh)" ht={270} onSave={()=>savePlot(`Cumulative Energy — MTOW ${SR.MTOW.toFixed(0)}kg · ${params.range}km`,SR.missionProfile||[],{note:"Cumulative energy consumed vs mission time"})}>
+                <Panel title="Cumulative Energy Consumed vs Mission Time (kWh)" ht={270} onSave={true}}>
                   <ResponsiveContainer width="100%" height={220}>
                     <AreaChart data={SR.energySteps} margin={{top:5,right:16,left:-5,bottom:16}}>
                       <defs><linearGradient id="eg" x1="0" y1="0" x2="0" y2="1">
@@ -7002,7 +6879,7 @@ export default function App(){
                 </Panel>
 
                 {/* Energy Remaining Over Mission */}
-                <Panel title="Battery Energy Remaining vs Mission Time" ht={270} onSave={()=>savePlot(`Battery Energy — MTOW ${SR.MTOW.toFixed(0)}kg · SED=${params.sedCell}Wh/kg`,SR.missionProfile||[],{note:"Battery energy remaining vs mission time"})}>
+                <Panel title="Battery Energy Remaining vs Mission Time" ht={270} onSave={true}}>
                   <ResponsiveContainer width="100%" height={220}>
                     <AreaChart
                       data={SR.energySteps.map(s=>({t:s.t, Erem:+Math.max(0,SR.PackkWh-s.E).toFixed(3)}))}
@@ -7037,7 +6914,7 @@ export default function App(){
                 </Panel>
 
                                 {/* Velocity vs Time */}
-                <Panel title="Velocity vs Mission Time (m/s)" ht={230} onSave={()=>savePlot(`Velocity Profile — MTOW ${SR.MTOW.toFixed(0)}kg · Vcr=${params.vCruise}m/s`,SR.missionProfile||[],{note:"Velocity vs mission time"})}>
+                <Panel title="Velocity vs Mission Time (m/s)" ht={230} onSave={true}}>
                   <ResponsiveContainer width="100%" height={185}>
                     <AreaChart data={SR.velSteps} margin={{top:5,right:16,left:-5,bottom:16}}>
                       <defs><linearGradient id="vg" x1="0" y1="0" x2="0" y2="1">
@@ -7058,7 +6935,7 @@ export default function App(){
                 </Panel>
 
                 {/* ── Combined Power + Energy vs Time (dual Y-axis) ── */}
-                <Panel title="Power & Energy vs Mission Time — Combined (Dual Axis)" onSave={()=>savePlot(`Power & Energy Combined — MTOW ${SR.MTOW.toFixed(0)}kg · ${params.range}km`,SR.missionProfile||[],{note:"Power & energy vs mission time, dual axis"})}>
+                <Panel title="Power & Energy vs Mission Time — Combined (Dual Axis)" onSave={true}}>
                   <div style={{fontSize:10,color:SC.muted,fontFamily:"'DM Mono',monospace",marginBottom:8,paddingLeft:4}}>
                     <span style={{color:SC.amber,fontWeight:700}}>■ Power (kW)</span> on left axis &nbsp;·&nbsp;
                     <span style={{color:SC.green,fontWeight:700}}>■ Phase Energy (kWh)</span> on right axis — both plotted step-wise per phase, matching the MATLAB reference.
@@ -7133,7 +7010,7 @@ export default function App(){
                 </Panel>
 
                 {/* Phase Power vs Phase Energy vs Phase Time — NEW grouped bar chart */}
-                <Panel title="Phase Comparison — Power (kW) · Energy (kWh) · Duration (s)" onSave={()=>savePlot(`Phase Comparison — MTOW ${SR.MTOW.toFixed(0)}kg`,[{ph:"T/O",power:SR.Phov,energy:SR.Eto,time:SR.tto},{ph:"Climb",power:SR.Pcl,energy:SR.Ecl,time:SR.tcl},{ph:"Cruise",power:SR.Pcr,energy:SR.Ecr,time:SR.tcr},{ph:"Descent",power:SR.Pdc,energy:SR.Edc,time:SR.tdc},{ph:"Land",power:SR.Phov,energy:SR.Eld,time:SR.tld},{ph:"Reserve",power:SR.Pres,energy:SR.Eres,time:SR.tres}],{note:"Phase comparison — power, energy & duration"})}>
+                <Panel title="Phase Comparison — Power (kW) · Energy (kWh) · Duration (s)" onSave={true}>
                   <div style={{fontSize:10,color:SC.muted,fontFamily:"'DM Mono',monospace",marginBottom:8,paddingLeft:4}}>
                     Grouped bars show the three key metrics for each mission phase. Each metric is normalised relative to its maximum value so all three can be compared on the same axis.
                     Raw values shown in the data table below.
@@ -7219,10 +7096,10 @@ export default function App(){
 
                 {/* Phase Duration + Energy Radar */}
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-                  <Panel title="Phase Duration (s)" ht={240} onSave={()=>savePlot(`Phase Duration — MTOW ${SR.MTOW.toFixed(0)}kg`,[{ph:"T/O",t:SR.tto},{ph:"Climb",t:SR.tcl},{ph:"Cruise",t:SR.tcr},{ph:"Descent",t:SR.tdc},{ph:"Land",t:SR.tld},{ph:"Reserve",t:SR.tres}],{note:"Phase duration (s)"})}>
+                  <Panel title="Phase Duration (s)" ht={240} onSave={true}>
                     <PhaseDurationPie SR={SR} SC={SC} PHC={PHC} TTP={TTP}/>
                   </Panel>
-                  <Panel title="Energy per Phase — Radar (kWh)" ht={240} onSave={()=>savePlot(`Energy Radar — MTOW ${SR.MTOW.toFixed(0)}kg`,[{ph:"T/O",E:SR.Eto},{ph:"Climb",E:SR.Ecl},{ph:"Cruise",E:SR.Ecr},{ph:"Desc",E:SR.Edc},{ph:"Land",E:SR.Eld},{ph:"Res",E:SR.Eres}],{note:"Energy per phase radar (kWh)"})}>
+                  <Panel title="Energy per Phase — Radar (kWh)" ht={240} onSave={true}>
                     <ResponsiveContainer width="100%" height={195}>
                       <RadarChart data={[{ph:"T/O",E:SR.Eto},{ph:"Climb",E:SR.Ecl},{ph:"Cruise",E:SR.Ecr},{ph:"Desc",E:SR.Edc},{ph:"Land",E:SR.Eld},{ph:"Res",E:SR.Eres}]}>
                         <PolarGrid stroke={SC.border}/>
@@ -7249,7 +7126,7 @@ export default function App(){
                   <KPI label="Wing Loading" value={SR.WL} unit="N/m²"/><KPI label="Reynolds ×10⁶" value={(SR.Re_/1e6).toFixed(2)} unit=""/>
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-                  <Panel title="CD₀ Breakdown (Raymer Buildup)" ht={265} onSave={()=>savePlot(`CD0 Breakdown — AR=${params.AR} · L/D=${SR.LDact?.toFixed(1)}`,SR.dragComp||[],{note:"CD0 drag buildup by component"})}>
+                  <Panel title="CD₀ Breakdown (Raymer Buildup)" ht={265} onSave={true}}>
                     <DragPie SR={SR} SC={SC} TTP={TTP}/>
                   </Panel>
                   <Panel title="Airfoil Selection Score" ht={265}>
@@ -7377,7 +7254,7 @@ export default function App(){
                 </Panel>
 
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
-                  <Panel title="Drag Polar" ht={235} onSave={()=>savePlot(`Drag Polar — AR=${params.AR} · L/D=${SR.LDact?.toFixed(1)}`,SR.polarData||[],{note:"Drag polar (CL vs CD)"})}>
+                  <Panel title="Drag Polar" ht={235} onSave={true}}>
                     <ResponsiveContainer width="100%" height={185}>
                       <LineChart data={SR.polarData} margin={{top:5,right:8,left:-20,bottom:0}}>
                         <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
@@ -7388,7 +7265,7 @@ export default function App(){
                       </LineChart>
                     </ResponsiveContainer>
                   </Panel>
-                  <Panel title="Lift Curve" ht={235} onSave={()=>savePlot(`Lift Curve — AR=${params.AR} · CLmax=${SR.CLmax?.toFixed(2)||"?"}`,SR.liftData||[],{note:"Lift curve (AoA vs CL)"})}>
+                  <Panel title="Lift Curve" ht={235} onSave={true}}>
                     <ResponsiveContainer width="100%" height={185}>
                       <LineChart data={SR.polarData} margin={{top:5,right:8,left:-20,bottom:0}}>
                         <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
@@ -7400,7 +7277,7 @@ export default function App(){
                       </LineChart>
                     </ResponsiveContainer>
                   </Panel>
-                  <Panel title="L/D Ratio" ht={235} onSave={()=>savePlot(`L/D Ratio — AR=${params.AR} · L/Dmax=${SR.LDact?.toFixed(1)}`,SR.ldData||[],{note:"L/D ratio vs AoA"})}>
+                  <Panel title="L/D Ratio" ht={235} onSave={true}}>
                     <ResponsiveContainer width="100%" height={185}>
                       <AreaChart data={SR.polarData} margin={{top:5,right:8,left:-20,bottom:0}}>
                         <defs><linearGradient id="ldg" x1="0" y1="0" x2="0" y2="1">
@@ -7533,7 +7410,7 @@ export default function App(){
                     ))}
                     </div>
                   </Panel>
-                  <Panel title="Phase Power Comparison" ht={320} onSave={()=>savePlot(`Phase Power — MTOW ${SR.MTOW.toFixed(0)}kg`,[{ph:"T/O",v:SR.Phov},{ph:"Climb",v:SR.Pcl},{ph:"Cruise",v:SR.Pcr},{ph:"Descent",v:SR.Pdc},{ph:"Land",v:SR.Phov},{ph:"Reserve",v:SR.Pres}],{note:"Phase power breakdown (kW)"})}>
+                  <Panel title="Phase Power Comparison" ht={320} onSave={true}>
                     <ResponsiveContainer width="100%" height={270}>
                       <BarChart data={[{ph:"T/O",v:SR.Phov},{ph:"Climb",v:SR.Pcl},{ph:"Cruise",v:SR.Pcr},{ph:"Descent",v:SR.Pdc},{ph:"Land",v:SR.Phov},{ph:"Reserve",v:SR.Pres}]}
                         margin={{top:5,right:8,left:-10,bottom:0}}>
@@ -7558,7 +7435,7 @@ export default function App(){
                   <KPI label="Cell Config" value={`${SR.Nseries}s×${SR.Npar}p`} unit="" sub={`${SR.Ncells} cells total`}/>
                   <KPI label="Final SoC" value={((1-SR.Etot/SR.PackkWh)*100).toFixed(1)} unit="%" color={(1-SR.Etot/SR.PackkWh)>=(params.socMin/(1+params.socMin))-0.01?SC.green:SC.red}/>
                 </div>
-                <Panel title="Battery State of Charge — Full Mission" ht={285} onSave={()=>savePlot(`SOC Profile — MTOW ${SR.MTOW.toFixed(0)}kg · ${params.range}km`,SR.socProfile||[],{note:"Battery state of charge over mission"})}>
+                <Panel title="Battery State of Charge — Full Mission" ht={285} onSave={true}}>
                   <ResponsiveContainer width="100%" height={235}>
                     <AreaChart data={SR.socSteps} margin={{top:5,right:10,left:-10,bottom:0}}>
                       <defs><linearGradient id="sg" x1="0" y1="0" x2="0" y2="1">
@@ -7618,7 +7495,7 @@ export default function App(){
                   <KPI label="Dive Speed Vd" value={SR.VD} unit="m/s"/>
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-                  <Panel title="V-n Structural Envelope" ht={310} onSave={()=>savePlot(`V-n Envelope — MTOW ${SR.MTOW.toFixed(0)}kg · Vc=${params.vCruise}m/s`,SR.vnData,{note:"V-n structural envelope"})}>
+                  <Panel title="V-n Structural Envelope" ht={310} onSave={true}}>
                     <ResponsiveContainer width="100%" height={260}>
                       <LineChart data={SR.vnData} margin={{top:10,right:30,left:10,bottom:20}}>
                         <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
@@ -7863,7 +7740,7 @@ export default function App(){
                   </Panel>
                 </div>
                 {/* CG Travel Range */}
-                <Panel title="CG Travel Range — OEW → MTOW (loading envelope)" onSave={()=>savePlot(`CG Travel — MTOW ${SR.MTOW.toFixed(0)}kg · SM=${(SR.SM_vt*100).toFixed(1)}%`,SR.cgEnvelope||[],{note:"CG travel range OEW to MTOW"})}>
+                <Panel title="CG Travel Range — OEW → MTOW (loading envelope)" onSave={true}}>
                   {(()=>{
                     // Build CG sweep: from OEW (no payload, no battery) → MTOW
                     // Intermediate: add battery first, then payload (worst-case forward/aft)
@@ -8349,7 +8226,7 @@ export default function App(){
                   </div>
                 </div>
 
-                <Panel title={`MTOW Convergence History — Actual Run at ε = 10^${params.convTolExp} (${SR.itersR2} R2 iters${SR.r2Converged?"":", cap hit"})`} ht={280} onSave={()=>savePlot(`MTOW Convergence — ε=10^${params.convTolExp}`,SR.convData||[],{note:"MTOW convergence history"})}>
+                <Panel title={`MTOW Convergence History — Actual Run at ε = 10^${params.convTolExp} (${SR.itersR2} R2 iters${SR.r2Converged?"":", cap hit"})`} ht={280} onSave={true}}>
                   <ResponsiveContainer width="100%" height={230}>
                     <LineChart data={SR.convData} margin={{top:5,right:20,left:-10,bottom:0}}>
                       <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
@@ -8363,7 +8240,7 @@ export default function App(){
                   </ResponsiveContainer>
                 </Panel>
 
-                <Panel title="Energy Convergence History" ht={255} onSave={()=>savePlot(`Energy Convergence — MTOW ${SR.MTOW.toFixed(0)}kg`,SR.energyH?.map((v,i)=>({iter:i,Energy:v}))||[],{note:"Energy convergence history (kWh)"})}>
+                <Panel title="Energy Convergence History" ht={255} onSave={true})||[],{note:"Energy convergence history (kWh)"})}>
                   <ResponsiveContainer width="100%" height={205}>
                     <LineChart data={SR.convData.filter(d=>d.Energy!=null)} margin={{top:5,right:20,left:-10,bottom:0}}>
                       <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
@@ -8377,7 +8254,7 @@ export default function App(){
                 </Panel>
 
                 {/* Residual log plot */}
-                <Panel title={`Residual Convergence — log₁₀(|ΔW₀|) per Iteration  [ε = ${SR.tol.toExponential(0)} → log₁₀(ε) = ${params.convTolExp}]`} ht={270} onSave={()=>savePlot(`Residual Convergence — ε=10^${params.convTolExp}`,SR.convData?.filter(d=>d.logResidual!=null)||[],{note:"Residual convergence log10 per iteration"})}>
+                <Panel title={`Residual Convergence — log₁₀(|ΔW₀|) per Iteration  [ε = ${SR.tol.toExponential(0)} → log₁₀(ε) = ${params.convTolExp}]`} ht={270} onSave={true}}>
                   <div style={{fontSize:10,color:SC.muted,marginBottom:4,paddingLeft:4}}>
                     Each bar shows log₁₀ of the MTOW change per iteration. Convergence when bar drops below the <span style={{color:"#22d3ee"}}>ε threshold line</span>.
                   </div>
@@ -8425,7 +8302,7 @@ export default function App(){
                 </Panel>
 
                 {/* T/W vs MTOW Trade Chart */}
-                <Panel title={`T/W Ratio vs MTOW — Round 1 vs Round 2 at T/W = ${params.twRatio.toFixed(2)}`} ht={320} onSave={()=>savePlot(`T/W vs MTOW — T/W=${params.twRatio}`,SR.twSweep||[],{note:"T/W ratio sensitivity on MTOW"})}>
+                <Panel title={`T/W Ratio vs MTOW — Round 1 vs Round 2 at T/W = ${params.twRatio.toFixed(2)}`} ht={320} onSave={true}}>
                   <div style={{fontSize:10,color:SC.muted,marginBottom:6,paddingLeft:4}}>
                     Round 1 is flat (T/W doesn't affect energy-only sizing). Round 2 scales as T/W^1.5 — higher thrust margin → higher hover power → heavier battery → higher MTOW.
                     Current T/W = <span style={{color:SC.amber,fontWeight:700}}>{params.twRatio.toFixed(2)}</span> highlighted.
@@ -8663,7 +8540,7 @@ export default function App(){
                     </div>
 
                     {/* MTOW Probability Distribution */}
-                    <Panel title={`MTOW Probability Distribution — ${mcResults.N.toLocaleString()} Monte Carlo Samples`} ht={320} onSave={()=>savePlot(`MC MTOW Distribution — N=${mcResults.N}`,mcResults.hist||[],{note:"Monte Carlo MTOW probability distribution"})}>
+                    <Panel title={`MTOW Probability Distribution — ${mcResults.N.toLocaleString()} Monte Carlo Samples`} ht={320} onSave={true}}>
                       <div style={{fontSize:10,color:SC.muted,marginBottom:6,paddingLeft:4,fontFamily:"'DM Mono',monospace"}}>
                         Each bar = count of designs in that MTOW bin. Bell shape confirms normal convergence.
                         <span style={{color:SC.amber}}> Nominal MTOW = {SR.MTOW} kg</span> (deterministic).
@@ -8693,7 +8570,7 @@ export default function App(){
                     </Panel>
 
                     {/* CDF */}
-                    <Panel title="Cumulative Distribution Function (CDF) — MTOW" ht={290} onSave={()=>savePlot(`MC MTOW CDF — N=${mcResults.N}`,mcResults.cdf||[],{note:"Monte Carlo MTOW cumulative distribution"})}>
+                    <Panel title="Cumulative Distribution Function (CDF) — MTOW" ht={290} onSave={true}}>
                       <div style={{fontSize:10,color:SC.muted,marginBottom:6,paddingLeft:4,fontFamily:"'DM Mono',monospace"}}>
                         Read as: <span style={{color:SC.green}}>P(MTOW ≤ x)</span>. The <span style={{color:SC.amber}}>P90 line</span> shows that 90% of all possible designs have MTOW below this value.
                         This is the key output for design margin decisions.
@@ -8722,7 +8599,7 @@ export default function App(){
 
                     {/* Other distributions row */}
                     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-                      <Panel title="Total Energy Distribution (kWh)" ht={240} onSave={()=>savePlot(`MC Energy Distribution — N=${mcResults.N}`,mcResults.energyHist||[],{note:"Monte Carlo total energy distribution (kWh)"})}>
+                      <Panel title="Total Energy Distribution (kWh)" ht={240} onSave={true}}>
                         <ResponsiveContainer width="100%" height={195}>
                           <BarChart data={mcResults.Etot.hist} margin={{top:5,right:10,left:-10,bottom:16}}>
                             <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
@@ -8736,7 +8613,7 @@ export default function App(){
                           </BarChart>
                         </ResponsiveContainer>
                       </Panel>
-                      <Panel title="Static Margin Distribution (% MAC)" ht={240} onSave={()=>savePlot(`MC Static Margin — N=${mcResults?.N||0}`,mcResults?.SM?.hist||[],{note:"Monte Carlo static margin distribution (% MAC)"})}>
+                      <Panel title="Static Margin Distribution (% MAC)" ht={240} onSave={true}}>
                         <ResponsiveContainer width="100%" height={195}>
                           <BarChart data={mcResults.SM.hist} margin={{top:5,right:10,left:-10,bottom:16}}>
                             <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
@@ -8756,7 +8633,7 @@ export default function App(){
                           </BarChart>
                         </ResponsiveContainer>
                       </Panel>
-                      <Panel title="Hover Power Distribution (kW)" ht={240} onSave={()=>savePlot(`MC Hover Power Distribution — N=${mcResults.N}`,mcResults.phovHist||[],{note:"Monte Carlo hover power distribution (kW)"})}>
+                      <Panel title="Hover Power Distribution (kW)" ht={240} onSave={true}}>
                         <ResponsiveContainer width="100%" height={195}>
                           <BarChart data={mcResults.Phov.hist} margin={{top:5,right:10,left:-10,bottom:16}}>
                             <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
@@ -8770,7 +8647,7 @@ export default function App(){
                           </BarChart>
                         </ResponsiveContainer>
                       </Panel>
-                      <Panel title="Battery Mass Distribution (kg)" ht={240} onSave={()=>savePlot(`MC Battery Mass Distribution — N=${mcResults.N}`,mcResults.batHist||[],{note:"Monte Carlo battery mass distribution (kg)"})}>
+                      <Panel title="Battery Mass Distribution (kg)" ht={240} onSave={true}}>
                         <ResponsiveContainer width="100%" height={195}>
                           <BarChart data={mcResults.Wbat.hist} margin={{top:5,right:10,left:-10,bottom:16}}>
                             <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
@@ -9443,7 +9320,7 @@ export default function App(){
 
                 {/* SPL vs Distance table + chart */}
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-                  <Panel title="A-weighted SPL vs Distance from Aircraft" onSave={()=>savePlot(`Noise SPL — ${params.nPropHover} rotors · D=${params.propDiam}m`,SR.noisePts||[],{note:"A-weighted SPL vs distance (dBA)"})}>
+                  <Panel title="A-weighted SPL vs Distance from Aircraft" onSave={true}}>
                     <ResponsiveContainer width="100%" height={260}>
                       <LineChart
                         data={[
@@ -9523,7 +9400,7 @@ export default function App(){
                 </div>
 
                 {/* BPF Harmonics spectrum */}
-                <Panel title="BPF Tonal Spectrum — First 4 Harmonics (A-weighted)" ht={270} onSave={()=>savePlot(`BPF Spectrum — ${params.nPropHover} rotors · RPM=${SR.RPM?.toFixed(0)||"?"}`,SR.bpfData||[],{note:"BPF tonal spectrum, first 4 harmonics (A-weighted dBA)"})}>
+                <Panel title="BPF Tonal Spectrum — First 4 Harmonics (A-weighted)" ht={270} onSave={true}}>
                   <div style={{fontSize:10,color:SC.muted,fontFamily:"'DM Mono',monospace",marginBottom:8}}>
                     Tonal noise at integer multiples of BPF = {SR.BPF.toFixed(1)} Hz.
                     Higher harmonics attenuate at ~6 dB/octave. A-weighting penalises low frequencies.
@@ -10029,7 +9906,7 @@ export default function App(){
 
                 {/* Cost breakdown + battery degradation */}
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-                  <Panel title="Cost Breakdown per Flight ($)" ht={280} onSave={()=>savePlot(`Cost Breakdown — Range ${params.range}km`,SR.costBreakdown||[],{note:"Cost breakdown per flight ($)"})}>
+                  <Panel title="Cost Breakdown per Flight ($)" ht={280} onSave={true}}>
                     <ResponsiveContainer width="100%" height={235}>
                       <PieChart>
                         <Pie data={costParts} dataKey="val" nameKey="name"
@@ -10041,7 +9918,7 @@ export default function App(){
                       </PieChart>
                     </ResponsiveContainer>
                   </Panel>
-                  <Panel title="Battery Pack Degradation vs Charge Cycles" ht={280} onSave={()=>savePlot(`Battery Degradation — SED=${params.sedCell}Wh/kg`,SR.degradationData||[],{note:"Battery pack degradation vs charge cycles"})}>
+                  <Panel title="Battery Pack Degradation vs Charge Cycles" ht={280} onSave={true}}>
                     <ResponsiveContainer width="100%" height={235}>
                       <AreaChart data={degradationData} margin={{top:5,right:15,left:-10,bottom:0}}>
                         <defs><linearGradient id="dg" x1="0" y1="0" x2="0" y2="1">
@@ -10116,7 +9993,7 @@ export default function App(){
                 </Panel>
 
                 {/* Sensitivity bar chart */}
-                <Panel title="Cost Driver Analysis — % of Total Flight Cost" onSave={()=>savePlot(`Cost Drivers — Range ${params.range}km`,SR.costBreakdown||[],{note:"Cost driver analysis % of total flight cost"})}>
+                <Panel title="Cost Driver Analysis — % of Total Flight Cost" onSave={true}}>
                   <ResponsiveContainer width="100%" height={220}>
                     <BarChart
                       layout="vertical"
@@ -10146,7 +10023,7 @@ export default function App(){
                 </Panel>
 
                 {/* Profit vs Load Factor curve */}
-                <Panel title="Profit vs Load Factor — Fare Scenario Sensitivity" ht={300} onSave={()=>savePlot(`Profit vs Load Factor — Range ${params.range}km`,SR.profitData||[],{note:"Profit vs load factor, fare scenario sensitivity"})}>
+                <Panel title="Profit vs Load Factor — Fare Scenario Sensitivity" ht={300} onSave={true}}>
                   <div style={{fontSize:10,color:SC.muted,fontFamily:"'DM Mono',monospace",marginBottom:6,paddingLeft:4}}>
                     Per-flight profit at each load factor for three market fare scenarios.
                     Zero-crossing = break-even LF. Above zero = profitable.
@@ -10324,7 +10201,7 @@ export default function App(){
                     </div>
 
                     {/* Phase breakdown chart */}
-                    <Panel title="Phase Power & Energy Breakdown" ht={280} onSave={()=>savePlot(`Phase Energy — Range ${params.range}km · Payload ${params.payload}kg`,[{ph:"T/O",power:SR.Phov,energy:SR.Eto},{ph:"Climb",power:SR.Pcl,energy:SR.Ecl},{ph:"Cruise",power:SR.Pcr,energy:SR.Ecr},{ph:"Descent",power:SR.Pdc,energy:SR.Edc},{ph:"Land",power:SR.Phov,energy:SR.Eld},{ph:"Reserve",power:SR.Pres,energy:SR.Eres}],{note:"Phase power & energy breakdown"})}>
+                    <Panel title="Phase Power & Energy Breakdown" ht={280} onSave={true}>
                       <ResponsiveContainer width="100%" height={235}>
                         <BarChart data={mbResults.phases.map(ph=>({
                             name:ph.label,power:ph.power,energy:ph.energy,
