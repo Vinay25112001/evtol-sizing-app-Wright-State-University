@@ -3416,13 +3416,28 @@ function DesignGallery({ SC, onLoadDesign, SR, params, user }) {
         <ellipse cx={cx} cy={cy} rx={fuseW} ry={fuseH} fill={`${d.color}22`} stroke={d.color} strokeWidth="1.5"/>
         <rect x={cx-wingSpan} y={cy-wingC/2} width={wingSpan*2} height={wingC}
           fill={`${d.color}33`} stroke={d.color} strokeWidth="1" rx="2"/>
-        {[-yBoom,yBoom].map((yOff,ri)=>
-          [cy-fuseH*0.4,cy,cy+fuseH*0.4].slice(0,Math.ceil((d.nProp||6)/2)).map((_,ci)=>(
-            <circle key={`r${ri}${ci}`} cx={cx+yOff}
-              cy={cy+(ci-(Math.ceil((d.nProp||6)/2)-1)/2)*fuseH*0.55}
+        {/* LPC/TR 6-rotor layout:
+            - 2 wingtip rotors (one at each wing tip)
+            - 4 inboard rotors parallel to fuselage (2 per side: one fore, one aft of wing) */}
+        {(()=>{
+          const tipX = cx + wingSpan * 0.92;
+          const inbX = cx + wingSpan * 0.52;
+          const fwdY = cy - fuseH * 0.22;
+          const aftY = cy + fuseH * 0.22;
+          const tipY = cy;
+          const rPositions = [
+            { rcx: cx - wingSpan * 0.92, rcy: tipY },
+            { rcx: cx + wingSpan * 0.92, rcy: tipY },
+            { rcx: cx - wingSpan * 0.52, rcy: fwdY },
+            { rcx: cx + wingSpan * 0.52, rcy: fwdY },
+            { rcx: cx - wingSpan * 0.52, rcy: aftY },
+            { rcx: cx + wingSpan * 0.52, rcy: aftY },
+          ];
+          return rPositions.map((pos, i) => (
+            <circle key={`r${i}`} cx={pos.rcx} cy={pos.rcy}
               r={rotR} fill={`${d.color}18`} stroke={d.color} strokeWidth="1" strokeDasharray="3,2"/>
-          ))
-        )}
+          ));
+        })()}
         <polyline points={`${cx},${cy+fuseH*0.85} ${cx-fuseW*2.5},${cy+fuseH*0.5} ${cx},${cy+fuseH*0.65}`}
           fill={`${d.color}22`} stroke={d.color} strokeWidth="1.2"/>
         <polyline points={`${cx},${cy+fuseH*0.85} ${cx+fuseW*2.5},${cy+fuseH*0.5} ${cx},${cy+fuseH*0.65}`}
@@ -5473,10 +5488,22 @@ export default function App(){
   const[undoCount,setUndoCount]=useState(0); // triggers re-render for button state
   const[redoCount,setRedoCount]=useState(0);
   const[showPdfBranding,setShowPdfBranding]=useState(false);
-  const[pdfBranding,setPdfBranding]=useState({
-    authorName:"", university:"Wright State University",
-    projectTitle:"eVTOL Sizing Analysis", logoUrl:"", date:new Date().toLocaleDateString(),
+  const[pdfBranding,setPdfBranding]=useState(()=>{
+    try{
+      const saved=localStorage.getItem("evtol_pdfBranding");
+      if(saved){
+        const parsed=JSON.parse(saved);
+        // Always refresh the date to today, but keep the saved logo and other fields
+        return {...parsed, date:new Date().toLocaleDateString()};
+      }
+    }catch(_){}
+    return {authorName:"", university:"Wright State University",
+      projectTitle:"eVTOL Sizing Analysis", logoUrl:"", date:new Date().toLocaleDateString()};
   });
+  // Persist pdfBranding to localStorage whenever it changes
+  useEffect(()=>{
+    try{ localStorage.setItem("evtol_pdfBranding", JSON.stringify(pdfBranding)); }catch(_){}
+  },[pdfBranding]);
   // Monte Carlo state
   const[mcRanges,setMcRanges]=useState({
     sedCell:   {min:250, max:350, dist:"normal"},
