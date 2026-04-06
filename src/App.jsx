@@ -2662,11 +2662,28 @@ function KPI({label,value,unit,sub,color}){
   );
 }
 
-function Panel({title,children,ht}){
+function Panel({title,children,ht,onSave}){
   return(
     <div style={{background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:8,padding:"12px 14px",height:ht||"auto"}}>
       <div style={{fontSize:9,color:SC.muted,textTransform:"uppercase",letterSpacing:"0.08em",fontFamily:"system-ui,sans-serif",
-        marginBottom:8,borderBottom:`1px solid ${SC.border}`,paddingBottom:5}}>{title}</div>
+        marginBottom:8,borderBottom:`1px solid ${SC.border}`,paddingBottom:5,
+        display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+        <span>{title}</span>
+        {onSave&&(
+          <button type="button" onClick={onSave}
+            title="Save this chart snapshot to the gallery"
+            style={{padding:"2px 8px",background:"transparent",
+              border:`1px solid ${SC.border}`,borderRadius:4,
+              color:SC.amber,fontSize:8,cursor:"pointer",
+              fontFamily:"'DM Mono',monospace",letterSpacing:"0.06em",
+              transition:"all 0.15s",flexShrink:0,marginLeft:8,
+              whiteSpace:"nowrap"}}
+            onMouseEnter={e=>{e.currentTarget.style.borderColor=SC.amber;e.currentTarget.style.background=`${SC.amber}18`;}}
+            onMouseLeave={e=>{e.currentTarget.style.borderColor=SC.border;e.currentTarget.style.background="transparent";}}>
+            💾 Save Plot
+          </button>
+        )}
+      </div>
       {children}
     </div>
   );
@@ -5476,6 +5493,34 @@ export default function App(){
   });
   const[tab,setTab]=useState(0);
   const[activeGroup,setActiveGroup]=useState(0);
+  // Saved Plots gallery state — persisted to localStorage
+  const[savedPlots,setSavedPlots]=useState(()=>{
+    try{
+      const s=localStorage.getItem("evtol_savedPlots");
+      return s?JSON.parse(s):[];
+    }catch(_){return [];}
+  });
+  const[showSavedPlots,setShowSavedPlots]=useState(false);
+  // Helper: save a named plot snapshot into the gallery
+  const savePlot=(label,data,meta={})=>{
+    const entry={
+      id:Date.now(),
+      label:label||`Plot — ${new Date().toLocaleTimeString()}`,
+      data,
+      meta:{...meta, mtow:SR?.MTOW, range:params?.range, payload:params?.payload,
+            sedCell:params?.sedCell, timestamp:new Date().toISOString()},
+    };
+    setSavedPlots(prev=>{
+      const next=[entry,...prev].slice(0,20); // cap at 20
+      try{localStorage.setItem("evtol_savedPlots",JSON.stringify(next));}catch(_){}
+      return next;
+    });
+  };
+  const deleteSavedPlot=(id)=>setSavedPlots(prev=>{
+    const next=prev.filter(p=>p.id!==id);
+    try{localStorage.setItem("evtol_savedPlots",JSON.stringify(next));}catch(_){}
+    return next;
+  });
   const[showOverflow,setShowOverflow]=useState(false);
   const[sidebarOpen,setSidebarOpen]=useState(()=>localStorage.getItem("sb")!=="0");
   const[user,setUser]=useState(()=>getSession());
@@ -5987,6 +6032,11 @@ export default function App(){
   useEffect(()=>{
     const onKey=evt=>{
       const mod=evt.ctrlKey||evt.metaKey;
+      // ── Global tab-group shortcuts ──────────────────────────────────
+      if(mod&&evt.key==="d"){ evt.preventDefault();
+        setActiveGroup(0); setTab(TAB_GROUPS[0].tabs[0]); } // Ctrl+D → Design
+      if(mod&&evt.key==="p"){ evt.preventDefault();
+        setActiveGroup(1); setTab(TAB_GROUPS[1].tabs[0]); } // Ctrl+P → Physics
       if(mod&&evt.key==="z"&&!evt.shiftKey){ evt.preventDefault(); undo(); }
       if(mod&&(evt.key==="y"||(evt.key==="z"&&evt.shiftKey))){ evt.preventDefault(); redo(); }
       if(mod&&evt.key==="s"){
@@ -6006,7 +6056,7 @@ export default function App(){
     };
     window.addEventListener("keydown",onKey);
     return()=>window.removeEventListener("keydown",onKey);
-  },[SR,user,params,tab,activeGroup]);
+  },[SR,user,params,tab,activeGroup,savePlot]);
   const undo=()=>{
     const stack=undoStackRef.current;
     if(!stack.length) return;
@@ -6208,6 +6258,18 @@ export default function App(){
 
         {/* Action buttons — primary visible, secondary behind ••• */}
         <div style={{display:"flex",gap:6,marginLeft:"auto",alignItems:"center",position:"relative"}}>
+          {/* Saved Plots Gallery toggle */}
+          <button type="button" onClick={()=>setShowSavedPlots(v=>!v)}
+            title="Toggle Saved Plots Gallery"
+            style={{padding:"5px 11px",
+              background:showSavedPlots?`${SC.amber}22`:"transparent",
+              border:`1px solid ${showSavedPlots?SC.amber:SC.border}`,
+              borderRadius:4,color:showSavedPlots?SC.amber:SC.muted,
+              fontSize:10,cursor:"pointer",fontWeight:700,lineHeight:1,
+              fontFamily:"'DM Mono',monospace",transition:"all 0.15s"}}>
+            📊{savedPlots.length>0?` ${savedPlots.length}`:""}
+          </button>
+
           {/* Dark/Light toggle — always visible, purely iconic */}
           <button onClick={()=>setDarkMode(d=>!d)} type="button"
             title={darkMode?"Switch to Light Mode":"Switch to Dark Mode"}
@@ -6531,6 +6593,7 @@ export default function App(){
                       // jump to first tab in group if current tab isn't in this group
                       if(!grp.tabs.includes(tab)) setTab(grp.tabs[0]);
                     }}
+                    title={gi===0?"Design (Ctrl+D)":gi===1?"Physics (Ctrl+P)":grp.label}
                     style={{padding:"4px 14px",border:`1px solid ${isActive?grp.color:SC.border}`,
                       borderBottom:"none",borderRadius:"5px 5px 0 0",cursor:"pointer",
                       background:isActive?`${grp.color}18`:"transparent",
@@ -6564,6 +6627,88 @@ export default function App(){
           </div>
 
           <div style={{flex:1,overflowY:"auto",padding:"14px 18px 28px",background:SC.bg}}>
+
+            {/* ── SAVED PLOTS GALLERY OVERLAY ──────────────────────────────────────── */}
+            {showSavedPlots&&(
+              <div style={{marginBottom:16,background:SC.panel,border:`1px solid ${SC.amber}44`,borderRadius:10,padding:"14px 16px"}}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+                  <div>
+                    <div style={{fontSize:9,color:SC.amber,fontFamily:"'DM Mono',monospace",letterSpacing:"0.12em",marginBottom:2}}>SAVED PLOTS GALLERY</div>
+                    <div style={{fontSize:13,fontWeight:700,color:SC.text,fontFamily:"system-ui,sans-serif"}}>
+                      {savedPlots.length} snapshot{savedPlots.length!==1?"s":""} saved
+                    </div>
+                  </div>
+                  <button type="button" onClick={()=>setShowSavedPlots(false)}
+                    style={{padding:"5px 12px",background:"transparent",border:`1px solid ${SC.border}`,
+                      borderRadius:6,color:SC.muted,fontSize:10,cursor:"pointer",
+                      fontFamily:"'DM Mono',monospace"}}>✕ Close Gallery</button>
+                </div>
+                {savedPlots.length===0&&(
+                  <div style={{textAlign:"center",padding:"28px 0",color:SC.dim,fontSize:11,
+                    fontFamily:"'DM Mono',monospace"}}>
+                    No saved plots yet. Use the 💾 Save Plot button on any chart to capture a snapshot.
+                  </div>
+                )}
+                {savedPlots.length>0&&(
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:12}}>
+                    {savedPlots.map(plot=>(
+                      <div key={plot.id} style={{background:SC.bg,border:`1px solid ${SC.border}`,
+                        borderRadius:8,padding:"12px 14px",position:"relative"}}>
+                        <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:8}}>
+                          <div>
+                            <div style={{fontSize:11,fontWeight:700,color:SC.amber,
+                              fontFamily:"'DM Mono',monospace",marginBottom:2}}>{plot.label}</div>
+                            <div style={{fontSize:9,color:SC.dim,fontFamily:"'DM Mono',monospace"}}>
+                              {new Date(plot.meta.timestamp).toLocaleString()}
+                            </div>
+                          </div>
+                          <button type="button" onClick={()=>deleteSavedPlot(plot.id)}
+                            style={{padding:"2px 8px",background:"transparent",border:`1px solid ${SC.border}`,
+                              borderRadius:4,color:SC.red,fontSize:9,cursor:"pointer",
+                              fontFamily:"'DM Mono',monospace",flexShrink:0,marginLeft:8}}>✕</button>
+                        </div>
+                        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:10}}>
+                          {[["MTOW",plot.meta.mtow?`${plot.meta.mtow.toFixed?plot.meta.mtow.toFixed(0):plot.meta.mtow} kg`:"—"],
+                            ["Range",plot.meta.range?`${plot.meta.range} km`:"—"],
+                            ["Payload",plot.meta.payload?`${plot.meta.payload} kg`:"—"],
+                            ["SED",plot.meta.sedCell?`${plot.meta.sedCell} Wh/kg`:"—"],
+                          ].map(([k,v])=>(
+                            <div key={k} style={{background:SC.panel,borderRadius:4,padding:"5px 8px"}}>
+                              <div style={{fontSize:8,color:SC.dim,fontFamily:"'DM Mono',monospace"}}>{k}</div>
+                              <div style={{fontSize:11,fontWeight:700,color:SC.text,fontFamily:"'DM Mono',monospace"}}>{v}</div>
+                            </div>
+                          ))}
+                        </div>
+                        {plot.data&&plot.data.length>0&&(
+                          <div style={{overflow:"hidden",borderRadius:4,border:`1px solid ${SC.border}44`}}>
+                            <ResponsiveContainer width="100%" height={120}>
+                              <LineChart data={plot.data} margin={{top:4,right:4,left:-30,bottom:4}}>
+                                <XAxis dataKey={Object.keys(plot.data[0]||{})[0]}
+                                  tick={{fontSize:7,fill:SC.dim}} tickLine={false} axisLine={false}/>
+                                <YAxis tick={{fontSize:7,fill:SC.dim}} tickLine={false} axisLine={false}/>
+                                <Tooltip contentStyle={{background:SC.panel,border:`1px solid ${SC.border}`,
+                                  borderRadius:4,fontSize:9,fontFamily:"'DM Mono',monospace"}}
+                                  labelStyle={{color:SC.muted}} itemStyle={{color:SC.amber}}/>
+                                {Object.keys(plot.data[0]||{}).slice(1).map((key,ki)=>(
+                                  <Line key={key} type="monotone" dataKey={key}
+                                    stroke={[SC.amber,SC.blue,SC.green,SC.red][ki%4]}
+                                    strokeWidth={1.5} dot={false}/>
+                                ))}
+                              </LineChart>
+                            </ResponsiveContainer>
+                          </div>
+                        )}
+                        {plot.meta.note&&(
+                          <div style={{marginTop:6,fontSize:9,color:SC.muted,
+                            fontFamily:"'DM Mono',monospace",fontStyle:"italic"}}>{plot.meta.note}</div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Shared design banner — shown when ?design= is in URL */}
             {sharedDesignId&&(
               <PublicDesignBanner shareId={sharedDesignId} onLoad={params=>setParams(prev=>({...prev,...params}))} C={SC}/>
@@ -6696,7 +6841,7 @@ export default function App(){
                 </div>
 
                 {/* Power vs Time */}
-                <Panel title="Power vs Mission Time (kW)" ht={270}>
+                <Panel title="Power vs Mission Time (kW)" ht={270} onSave={()=>savePlot(`Power vs Time — MTOW ${SR.MTOW.toFixed(0)}kg`,SR.missionProfile||[],{note:"Power vs mission time"})}>
                   <ResponsiveContainer width="100%" height={220}>
                     <AreaChart data={SR.powerSteps} margin={{top:5,right:16,left:-5,bottom:16}}>
                       <defs><linearGradient id="pg" x1="0" y1="0" x2="0" y2="1">
@@ -6740,7 +6885,7 @@ export default function App(){
                 </Panel>
 
                 {/* Energy Remaining Over Mission */}
-                <Panel title="Battery Energy Remaining vs Mission Time" ht={270}>
+                <Panel title="Battery Energy Remaining vs Mission Time" ht={270} onSave={()=>savePlot(`Battery Energy — MTOW ${SR.MTOW.toFixed(0)}kg · SED=${params.sedCell}Wh/kg`,SR.missionProfile||[],{note:"Battery energy remaining vs mission time"})}>
                   <ResponsiveContainer width="100%" height={220}>
                     <AreaChart
                       data={SR.energySteps.map(s=>({t:s.t, Erem:+Math.max(0,SR.PackkWh-s.E).toFixed(3)}))}
@@ -7271,7 +7416,7 @@ export default function App(){
                     ))}
                     </div>
                   </Panel>
-                  <Panel title="Phase Power Comparison" ht={320}>
+                  <Panel title="Phase Power Comparison" ht={320} onSave={()=>savePlot(`Phase Power — MTOW ${SR.MTOW.toFixed(0)}kg`,[{ph:"T/O",v:SR.Phov},{ph:"Climb",v:SR.Pcl},{ph:"Cruise",v:SR.Pcr},{ph:"Descent",v:SR.Pdc},{ph:"Land",v:SR.Phov},{ph:"Reserve",v:SR.Pres}],{note:"Phase power breakdown (kW)"})}>
                     <ResponsiveContainer width="100%" height={270}>
                       <BarChart data={[{ph:"T/O",v:SR.Phov},{ph:"Climb",v:SR.Pcl},{ph:"Cruise",v:SR.Pcr},{ph:"Descent",v:SR.Pdc},{ph:"Land",v:SR.Phov},{ph:"Reserve",v:SR.Pres}]}
                         margin={{top:5,right:8,left:-10,bottom:0}}>
@@ -7296,7 +7441,7 @@ export default function App(){
                   <KPI label="Cell Config" value={`${SR.Nseries}s×${SR.Npar}p`} unit="" sub={`${SR.Ncells} cells total`}/>
                   <KPI label="Final SoC" value={((1-SR.Etot/SR.PackkWh)*100).toFixed(1)} unit="%" color={(1-SR.Etot/SR.PackkWh)>=(params.socMin/(1+params.socMin))-0.01?SC.green:SC.red}/>
                 </div>
-                <Panel title="Battery State of Charge — Full Mission" ht={285}>
+                <Panel title="Battery State of Charge — Full Mission" ht={285} onSave={()=>savePlot(`SOC Profile — MTOW ${SR.MTOW.toFixed(0)}kg · ${params.range}km`,SR.socProfile||[],{note:"Battery state of charge over mission"})}>
                   <ResponsiveContainer width="100%" height={235}>
                     <AreaChart data={SR.socSteps} margin={{top:5,right:10,left:-10,bottom:0}}>
                       <defs><linearGradient id="sg" x1="0" y1="0" x2="0" y2="1">
@@ -7356,7 +7501,7 @@ export default function App(){
                   <KPI label="Dive Speed Vd" value={SR.VD} unit="m/s"/>
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-                  <Panel title="V-n Structural Envelope" ht={310}>
+                  <Panel title="V-n Structural Envelope" ht={310} onSave={()=>savePlot(`V-n Envelope — MTOW ${SR.MTOW.toFixed(0)}kg · Vc=${params.vCruise}m/s`,SR.vnData,{note:"V-n structural envelope"})}>
                     <ResponsiveContainer width="100%" height={260}>
                       <LineChart data={SR.vnData} margin={{top:10,right:30,left:10,bottom:20}}>
                         <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
@@ -10062,7 +10207,7 @@ export default function App(){
                     </div>
 
                     {/* Phase breakdown chart */}
-                    <Panel title="Phase Power & Energy Breakdown" ht={280}>
+                    <Panel title="Phase Power & Energy Breakdown" ht={280} onSave={()=>savePlot(`Phase Energy — Range ${params.range}km · Payload ${params.payload}kg`,[{ph:"T/O",power:SR.Phov,energy:SR.Eto},{ph:"Climb",power:SR.Pcl,energy:SR.Ecl},{ph:"Cruise",power:SR.Pcr,energy:SR.Ecr},{ph:"Descent",power:SR.Pdc,energy:SR.Edc},{ph:"Land",power:SR.Phov,energy:SR.Eld},{ph:"Reserve",power:SR.Pres,energy:SR.Eres}],{note:"Phase power & energy breakdown"})}>
                       <ResponsiveContainer width="100%" height={235}>
                         <BarChart data={mbResults.phases.map(ph=>({
                             name:ph.label,power:ph.power,energy:ph.energy,
