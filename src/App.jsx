@@ -4817,29 +4817,23 @@ function AIAssistantPanel({ params, SR, SC, onParamChange, user }) {
         headers:{"Content-Type":"application/json","Authorization":`Bearer ${import.meta.env.VITE_GROQ_KEY}`},
         body: JSON.stringify({
           model:"llama-3.1-8b-instant",
-          max_tokens:800,
+          max_tokens:2000,
           messages:[
-            {role:"system", content:`You are an expert aerospace engineer and eVTOL specialist with deep knowledge of aircraft design, propulsion, aerodynamics, battery systems, and aviation certification. You help engineers and students understand complex concepts clearly and solve real engineering problems. You are assisting with an advanced eVTOL aircraft sizing tool.
+            {role:"system", content:`You are a highly capable AI assistant — expert in software engineering, mathematics, science, and aerospace/eVTOL design. You can write, debug, and explain code in any language (Python, MATLAB, Java, JavaScript, C++, etc.), solve engineering problems, explain concepts, and assist with research.
 
-Current design context:
-- MTOW: ${SR?.MTOW||'unknown'} kg
-- Mission range: ${params.range} km (total ${SR?(SR.totalRange||params.range):params.range} km incl. reserve)
-- Payload: ${params.payload} kg
-- Cruise speed: ${params.vCruise} m/s (${(params.vCruise*3.6).toFixed(0)} km/h)
-- Rotors: ${params.nPropHover} × ${params.propDiam} m diameter
-- Battery SED: ${params.sedCell} Wh/kg (cell-level specific energy density)
-- Hover power: ${SR?.Phov?.toFixed(1)||'?'} kW | Cruise power: ${SR?.Pcr?.toFixed(1)||'?'} kW
-- Wing span: ${SR?.bWing?.toFixed(2)||'?'} m | L/D: ${SR?.LDact?.toFixed(2)||'?'}
-- Battery mass: ${SR?.Wbat?.toFixed(0)||'?'} kg (${SR?(SR.Wbat/SR.MTOW*100).toFixed(1):'?'}% of MTOW)
+You are embedded in an eVTOL aircraft sizing tool, so you also have deep aerospace context available:
+- Current design: MTOW=${SR?.MTOW||'unknown'} kg, range=${params.range} km, payload=${params.payload} kg
+- Cruise: ${params.vCruise} m/s (${(params.vCruise*3.6).toFixed(0)} km/h), L/D=${SR?.LDact?.toFixed(2)||'?'}
+- Rotors: ${params.nPropHover}× ${params.propDiam} m | Hover power: ${SR?.Phov?.toFixed(1)||'?'} kW | Cruise power: ${SR?.Pcr?.toFixed(1)||'?'} kW
+- Battery: ${params.sedCell} Wh/kg SED, ${SR?.Wbat?.toFixed(0)||'?'} kg (${SR?(SR.Wbat/SR.MTOW*100).toFixed(1):'?'}% of MTOW)
+- Wing span: ${SR?.bWing?.toFixed(2)||'?'} m | Static margin: ${SR?(SR.SM_vt*100).toFixed(1):'?'}%
 
-Guidelines for your answers:
-- For technical depth questions (BEM, stability, acoustics, certification): give thorough, accurate engineering explanations with formulas where helpful.
-- For conceptual questions: use clear analogies and examples.
-- For design comparisons (Joby vs Archer, etc.): give factual, balanced analysis.
-- For quick questions: be concise and direct.
-- Always relate answers to eVTOL context when relevant.
-- If the user mentions SED or Wh/kg, they mean specific energy density (battery energy per unit mass), NOT speed.
-- Abbreviation reference: SED = Specific Energy Density (Wh/kg), L/D = Lift-to-Drag ratio, MTOW = Maximum Take-Off Weight, BEM = Blade Element Momentum, SM = Static Margin, OEI = One Engine Inoperative.`},
+Behavior guidelines:
+- CODE: Write clean, complete, well-commented code. Always specify the language. For long scripts, write the full implementation — never truncate.
+- MATH/ENGINEERING: Show derivations and formulas where helpful. Be numerically precise.
+- AEROSPACE: Use correct terminology. SED = Specific Energy Density (Wh/kg), NOT speed. L/D = Lift-to-Drag, MTOW = Max Take-Off Weight, BEM = Blade Element Momentum, OEI = One Engine Inoperative.
+- GENERAL: Answer any question clearly and helpfully. Match depth to complexity — concise for simple questions, thorough for complex ones.
+- CONTEXT: Reference the eVTOL design context above only when it's genuinely relevant to the question.\`},
             ...newHistory.slice(-10) // keep last 10 for context
           ]
         })
@@ -4970,7 +4964,7 @@ Guidelines for your answers:
           <div style={{display:'flex',gap:0,background:SC.bg,border:`1px solid ${SC.border}`,borderRadius:8,overflow:'hidden',flexShrink:0}}>
             {[
               {key:'design', icon:'🛠️', label:'Design Mode',  tip:'Optimizer finds best feasible aircraft and injects into all tabs'},
-              {key:'chat',   icon:'💬', label:'Chat Mode',    tip:'Ask anything — concepts, theory, problems, comparisons'},
+              {key:'chat',   icon:'💬', label:'Chat Mode',    tip:'Ask anything — write code (Python/MATLAB/Java/C++), explain concepts, solve problems, engineering Q&A'},
             ].map(({key,icon,label,tip})=>(
               <button key={key} onClick={()=>{
                 setMode(key);
@@ -4978,7 +4972,7 @@ Guidelines for your answers:
                 setMessages(p=>[...p,{role:'assistant',mode:key,content:
                   key==='design'
                   ?"🛠️ Switched to Design Mode. Describe your eVTOL requirements and I'll find the optimal design and inject it into all app tabs."
-                  :"💬 Switched to Chat Mode. Ask me anything — BEM theory, certification questions, aerodynamics, comparisons, or general eVTOL concepts."
+                  :"💬 Switched to Chat Mode. Ask me anything — write code in Python, MATLAB, Java, C++ or any language; solve engineering problems; explain concepts; debug scripts; or ask eVTOL design questions. I maintain full conversation context."
                 }]);
               }} type="button" title={tip}
                 style={{
@@ -4998,7 +4992,7 @@ Guidelines for your answers:
         <div style={{fontSize:11,color:SC.muted,lineHeight:1.6,marginTop:8}}>
           {mode==='design'
             ?'Describe requirements → optimizer searches design combinations → injects best feasible design into every tab instantly.'
-            :'Ask anything about eVTOL design, aerodynamics, BEM theory, certification, or any engineering concept. Maintains conversation context.'}
+            :'Ask anything — write & debug code in Python, MATLAB, Java, C++ or any language; solve math/engineering problems; explain concepts; or ask about eVTOL design. Full conversation context maintained.'}
         </div>
       </div>
 
@@ -5028,7 +5022,7 @@ Guidelines for your answers:
         <div style={{borderTop:`1px solid ${SC.border}`,padding:'10px 14px',display:'flex',gap:10}}>
           <input value={input} onChange={e=>setInput(e.target.value)}
             onKeyDown={e=>e.key==='Enter'&&!e.shiftKey&&send()}
-            placeholder={mode==='design'?"e.g. '4 passengers, 100km, EASA SC-VTOL, minimise MTOW'":"Ask anything — BEM theory, certification, aerodynamics, comparisons…"}
+            placeholder={mode==='design'?"e.g. '4 passengers, 100km, EASA SC-VTOL, minimise MTOW'":"Ask anything — write Python/MATLAB/Java code, explain concepts, solve problems, eVTOL Q&A…"}
             style={{flex:1,background:SC.bg,border:`1px solid ${SC.border}`,borderRadius:6,color:SC.text,fontSize:11,padding:'8px 12px',fontFamily:"'DM Mono',monospace",outline:'none'}}
             disabled={thinking}/>
           <button onClick={send} disabled={thinking||!input.trim()} type="button"
@@ -5060,12 +5054,14 @@ Guidelines for your answers:
           ]:[
             "What is Blade Element Momentum theory?",
             "Explain static margin in simple terms",
-            "What's the difference between Joby S4 and Archer Midnight?",
+            "Write a Python script to plot eVTOL mission energy breakdown",
             "Why does increasing aspect ratio improve L/D?",
             "How does battery degradation affect eVTOL range?",
-            "What is the Glauert correction and when is it needed?",
+            "Write MATLAB code to solve the 1D Burgers equation (FTCS scheme)",
             "Explain EASA SC-VTOL certification requirements",
+            "Write a Java class for a PID controller",
             "What is figure of merit for a helicopter rotor?",
+            "Write Python to compute hover power using actuator disk theory",
           ]).map(q=>(
             <button key={q} onClick={()=>setInput(q)} type="button"
               style={{padding:'5px 12px',background:`${SC.purple}18`,border:`1px solid ${SC.purple}44`,borderRadius:5,color:SC.purple,fontSize:9,cursor:'pointer',fontFamily:"'DM Mono',monospace"}}>
