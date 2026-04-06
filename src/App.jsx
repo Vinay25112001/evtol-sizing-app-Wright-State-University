@@ -4495,7 +4495,7 @@ function AIAssistantPanel({ params, SR, SC, onParamChange, user }) {
   const LS_KEY = 'evtol_ai_chat_local'; // localStorage key for instant refresh restore
 
   const DEFAULT_MSG = [{ role:'assistant', mode:'design',
-    content:"👋 I'm your eVTOL AI Design Assistant.\n\nDescribe your requirements in plain English — I'll parse them, run the deterministic optimizer across thousands of design combinations, and inject the best feasible design directly into all your app tabs.\n\n📌 Parameters I understand:\n• Passengers / payload (kg)\n• Range (km)\n• Cruise speed (m/s or km/h)\n• SED / Wh/kg — specific energy density of battery cells\n• Number of rotors\n• Optimization goals (minimize MTOW, battery weight, etc.)\n\n💡 Example prompts:\n\"3 passengers, 60km range, 200 Wh/kg SED\"\n\"4 passengers, 80km, EASA SC-VTOL, minimize MTOW\"\n\"6 passengers, 150km, 300 Wh/kg, 8 rotors\"" }];
+    content:"👋 I'm your AI Design Assistant.\n\nDescribe your eVTOL requirements and I'll run a deterministic optimizer to find the best feasible design, then inject it directly into all your app sliders.\n\nExample: \"4 passengers, 80km range, EASA SC-VTOL certification\"" }];
 
   // ── Read from localStorage immediately (synchronous — zero delay on refresh) ──
   const readLocalCache = () => {
@@ -4618,20 +4618,14 @@ function AIAssistantPanel({ params, SR, SC, onParamChange, user }) {
   };
 
   /* ── Async Optimizer — chunked so browser never freezes ── */
-  const optimizeAsync = async (userRange, userPayload, userVCruise, userSED, userNProp) => {
+  const optimizeAsync = async (userRange, userPayload, userVCruise) => {
     const R0 = clamp(userRange   || params.range,   20, 500);
     const P0 = clamp(userPayload || params.payload,  50, 800);
     const V0 = clamp(userVCruise || params.vCruise,  30, 120);
 
-    // If user pinned a SED value, apply it to the stable base too
-    const sedBase = (userSED && userSED>=150 && userSED<=400)
-      ? Math.round(userSED)
-      : params.sedCell;
-
     const stable = {
       ...params,
-      vCruise:  V0,
-      sedCell:  sedBase,
+      vCruise: V0,
       vtCh:    Math.max(+(params.vtCh)    || 0.45, 0.40),
       vtCv:    +(params.vtCv)    || 0.05,
       vtGamma: +(params.vtGamma) || 40,
@@ -4663,15 +4657,11 @@ function AIAssistantPanel({ params, SR, SC, onParamChange, user }) {
       } catch { return { p:null, R:null, s:Infinity }; }
     };
 
-    // Reduced grid — covers design space; pins SED & rotor count when user specifies them
-    const sedPinned = (userSED && userSED>=150 && userSED<=400) ? Math.round(userSED) : null;
-    const sedV = sedPinned
-      ? [...new Set([Math.max(150,sedPinned-25), sedPinned, Math.min(400,sedPinned+25)])]
-      : [200, 250, 300, 350, 400];
+    // Reduced grid — still covers the space well but ~2400 combos (not 60k)
+    const sedV  = [200, 250, 300, 350, 400];
     const arV   = [7, 9, 11];
     const ewfV  = [0.38, 0.44, 0.50];
-    const nPinned = userNProp ? [4,6,8,10,12].reduce((a,b)=>Math.abs(b-userNProp)<Math.abs(a-userNProp)?b:a) : null;
-    const nPV   = nPinned ? [nPinned] : [6, 8];
+    const nPV   = [6, 8];
     const dV    = [2.0, 2.5, 3.0];
     const ldV   = [12, 14, 16];
     const twV   = [1.1, 1.3];
@@ -4727,57 +4717,16 @@ function AIAssistantPanel({ params, SR, SC, onParamChange, user }) {
     /* ── Parse user intent from text ── */
   const parseIntent = (text) => {
     const lower = text.toLowerCase();
-
-    // ── Range: "60km", "60 km range"
-    const rangeMatch = lower.match(/(\d+(?:\.\d+)?)\s*km(?!\s*\/\s*h|\s*per\s*h)/);
+    // Extract range
+    const rangeMatch = lower.match(/(\d+)\s*km/);
     const range = rangeMatch ? +rangeMatch[1] : null;
-
-    // ── Passengers → payload (100 kg per pax = 80 kg body + 20 kg bags)
-    const paxMatch = lower.match(/(\d+)\s*(?:passenger|pax|person|people|seat)/);
+    // Extract passengers → payload (80kg per pax + 20kg bags)
+    const paxMatch = lower.match(/(\d+)\s*passenger/);
     const payload = paxMatch ? +paxMatch[1] * 100 : null;
-
-    // ── Cruise speed: "67 m/s", "250 km/h" — NOT confused with SED
-    let vCruise = null;
-    const msMatch  = lower.match(/(\d+(?:\.\d+)?)\s*m\/s/);
-    const kmhMatch = lower.match(/(\d+(?:\.\d+)?)\s*km\/h/);
-    const knotsMatch = lower.match(/(\d+(?:\.\d+)?)\s*(?:knots?|kt)/);
-    if (msMatch)    vCruise = +msMatch[1];
-    else if (kmhMatch)  vCruise = +kmhMatch[1] / 3.6;
-    else if (knotsMatch) vCruise = +knotsMatch[1] * 0.5144;
-
-    // ── SED / Specific Energy Density: "200 SED", "200 Wh/kg", "sed=200",
-    //    "specific energy 200", "energy density 200"
-    let sedCell = null;
-    const sedPatterns = [
-      /(\d+(?:\.\d+)?)\s*wh\s*\/?\s*kg/,                     // "200 Wh/kg"
-      /(?:sed|specific[\s-]energy(?:\s+density)?)\s*[=:≈~]?\s*(\d+(?:\.\d+)?)/,  // "SED 200", "SED=200"
-      /(\d+(?:\.\d+)?)\s*(?:sed|wh\/kg)/,                    // "200 SED"
-      /(?:energy\s+density|battery\s+energy)\s*[=:≈~]?\s*(\d+(?:\.\d+)?)/,       // "energy density 200"
-      /cell\s+(?:energy|sed|specific)\s*[=:≈~]?\s*(\d+(?:\.\d+)?)/,              // "cell energy 300"
-    ];
-    for (const pat of sedPatterns) {
-      const m = lower.match(pat);
-      if (m) { sedCell = +m[1]; break; }
-    }
-
-    // ── Number-of-rotors: "6 rotors", "8-rotor"
-    const rotorMatch = lower.match(/(\d+)[- ]?rotor/);
-    const nPropHover = rotorMatch ? +rotorMatch[1] : null;
-
-    // ── Payload kg override: "500 kg payload", "payload 400kg"
-    const kgMatch = lower.match(/(\d+(?:\.\d+)?)\s*kg\s*(?:payload|cargo|load)/);
-    if (kgMatch && !payload) {
-      // already handled via paxMatch fallthrough; prefer pax if both exist
-    }
-    const payloadKg = kgMatch ? +kgMatch[1] : null;
-
-    return {
-      range,
-      payload: payload ?? payloadKg,
-      vCruise,
-      sedCell,
-      nPropHover,
-    };
+    // Extract speed
+    const speedMatch = lower.match(/(\d+)\s*m\/s/);
+    const vCruise = speedMatch ? +speedMatch[1] : null;
+    return { range, payload, vCruise };
   };
 
   /* ── Call Groq for natural language summary only ── */
@@ -4817,23 +4766,9 @@ function AIAssistantPanel({ params, SR, SC, onParamChange, user }) {
         headers:{"Content-Type":"application/json","Authorization":`Bearer ${import.meta.env.VITE_GROQ_KEY}`},
         body: JSON.stringify({
           model:"llama-3.1-8b-instant",
-          max_tokens:2000,
+          max_tokens:800,
           messages:[
-            {role:"system", content:`You are a highly capable AI assistant — expert in software engineering, mathematics, science, and aerospace/eVTOL design. You can write, debug, and explain code in any language (Python, MATLAB, Java, JavaScript, C++, etc.), solve engineering problems, explain concepts, and assist with research.
-
-You are embedded in an eVTOL aircraft sizing tool, so you also have deep aerospace context available:
-- Current design: MTOW=${SR?.MTOW||'unknown'} kg, range=${params.range} km, payload=${params.payload} kg
-- Cruise: ${params.vCruise} m/s (${(params.vCruise*3.6).toFixed(0)} km/h), L/D=${SR?.LDact?.toFixed(2)||'?'}
-- Rotors: ${params.nPropHover}× ${params.propDiam} m | Hover power: ${SR?.Phov?.toFixed(1)||'?'} kW | Cruise power: ${SR?.Pcr?.toFixed(1)||'?'} kW
-- Battery: ${params.sedCell} Wh/kg SED, ${SR?.Wbat?.toFixed(0)||'?'} kg (${SR?(SR.Wbat/SR.MTOW*100).toFixed(1):'?'}% of MTOW)
-- Wing span: ${SR?.bWing?.toFixed(2)||'?'} m | Static margin: ${SR?(SR.SM_vt*100).toFixed(1):'?'}%
-
-Behavior guidelines:
-- CODE: Write clean, complete, well-commented code. Always specify the language. For long scripts, write the full implementation — never truncate.
-- MATH/ENGINEERING: Show derivations and formulas where helpful. Be numerically precise.
-- AEROSPACE: Use correct terminology. SED = Specific Energy Density (Wh/kg), NOT speed. L/D = Lift-to-Drag, MTOW = Max Take-Off Weight, BEM = Blade Element Momentum, OEI = One Engine Inoperative.
-- GENERAL: Answer any question clearly and helpfully. Match depth to complexity — concise for simple questions, thorough for complex ones.
-- CONTEXT: Reference the eVTOL design context above only when it's genuinely relevant to the question.\`},
+            {role:"system", content:`You are a knowledgeable aerospace engineering assistant specializing in eVTOL aircraft. You help engineers and students understand concepts, solve problems, and learn about aviation. The user is working on an eVTOL sizing tool. Current design context: MTOW=${SR?.MTOW||'unknown'}kg, missionRange=${params.range}km (total ${SR?(SR.totalRange||params.range):params.range}km incl. reserve), payload=${params.payload}kg, ${params.nPropHover} rotors. Answer clearly and helpfully. For technical questions give depth. For simple questions be concise.`},
             ...newHistory.slice(-10) // keep last 10 for context
           ]
         })
@@ -4868,7 +4803,7 @@ Behavior guidelines:
 
       /* Step 2: Run deterministic optimizer */
       await new Promise(r=>setTimeout(r,50)); // let UI update
-      const result = await optimizeAsync(intent.range, intent.payload, intent.vCruise, intent.sedCell, intent.nPropHover);
+      const result = await optimizeAsync(intent.range, intent.payload, intent.vCruise);
       const bestResult = result && result.R ? result : null;
 
       if(!bestResult) {
@@ -4877,9 +4812,7 @@ Behavior guidelines:
         const relaxedRaw = await optimizeAsync(
           Math.max(20, (intent.range||params.range)*0.8),
           Math.max(50, (intent.payload||params.payload)*0.9),
-          intent.vCruise,
-          intent.sedCell,
-          intent.nPropHover
+          intent.vCruise
         );
         const relaxed = relaxedRaw && relaxedRaw.R ? relaxedRaw : null;
         if(!relaxed) {
@@ -4903,27 +4836,16 @@ Behavior guidelines:
       /* Step 4: Show results immediately */
       setMessages(prev=>[...prev,{role:'assistant',content:
         `✅ FEASIBLE DESIGN FOUND — injected into all app tabs:\n\n` +
-        `┌─ WEIGHT BREAKDOWN ─────────────────────┐\n` +
-        `│ MTOW          ${String(bestR.MTOW+' kg').padEnd(26,'─')}│\n` +
-        `│ Battery       ${(bestR.Wbat.toFixed(1)+' kg  ('+((bestR.Wbat/bestR.MTOW*100).toFixed(1))+'% of MTOW)').padEnd(26,'─')}│\n` +
-        `│ Empty fraction  ${(bestP.ewf*100).toFixed(0)}%                      │\n` +
-        `└────────────────────────────────────────┘\n\n` +
-        `┌─ PROPULSION & POWER ───────────────────┐\n` +
-        `│ Hover Power   ${(bestR.Phov.toFixed(1)+' kW').padEnd(26,'─')}│\n` +
-        `│ Cruise Power  ${(bestR.Pcr.toFixed(1)+' kW').padEnd(26,'─')}│\n` +
-        `│ Rotors        ${(bestP.nPropHover+'× '+bestP.propDiam+'m diameter').padEnd(26,'─')}│\n` +
-        `│ Tip Mach      ${String(bestR.TipMach).padEnd(26,'─')}│\n` +
-        `└────────────────────────────────────────┘\n\n` +
-        `┌─ BATTERY & ENERGY ─────────────────────┐\n` +
-        `│ Cell SED      ${(bestP.sedCell+' Wh/kg').padEnd(26,'─')}│\n` +
-        `│ Total Energy  ${(bestR.Etot.toFixed(2)+' kWh').padEnd(26,'─')}│\n` +
-        `└────────────────────────────────────────┘\n\n` +
-        `┌─ AERODYNAMICS ─────────────────────────┐\n` +
-        `│ Wing Span     ${(bestR.bWing.toFixed(2)+' m').padEnd(26,'─')}│\n` +
-        `│ L/D (actual)  ${String(bestR.LDact).padEnd(26,'─')}│\n` +
-        `│ Aspect Ratio  ${String(bestP.AR).padEnd(26,'─')}│\n` +
-        `│ Static Margin ${((bestR.SM_vt*100).toFixed(1)+'%').padEnd(26,'─')}│\n` +
-        `└────────────────────────────────────────┘\n\n` +
+        `MTOW:        ${bestR.MTOW} kg\n` +
+        `Battery:     ${bestR.Wbat} kg  (${(bestR.Wbat/bestR.MTOW*100).toFixed(1)}% of MTOW)\n` +
+        `Total Energy:${bestR.Etot} kWh\n` +
+        `Hover Power: ${bestR.Phov} kW\n` +
+        `Cruise Power:${bestR.Pcr} kW\n` +
+        `Wing Span:   ${bestR.bWing} m\n` +
+        `L/D (actual):${bestR.LDact}\n` +
+        `Static Margin:${(bestR.SM_vt*100).toFixed(1)}%\n` +
+        `Tip Mach:    ${bestR.TipMach}\n\n` +
+        `Key design: ${bestP.sedCell}Wh/kg cells · AR=${bestP.AR} · ${bestP.nPropHover}×${bestP.propDiam}m rotors · ewf=${bestP.ewf}\n\n` +
         `⏳ Getting engineering summary...`
       }]);
 
@@ -4964,7 +4886,7 @@ Behavior guidelines:
           <div style={{display:'flex',gap:0,background:SC.bg,border:`1px solid ${SC.border}`,borderRadius:8,overflow:'hidden',flexShrink:0}}>
             {[
               {key:'design', icon:'🛠️', label:'Design Mode',  tip:'Optimizer finds best feasible aircraft and injects into all tabs'},
-              {key:'chat',   icon:'💬', label:'Chat Mode',    tip:'Ask anything — write code (Python/MATLAB/Java/C++), explain concepts, solve problems, engineering Q&A'},
+              {key:'chat',   icon:'💬', label:'Chat Mode',    tip:'Ask anything — concepts, theory, problems, comparisons'},
             ].map(({key,icon,label,tip})=>(
               <button key={key} onClick={()=>{
                 setMode(key);
@@ -4972,7 +4894,7 @@ Behavior guidelines:
                 setMessages(p=>[...p,{role:'assistant',mode:key,content:
                   key==='design'
                   ?"🛠️ Switched to Design Mode. Describe your eVTOL requirements and I'll find the optimal design and inject it into all app tabs."
-                  :"💬 Switched to Chat Mode. Ask me anything — write code in Python, MATLAB, Java, C++ or any language; solve engineering problems; explain concepts; debug scripts; or ask eVTOL design questions. I maintain full conversation context."
+                  :"💬 Switched to Chat Mode. Ask me anything — BEM theory, certification questions, aerodynamics, comparisons, or general eVTOL concepts."
                 }]);
               }} type="button" title={tip}
                 style={{
@@ -4992,7 +4914,7 @@ Behavior guidelines:
         <div style={{fontSize:11,color:SC.muted,lineHeight:1.6,marginTop:8}}>
           {mode==='design'
             ?'Describe requirements → optimizer searches design combinations → injects best feasible design into every tab instantly.'
-            :'Ask anything — write & debug code in Python, MATLAB, Java, C++ or any language; solve math/engineering problems; explain concepts; or ask about eVTOL design. Full conversation context maintained.'}
+            :'Ask anything about eVTOL design, aerodynamics, BEM theory, certification, or any engineering concept. Maintains conversation context.'}
         </div>
       </div>
 
@@ -5022,7 +4944,7 @@ Behavior guidelines:
         <div style={{borderTop:`1px solid ${SC.border}`,padding:'10px 14px',display:'flex',gap:10}}>
           <input value={input} onChange={e=>setInput(e.target.value)}
             onKeyDown={e=>e.key==='Enter'&&!e.shiftKey&&send()}
-            placeholder={mode==='design'?"e.g. '4 passengers, 100km, EASA SC-VTOL, minimise MTOW'":"Ask anything — write Python/MATLAB/Java code, explain concepts, solve problems, eVTOL Q&A…"}
+            placeholder={mode==='design'?"e.g. '4 passengers, 100km, EASA SC-VTOL, minimise MTOW'":"Ask anything — BEM theory, certification, aerodynamics, comparisons…"}
             style={{flex:1,background:SC.bg,border:`1px solid ${SC.border}`,borderRadius:6,color:SC.text,fontSize:11,padding:'8px 12px',fontFamily:"'DM Mono',monospace",outline:'none'}}
             disabled={thinking}/>
           <button onClick={send} disabled={thinking||!input.trim()} type="button"
@@ -5054,14 +4976,12 @@ Behavior guidelines:
           ]:[
             "What is Blade Element Momentum theory?",
             "Explain static margin in simple terms",
-            "Write a Python script to plot eVTOL mission energy breakdown",
+            "What's the difference between Joby S4 and Archer Midnight?",
             "Why does increasing aspect ratio improve L/D?",
             "How does battery degradation affect eVTOL range?",
-            "Write MATLAB code to solve the 1D Burgers equation (FTCS scheme)",
+            "What is the Glauert correction and when is it needed?",
             "Explain EASA SC-VTOL certification requirements",
-            "Write a Java class for a PID controller",
             "What is figure of merit for a helicopter rotor?",
-            "Write Python to compute hover power using actuator disk theory",
           ]).map(q=>(
             <button key={q} onClick={()=>setInput(q)} type="button"
               style={{padding:'5px 12px',background:`${SC.purple}18`,border:`1px solid ${SC.purple}44`,borderRadius:5,color:SC.purple,fontSize:9,cursor:'pointer',fontFamily:"'DM Mono',monospace"}}>
