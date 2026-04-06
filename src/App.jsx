@@ -6037,6 +6037,12 @@ export default function App(){
         setActiveGroup(0); setTab(TAB_GROUPS[0].tabs[0]); } // Ctrl+D → Design
       if(mod&&evt.key==="p"){ evt.preventDefault();
         setActiveGroup(1); setTab(TAB_GROUPS[1].tabs[0]); } // Ctrl+P → Physics
+      if(mod&&evt.key==="a"){ evt.preventDefault();
+        setActiveGroup(2); setTab(TAB_GROUPS[2].tabs[0]); } // Ctrl+A → Analysis
+      if(mod&&evt.key==="q"){ evt.preventDefault();
+        setActiveGroup(3); setTab(TAB_GROUPS[3].tabs[0]); } // Ctrl+Q → Simulation
+      if(mod&&evt.key==="t"){ evt.preventDefault();
+        setActiveGroup(4); setTab(TAB_GROUPS[4].tabs[0]); } // Ctrl+T → Tools
       if(mod&&evt.key==="z"&&!evt.shiftKey){ evt.preventDefault(); undo(); }
       if(mod&&(evt.key==="y"||(evt.key==="z"&&evt.shiftKey))){ evt.preventDefault(); redo(); }
       if(mod&&evt.key==="s"){
@@ -6593,7 +6599,7 @@ export default function App(){
                       // jump to first tab in group if current tab isn't in this group
                       if(!grp.tabs.includes(tab)) setTab(grp.tabs[0]);
                     }}
-                    title={gi===0?"Design (Ctrl+D)":gi===1?"Physics (Ctrl+P)":grp.label}
+                    title={gi===0?"Design (Ctrl+D)":gi===1?"Physics (Ctrl+P)":gi===2?"Analysis (Ctrl+A)":gi===3?"Simulation (Ctrl+Q)":gi===4?"Tools (Ctrl+T)":grp.label}
                     style={{padding:"4px 14px",border:`1px solid ${isActive?grp.color:SC.border}`,
                       borderBottom:"none",borderRadius:"5px 5px 0 0",cursor:"pointer",
                       background:isActive?`${grp.color}18`:"transparent",
