@@ -2662,16 +2662,103 @@ function KPI({label,value,unit,sub,color}){
   );
 }
 
+/* ─── capturePanel: serialise the real Recharts SVG → PNG download ─── */
+function capturePanel(containerRef, title){
+  try{
+    const container = containerRef.current;
+    if(!container) return;
+    // Find the recharts SVG inside this panel
+    const svg = container.querySelector("svg");
+    if(!svg){ alert("No chart found in this panel."); return; }
+
+    // Clone so we can mutate freely
+    const clone = svg.cloneNode(true);
+
+    // Inline every computed style from every element so the clone is self-contained
+    const srcEls  = svg.querySelectorAll("*");
+    const destEls = clone.querySelectorAll("*");
+    srcEls.forEach((src,i)=>{
+      const cs = window.getComputedStyle(src);
+      const dst = destEls[i];
+      // Copy only paint-relevant props — keeps the serialised string small
+      [
+        "fill","fill-opacity","stroke","stroke-width","stroke-dasharray",
+        "stroke-opacity","font-size","font-family","font-weight",
+        "text-anchor","dominant-baseline","opacity",
+      ].forEach(p=>{ const v=cs.getPropertyValue(p); if(v) dst.style[p]=v; });
+    });
+
+    // Stamp known CSS variables with their resolved values
+    const bgColor   = "#0f172a";
+    const textColor = "#e2e8f0";
+    clone.setAttribute("xmlns","http://www.w3.org/2000/svg");
+
+    // Add a background rect so the PNG isn't transparent
+    const bg = document.createElementNS("http://www.w3.org/2000/svg","rect");
+    bg.setAttribute("x","0"); bg.setAttribute("y","0");
+    bg.setAttribute("width",clone.getAttribute("width")||clone.viewBox?.baseVal?.width||800);
+    bg.setAttribute("height",clone.getAttribute("height")||clone.viewBox?.baseVal?.height||400);
+    bg.setAttribute("fill",bgColor);
+    clone.insertBefore(bg, clone.firstChild);
+
+    // Add title text at the top
+    const titleEl = document.createElementNS("http://www.w3.org/2000/svg","text");
+    titleEl.setAttribute("x","12"); titleEl.setAttribute("y","18");
+    titleEl.setAttribute("fill","#f59e0b");
+    titleEl.setAttribute("font-size","12");
+    titleEl.setAttribute("font-family","monospace");
+    titleEl.setAttribute("font-weight","bold");
+    titleEl.textContent = title.slice(0,90);
+    clone.insertBefore(titleEl, clone.children[1]||null);
+
+    const svgStr = new XMLSerializer().serializeToString(clone);
+    const svgBlob = new Blob([svgStr],{type:"image/svg+xml;charset=utf-8"});
+    const svgUrl  = URL.createObjectURL(svgBlob);
+
+    const img = new Image();
+    img.onload = ()=>{
+      const W = img.naturalWidth  || 800;
+      const H = img.naturalHeight || 400;
+      const canvas = document.createElement("canvas");
+      // 2× for retina sharpness
+      canvas.width  = W * 2;
+      canvas.height = H * 2;
+      const ctx = canvas.getContext("2d");
+      ctx.scale(2,2);
+      ctx.drawImage(img,0,0,W,H);
+      URL.revokeObjectURL(svgUrl);
+
+      canvas.toBlob(blob=>{
+        if(!blob) return;
+        const pngUrl = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        const safe = title.replace(/[^a-z0-9_]/gi,"_").slice(0,60);
+        a.href=pngUrl; a.download=`eVTOL_${safe}.png`;
+        document.body.appendChild(a); a.click();
+        document.body.removeChild(a);
+        setTimeout(()=>URL.revokeObjectURL(pngUrl),3000);
+      },"image/png");
+    };
+    img.onerror = ()=>{ URL.revokeObjectURL(svgUrl); alert("PNG export failed — try right-clicking the chart and saving the image directly."); };
+    img.src = svgUrl;
+  }catch(err){
+    console.warn("capturePanel error:",err);
+  }
+}
+
 function Panel({title,children,ht,onSave}){
+  const containerRef = useRef(null);
   return(
-    <div style={{background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:8,padding:"12px 14px",height:ht||"auto"}}>
+    <div ref={containerRef}
+      style={{background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:8,padding:"12px 14px",height:ht||"auto"}}>
       <div style={{fontSize:9,color:SC.muted,textTransform:"uppercase",letterSpacing:"0.08em",fontFamily:"system-ui,sans-serif",
         marginBottom:8,borderBottom:`1px solid ${SC.border}`,paddingBottom:5,
         display:"flex",alignItems:"center",justifyContent:"space-between"}}>
         <span>{title}</span>
         {onSave&&(
-          <button type="button" onClick={onSave}
-            title="Save this chart snapshot to the gallery"
+          <button type="button"
+            onClick={()=>{ capturePanel(containerRef,title); onSave(); }}
+            title="Save exact chart image as PNG to your device"
             style={{padding:"2px 8px",background:"transparent",
               border:`1px solid ${SC.border}`,borderRadius:4,
               color:SC.amber,fontSize:8,cursor:"pointer",
@@ -5502,6 +5589,9 @@ export default function App(){
   });
   const[showSavedPlots,setShowSavedPlots]=useState(false);
   // Helper: save a named plot snapshot into the gallery
+  // savePlot: saves metadata to in-app gallery (localStorage).
+  // The actual PNG download is handled by capturePanel() in the Panel component,
+  // which grabs the real rendered SVG from the DOM.
   const savePlot=(label,data,meta={})=>{
     const entry={
       id:Date.now(),
@@ -5510,139 +5600,11 @@ export default function App(){
       meta:{...meta, mtow:SR?.MTOW, range:params?.range, payload:params?.payload,
             sedCell:params?.sedCell, timestamp:new Date().toISOString()},
     };
-    // Save to in-app gallery (localStorage)
     setSavedPlots(prev=>{
       const next=[entry,...prev].slice(0,20);
       try{localStorage.setItem("evtol_savedPlots",JSON.stringify(next));}catch(_){}
       return next;
     });
-    // Download as PNG to user local PC/mobile using offscreen Canvas
-    try{
-      const W=900, H=520;
-      const canvas=document.createElement("canvas");
-      canvas.width=W; canvas.height=H;
-      const ctx=canvas.getContext("2d");
-      // Background
-      ctx.fillStyle="#0f172a"; ctx.fillRect(0,0,W,H);
-      // Border
-      ctx.strokeStyle="#334155"; ctx.lineWidth=1.5;
-      ctx.strokeRect(1,1,W-2,H-2);
-      // Title
-      ctx.fillStyle="#f59e0b";
-      ctx.font="bold 14px 'DM Mono',monospace";
-      ctx.fillText((entry.label||"Plot").slice(0,80),20,28);
-      // Subtitle meta
-      const metaStr=[
-        entry.meta.mtow?`MTOW: ${Number(entry.meta.mtow).toFixed(0)}kg`:"",
-        entry.meta.range?`Range: ${entry.meta.range}km`:"",
-        entry.meta.payload?`Payload: ${entry.meta.payload}kg`:"",
-        entry.meta.sedCell?`SED: ${entry.meta.sedCell}Wh/kg`:"",
-        new Date(entry.meta.timestamp).toLocaleString(),
-      ].filter(Boolean).join("  ·  ");
-      ctx.fillStyle="#64748b"; ctx.font="11px 'DM Mono',monospace";
-      ctx.fillText(metaStr.slice(0,110),20,48);
-      // Chart area
-      const pad={l:64,r:24,t:68,b:52};
-      const cW=W-pad.l-pad.r, cH=H-pad.t-pad.b;
-      const rows=Array.isArray(data)&&data.length>0?data:[];
-      if(rows.length>0){
-        const keys=Object.keys(rows[0]);
-        const xKey=keys[0];
-        const yKeys=keys.slice(1).filter(k=>{
-          const vals=rows.map(r=>Number(r[k]));
-          return vals.some(v=>!isNaN(v));
-        });
-        // Collect all numeric Y values across all yKeys for scaling
-        const allY=rows.flatMap(r=>yKeys.map(k=>Number(r[k]))).filter(v=>!isNaN(v));
-        const yMin=allY.length?Math.min(...allY):0;
-        const yMax=allY.length?Math.max(...allY):1;
-        const yRange=yMax-yMin||1;
-        // Grid lines
-        const gridCount=5;
-        ctx.strokeStyle="#1e293b"; ctx.lineWidth=1;
-        for(let g=0;g<=gridCount;g++){
-          const gy=pad.t+cH*(1-g/gridCount);
-          ctx.beginPath(); ctx.moveTo(pad.l,gy); ctx.lineTo(pad.l+cW,gy); ctx.stroke();
-          const yVal=(yMin+(yMax-yMin)*g/gridCount);
-          ctx.fillStyle="#475569"; ctx.font="10px 'DM Mono',monospace";
-          ctx.textAlign="right";
-          ctx.fillText(yVal.toFixed(Math.abs(yVal)<10?2:0),pad.l-6,gy+4);
-        }
-        ctx.textAlign="left";
-        // X axis labels
-        const step=Math.max(1,Math.floor(rows.length/8));
-        rows.forEach((r,i)=>{
-          if(i%step!==0&&i!==rows.length-1) return;
-          const x=pad.l+(i/(rows.length-1||1))*cW;
-          ctx.fillStyle="#475569"; ctx.font="10px 'DM Mono',monospace";
-          ctx.textAlign="center";
-          const xv=r[xKey];
-          const lbl=typeof xv==="number"?Number(xv).toFixed(Number(xv)<10?2:1):String(xv).slice(0,8);
-          ctx.fillText(lbl,x,pad.t+cH+18);
-        });
-        ctx.textAlign="left";
-        // Axis lines
-        ctx.strokeStyle="#334155"; ctx.lineWidth=1.5;
-        ctx.beginPath();
-        ctx.moveTo(pad.l,pad.t); ctx.lineTo(pad.l,pad.t+cH);
-        ctx.lineTo(pad.l+cW,pad.t+cH); ctx.stroke();
-        // Series colours
-        const COLORS=["#f59e0b","#3b82f6","#22c55e","#f43f5e","#a78bfa","#06d6a0","#fb923c"];
-        yKeys.forEach((yk,si)=>{
-          const col=COLORS[si%COLORS.length];
-          const pts=rows.map((r,i)=>({
-            x:pad.l+(i/(rows.length-1||1))*cW,
-            y:pad.t+cH-(((Number(r[yk])-yMin)/yRange)*cH),
-            v:Number(r[yk]),
-          })).filter(p=>!isNaN(p.y));
-          if(pts.length===0) return;
-          // Detect bar chart (≤8 rows → bars, else line)
-          if(rows.length<=10&&yKeys.length===1){
-            const bW=Math.max(4,(cW/rows.length)*0.6);
-            pts.forEach(p=>{
-              const barH=pad.t+cH-p.y;
-              ctx.fillStyle=col+"cc";
-              ctx.beginPath();
-              ctx.roundRect(p.x-bW/2,p.y,bW,barH,3);
-              ctx.fill();
-            });
-          } else {
-            ctx.strokeStyle=col; ctx.lineWidth=2.2;
-            ctx.shadowColor=col; ctx.shadowBlur=4;
-            ctx.beginPath();
-            pts.forEach((p,i)=>i===0?ctx.moveTo(p.x,p.y):ctx.lineTo(p.x,p.y));
-            ctx.stroke();
-            ctx.shadowBlur=0;
-          }
-          // Legend entry
-          const lx=pad.l+si*160, ly=H-16;
-          ctx.fillStyle=col; ctx.fillRect(lx,ly-8,18,3);
-          ctx.fillStyle="#94a3b8"; ctx.font="10px 'DM Mono',monospace";
-          ctx.fillText(yk.slice(0,16),lx+22,ly);
-        });
-      } else {
-        ctx.fillStyle="#475569"; ctx.font="13px 'DM Mono',monospace";
-        ctx.textAlign="center";
-        ctx.fillText("No data available for this plot",W/2,H/2);
-        ctx.textAlign="left";
-      }
-      // Watermark
-      ctx.fillStyle="#1e293b"; ctx.font="10px 'DM Mono',monospace";
-      ctx.textAlign="right";
-      ctx.fillText("eVTOL Sizer v2.0 — Wright State University",W-16,H-8);
-      ctx.textAlign="left";
-      // Export PNG
-      canvas.toBlob(blob=>{
-        if(!blob) return;
-        const url=URL.createObjectURL(blob);
-        const a=document.createElement("a");
-        const safeName=(entry.label||"plot").replace(/[^a-z0-9_]/gi,"_").slice(0,60);
-        a.href=url; a.download=`eVTOL_${safeName}.png`;
-        document.body.appendChild(a); a.click();
-        document.body.removeChild(a);
-        setTimeout(()=>URL.revokeObjectURL(url),2000);
-      },"image/png");
-    }catch(e){console.warn("Plot PNG export failed:",e);}
   };
   const deleteSavedPlot=(id)=>setSavedPlots(prev=>{
     const next=prev.filter(p=>p.id!==id);
