@@ -6835,7 +6835,7 @@ export default function App(){
                 </div>
 
                 {/* Power vs Time */}
-                <Panel title="Power vs Mission Time (kW)" ht={270} onSave={true}}>
+                <Panel title="Power vs Mission Time (kW)" ht={270} onSave={true}>
                   <ResponsiveContainer width="100%" height={220}>
                     <AreaChart data={SR.powerSteps} margin={{top:5,right:16,left:-5,bottom:16}}>
                       <defs><linearGradient id="pg" x1="0" y1="0" x2="0" y2="1">
@@ -6855,7 +6855,7 @@ export default function App(){
                 </Panel>
 
                 {/* Energy vs Time — NEW */}
-                <Panel title="Cumulative Energy Consumed vs Mission Time (kWh)" ht={270} onSave={true}}>
+                <Panel title="Cumulative Energy Consumed vs Mission Time (kWh)" ht={270} onSave={true}>
                   <ResponsiveContainer width="100%" height={220}>
                     <AreaChart data={SR.energySteps} margin={{top:5,right:16,left:-5,bottom:16}}>
                       <defs><linearGradient id="eg" x1="0" y1="0" x2="0" y2="1">
@@ -6879,7 +6879,7 @@ export default function App(){
                 </Panel>
 
                 {/* Energy Remaining Over Mission */}
-                <Panel title="Battery Energy Remaining vs Mission Time" ht={270} onSave={true}}>
+                <Panel title="Battery Energy Remaining vs Mission Time" ht={270} onSave={true}>
                   <ResponsiveContainer width="100%" height={220}>
                     <AreaChart
                       data={SR.energySteps.map(s=>({t:s.t, Erem:+Math.max(0,SR.PackkWh-s.E).toFixed(3)}))}
@@ -6914,7 +6914,7 @@ export default function App(){
                 </Panel>
 
                                 {/* Velocity vs Time */}
-                <Panel title="Velocity vs Mission Time (m/s)" ht={230} onSave={true}}>
+                <Panel title="Velocity vs Mission Time (m/s)" ht={230} onSave={true}>
                   <ResponsiveContainer width="100%" height={185}>
                     <AreaChart data={SR.velSteps} margin={{top:5,right:16,left:-5,bottom:16}}>
                       <defs><linearGradient id="vg" x1="0" y1="0" x2="0" y2="1">
@@ -6935,7 +6935,7 @@ export default function App(){
                 </Panel>
 
                 {/* ── Combined Power + Energy vs Time (dual Y-axis) ── */}
-                <Panel title="Power & Energy vs Mission Time — Combined (Dual Axis)" onSave={true}}>
+                <Panel title="Power & Energy vs Mission Time — Combined (Dual Axis)" onSave={true}>
                   <div style={{fontSize:10,color:SC.muted,fontFamily:"'DM Mono',monospace",marginBottom:8,paddingLeft:4}}>
                     <span style={{color:SC.amber,fontWeight:700}}>■ Power (kW)</span> on left axis &nbsp;·&nbsp;
                     <span style={{color:SC.green,fontWeight:700}}>■ Phase Energy (kWh)</span> on right axis — both plotted step-wise per phase, matching the MATLAB reference.
@@ -7126,7 +7126,7 @@ export default function App(){
                   <KPI label="Wing Loading" value={SR.WL} unit="N/m²"/><KPI label="Reynolds ×10⁶" value={(SR.Re_/1e6).toFixed(2)} unit=""/>
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-                  <Panel title="CD₀ Breakdown (Raymer Buildup)" ht={265} onSave={true}}>
+                  <Panel title="CD₀ Breakdown (Raymer Buildup)" ht={265} onSave={true}>
                     <DragPie SR={SR} SC={SC} TTP={TTP}/>
                   </Panel>
                   <Panel title="Airfoil Selection Score" ht={265}>
@@ -7254,7 +7254,7 @@ export default function App(){
                 </Panel>
 
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
-                  <Panel title="Drag Polar" ht={235} onSave={true}}>
+                  <Panel title="Drag Polar" ht={235} onSave={true}>
                     <ResponsiveContainer width="100%" height={185}>
                       <LineChart data={SR.polarData} margin={{top:5,right:8,left:-20,bottom:0}}>
                         <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
@@ -7265,7 +7265,7 @@ export default function App(){
                       </LineChart>
                     </ResponsiveContainer>
                   </Panel>
-                  <Panel title="Lift Curve" ht={235} onSave={true}}>
+                  <Panel title="Lift Curve" ht={235} onSave={true}>
                     <ResponsiveContainer width="100%" height={185}>
                       <LineChart data={SR.polarData} margin={{top:5,right:8,left:-20,bottom:0}}>
                         <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
@@ -7277,7 +7277,7 @@ export default function App(){
                       </LineChart>
                     </ResponsiveContainer>
                   </Panel>
-                  <Panel title="L/D Ratio" ht={235} onSave={true}}>
+                  <Panel title="L/D Ratio" ht={235} onSave={true}>
                     <ResponsiveContainer width="100%" height={185}>
                       <AreaChart data={SR.polarData} margin={{top:5,right:8,left:-20,bottom:0}}>
                         <defs><linearGradient id="ldg" x1="0" y1="0" x2="0" y2="1">
@@ -7435,7 +7435,7 @@ export default function App(){
                   <KPI label="Cell Config" value={`${SR.Nseries}s×${SR.Npar}p`} unit="" sub={`${SR.Ncells} cells total`}/>
                   <KPI label="Final SoC" value={((1-SR.Etot/SR.PackkWh)*100).toFixed(1)} unit="%" color={(1-SR.Etot/SR.PackkWh)>=(params.socMin/(1+params.socMin))-0.01?SC.green:SC.red}/>
                 </div>
-                <Panel title="Battery State of Charge — Full Mission" ht={285} onSave={true}}>
+                <Panel title="Battery State of Charge — Full Mission" ht={285} onSave={true}>
                   <ResponsiveContainer width="100%" height={235}>
                     <AreaChart data={SR.socSteps} margin={{top:5,right:10,left:-10,bottom:0}}>
                       <defs><linearGradient id="sg" x1="0" y1="0" x2="0" y2="1">
@@ -7495,7 +7495,7 @@ export default function App(){
                   <KPI label="Dive Speed Vd" value={SR.VD} unit="m/s"/>
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-                  <Panel title="V-n Structural Envelope" ht={310} onSave={true}}>
+                  <Panel title="V-n Structural Envelope" ht={310} onSave={true}>
                     <ResponsiveContainer width="100%" height={260}>
                       <LineChart data={SR.vnData} margin={{top:10,right:30,left:10,bottom:20}}>
                         <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
@@ -7740,7 +7740,7 @@ export default function App(){
                   </Panel>
                 </div>
                 {/* CG Travel Range */}
-                <Panel title="CG Travel Range — OEW → MTOW (loading envelope)" onSave={true}}>
+                <Panel title="CG Travel Range — OEW → MTOW (loading envelope)" onSave={true}>
                   {(()=>{
                     // Build CG sweep: from OEW (no payload, no battery) → MTOW
                     // Intermediate: add battery first, then payload (worst-case forward/aft)
@@ -8226,7 +8226,7 @@ export default function App(){
                   </div>
                 </div>
 
-                <Panel title={`MTOW Convergence History — Actual Run at ε = 10^${params.convTolExp} (${SR.itersR2} R2 iters${SR.r2Converged?"":", cap hit"})`} ht={280} onSave={true}}>
+                <Panel title={`MTOW Convergence History — Actual Run at ε = 10^${params.convTolExp} (${SR.itersR2} R2 iters${SR.r2Converged?"":", cap hit"})`} ht={280} onSave={true}>
                   <ResponsiveContainer width="100%" height={230}>
                     <LineChart data={SR.convData} margin={{top:5,right:20,left:-10,bottom:0}}>
                       <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
@@ -8254,7 +8254,7 @@ export default function App(){
                 </Panel>
 
                 {/* Residual log plot */}
-                <Panel title={`Residual Convergence — log₁₀(|ΔW₀|) per Iteration  [ε = ${SR.tol.toExponential(0)} → log₁₀(ε) = ${params.convTolExp}]`} ht={270} onSave={true}}>
+                <Panel title={`Residual Convergence — log₁₀(|ΔW₀|) per Iteration  [ε = ${SR.tol.toExponential(0)} → log₁₀(ε) = ${params.convTolExp}]`} ht={270} onSave={true}>
                   <div style={{fontSize:10,color:SC.muted,marginBottom:4,paddingLeft:4}}>
                     Each bar shows log₁₀ of the MTOW change per iteration. Convergence when bar drops below the <span style={{color:"#22d3ee"}}>ε threshold line</span>.
                   </div>
@@ -8302,7 +8302,7 @@ export default function App(){
                 </Panel>
 
                 {/* T/W vs MTOW Trade Chart */}
-                <Panel title={`T/W Ratio vs MTOW — Round 1 vs Round 2 at T/W = ${params.twRatio.toFixed(2)}`} ht={320} onSave={true}}>
+                <Panel title={`T/W Ratio vs MTOW — Round 1 vs Round 2 at T/W = ${params.twRatio.toFixed(2)}`} ht={320} onSave={true}>
                   <div style={{fontSize:10,color:SC.muted,marginBottom:6,paddingLeft:4}}>
                     Round 1 is flat (T/W doesn't affect energy-only sizing). Round 2 scales as T/W^1.5 — higher thrust margin → higher hover power → heavier battery → higher MTOW.
                     Current T/W = <span style={{color:SC.amber,fontWeight:700}}>{params.twRatio.toFixed(2)}</span> highlighted.
@@ -8540,7 +8540,7 @@ export default function App(){
                     </div>
 
                     {/* MTOW Probability Distribution */}
-                    <Panel title={`MTOW Probability Distribution — ${mcResults.N.toLocaleString()} Monte Carlo Samples`} ht={320} onSave={true}}>
+                    <Panel title={`MTOW Probability Distribution — ${mcResults.N.toLocaleString()} Monte Carlo Samples`} ht={320} onSave={true}>
                       <div style={{fontSize:10,color:SC.muted,marginBottom:6,paddingLeft:4,fontFamily:"'DM Mono',monospace"}}>
                         Each bar = count of designs in that MTOW bin. Bell shape confirms normal convergence.
                         <span style={{color:SC.amber}}> Nominal MTOW = {SR.MTOW} kg</span> (deterministic).
@@ -8570,7 +8570,7 @@ export default function App(){
                     </Panel>
 
                     {/* CDF */}
-                    <Panel title="Cumulative Distribution Function (CDF) — MTOW" ht={290} onSave={true}}>
+                    <Panel title="Cumulative Distribution Function (CDF) — MTOW" ht={290} onSave={true}>
                       <div style={{fontSize:10,color:SC.muted,marginBottom:6,paddingLeft:4,fontFamily:"'DM Mono',monospace"}}>
                         Read as: <span style={{color:SC.green}}>P(MTOW ≤ x)</span>. The <span style={{color:SC.amber}}>P90 line</span> shows that 90% of all possible designs have MTOW below this value.
                         This is the key output for design margin decisions.
@@ -8599,7 +8599,7 @@ export default function App(){
 
                     {/* Other distributions row */}
                     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-                      <Panel title="Total Energy Distribution (kWh)" ht={240} onSave={true}}>
+                      <Panel title="Total Energy Distribution (kWh)" ht={240} onSave={true}>
                         <ResponsiveContainer width="100%" height={195}>
                           <BarChart data={mcResults.Etot.hist} margin={{top:5,right:10,left:-10,bottom:16}}>
                             <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
@@ -8613,7 +8613,7 @@ export default function App(){
                           </BarChart>
                         </ResponsiveContainer>
                       </Panel>
-                      <Panel title="Static Margin Distribution (% MAC)" ht={240} onSave={true}}>
+                      <Panel title="Static Margin Distribution (% MAC)" ht={240} onSave={true}>
                         <ResponsiveContainer width="100%" height={195}>
                           <BarChart data={mcResults.SM.hist} margin={{top:5,right:10,left:-10,bottom:16}}>
                             <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
@@ -8633,7 +8633,7 @@ export default function App(){
                           </BarChart>
                         </ResponsiveContainer>
                       </Panel>
-                      <Panel title="Hover Power Distribution (kW)" ht={240} onSave={true}}>
+                      <Panel title="Hover Power Distribution (kW)" ht={240} onSave={true}>
                         <ResponsiveContainer width="100%" height={195}>
                           <BarChart data={mcResults.Phov.hist} margin={{top:5,right:10,left:-10,bottom:16}}>
                             <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
@@ -8647,7 +8647,7 @@ export default function App(){
                           </BarChart>
                         </ResponsiveContainer>
                       </Panel>
-                      <Panel title="Battery Mass Distribution (kg)" ht={240} onSave={true}}>
+                      <Panel title="Battery Mass Distribution (kg)" ht={240} onSave={true}>
                         <ResponsiveContainer width="100%" height={195}>
                           <BarChart data={mcResults.Wbat.hist} margin={{top:5,right:10,left:-10,bottom:16}}>
                             <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
@@ -9320,7 +9320,7 @@ export default function App(){
 
                 {/* SPL vs Distance table + chart */}
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-                  <Panel title="A-weighted SPL vs Distance from Aircraft" onSave={true}}>
+                  <Panel title="A-weighted SPL vs Distance from Aircraft" onSave={true}>
                     <ResponsiveContainer width="100%" height={260}>
                       <LineChart
                         data={[
@@ -9400,7 +9400,7 @@ export default function App(){
                 </div>
 
                 {/* BPF Harmonics spectrum */}
-                <Panel title="BPF Tonal Spectrum — First 4 Harmonics (A-weighted)" ht={270} onSave={true}}>
+                <Panel title="BPF Tonal Spectrum — First 4 Harmonics (A-weighted)" ht={270} onSave={true}>
                   <div style={{fontSize:10,color:SC.muted,fontFamily:"'DM Mono',monospace",marginBottom:8}}>
                     Tonal noise at integer multiples of BPF = {SR.BPF.toFixed(1)} Hz.
                     Higher harmonics attenuate at ~6 dB/octave. A-weighting penalises low frequencies.
@@ -9906,7 +9906,7 @@ export default function App(){
 
                 {/* Cost breakdown + battery degradation */}
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-                  <Panel title="Cost Breakdown per Flight ($)" ht={280} onSave={true}}>
+                  <Panel title="Cost Breakdown per Flight ($)" ht={280} onSave={true}>
                     <ResponsiveContainer width="100%" height={235}>
                       <PieChart>
                         <Pie data={costParts} dataKey="val" nameKey="name"
@@ -9918,7 +9918,7 @@ export default function App(){
                       </PieChart>
                     </ResponsiveContainer>
                   </Panel>
-                  <Panel title="Battery Pack Degradation vs Charge Cycles" ht={280} onSave={true}}>
+                  <Panel title="Battery Pack Degradation vs Charge Cycles" ht={280} onSave={true}>
                     <ResponsiveContainer width="100%" height={235}>
                       <AreaChart data={degradationData} margin={{top:5,right:15,left:-10,bottom:0}}>
                         <defs><linearGradient id="dg" x1="0" y1="0" x2="0" y2="1">
@@ -9993,7 +9993,7 @@ export default function App(){
                 </Panel>
 
                 {/* Sensitivity bar chart */}
-                <Panel title="Cost Driver Analysis — % of Total Flight Cost" onSave={true}}>
+                <Panel title="Cost Driver Analysis — % of Total Flight Cost" onSave={true}>
                   <ResponsiveContainer width="100%" height={220}>
                     <BarChart
                       layout="vertical"
@@ -10023,7 +10023,7 @@ export default function App(){
                 </Panel>
 
                 {/* Profit vs Load Factor curve */}
-                <Panel title="Profit vs Load Factor — Fare Scenario Sensitivity" ht={300} onSave={true}}>
+                <Panel title="Profit vs Load Factor — Fare Scenario Sensitivity" ht={300} onSave={true}>
                   <div style={{fontSize:10,color:SC.muted,fontFamily:"'DM Mono',monospace",marginBottom:6,paddingLeft:4}}>
                     Per-flight profit at each load factor for three market fare scenarios.
                     Zero-crossing = break-even LF. Above zero = profitable.
