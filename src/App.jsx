@@ -5665,10 +5665,14 @@ export default function App(){
       projectTitle:"eVTOL Sizing Analysis", logoUrl:"", date:new Date().toLocaleDateString()};
   });
 
-  // ── Load branding from Supabase when user logs in (cross-device sync) ──
+  // Guard: prevent the save useEffect from firing when WE loaded from Supabase
+  const brandLoadedFromRemote = useRef(false);
+
+  // ── LOAD: fetch branding from Supabase when user logs in ──
   useEffect(()=>{
     if(!user?.id){ setBrandSynced(false); return; }
-    fetch(BRAND_SB_URL+"/rest/v1/evtol_user_branding?user_id=eq."+user.id+"&limit=1",
+    setBrandSynced(false);
+    fetch(BRAND_SB_URL+"/rest/v1/evtol_user_branding?user_id=eq."+encodeURIComponent(user.id)+"&limit=1",
       {headers:BRAND_HDR})
       .then(r=>{
         if(!r.ok) throw new Error("HTTP "+r.status);
@@ -5678,39 +5682,84 @@ export default function App(){
         if(rows && rows.length>0 && rows[0].branding_json){
           try{
             const remote = JSON.parse(rows[0].branding_json);
-            // Supabase is source of truth — override localStorage
+            // Set guard BEFORE calling setPdfBranding so the save effect skips this update
+            brandLoadedFromRemote.current = true;
             setPdfBranding({...remote, date:new Date().toLocaleDateString()});
             localStorage.setItem(BRAND_LS_KEY, JSON.stringify(remote));
-          }catch(_){}
+          }catch(e){ console.warn("[Branding load] parse error", e); }
+        } else {
+          console.log("[Branding load] No saved branding found for this user yet.");
         }
         setBrandSynced(true);
       })
-      .catch(()=>{ setBrandSynced(true); });
+      .catch((e)=>{
+        console.warn("[Branding load] fetch failed:", e.message);
+        setBrandSynced(true);
+      });
   },[user?.id]);
 
-  // ── Persist branding: localStorage immediately + Supabase debounced ──
+  // ── SAVE: persist branding to localStorage + Supabase on every user change ──
+  // Skips the first fire that comes from the remote load above (brandLoadedFromRemote guard)
   useEffect(()=>{
+    // Always keep localStorage in sync
     try{ localStorage.setItem(BRAND_LS_KEY, JSON.stringify(pdfBranding)); }catch(_){}
+
+    // Skip saving back to Supabase when the change originated FROM Supabase (avoid echo loop)
+    if(brandLoadedFromRemote.current){
+      brandLoadedFromRemote.current = false;
+      return;
+    }
+
     if(!user?.id) return;
+
     if(brandDebounce.current) clearTimeout(brandDebounce.current);
     brandDebounce.current = setTimeout(async ()=>{
       try{
+        // Use PUT (update) first, fall back to POST (insert) if no row exists yet
+        // This is more reliable than merge-duplicates for large payloads
+        const payload = {
+          user_id:       user.id,
+          branding_json: JSON.stringify(pdfBranding),
+          updated_at:    new Date().toISOString(),
+        };
+
+        // Try UPSERT via POST with on-conflict update
         const resp = await fetch(BRAND_SB_URL+"/rest/v1/evtol_user_branding",{
           method:"POST",
-          headers:{...BRAND_HDR,"Prefer":"resolution=merge-duplicates,return=minimal"},
-          body:JSON.stringify({
-            user_id:   user.id,
-            branding_json: JSON.stringify(pdfBranding),
-            updated_at: new Date().toISOString(),
-          }),
+          headers:{
+            ...BRAND_HDR,
+            "Prefer":"resolution=merge-duplicates,return=minimal",
+          },
+          body:JSON.stringify(payload),
         });
-        if(!resp.ok){
-          // Table may not exist yet — log clearly for debugging
+
+        if(resp.ok){
+          console.log("[Branding save] ✓ Saved to Supabase");
+          setBrandSynced(true);
+        } else {
           const txt = await resp.text();
-          console.warn("[Branding sync] Supabase error", resp.status, txt);
+          console.warn("[Branding save] POST failed:", resp.status, txt);
+
+          // Fallback: try PATCH (update existing row)
+          const patchResp = await fetch(
+            BRAND_SB_URL+"/rest/v1/evtol_user_branding?user_id=eq."+encodeURIComponent(user.id),{
+            method:"PATCH",
+            headers:{...BRAND_HDR,"Prefer":"return=minimal"},
+            body:JSON.stringify({
+              branding_json: JSON.stringify(pdfBranding),
+              updated_at:    new Date().toISOString(),
+            }),
+          });
+          if(patchResp.ok){
+            console.log("[Branding save] ✓ Saved via PATCH fallback");
+            setBrandSynced(true);
+          } else {
+            const ptxt = await patchResp.text();
+            console.warn("[Branding save] PATCH also failed:", patchResp.status, ptxt);
+          }
         }
-      }catch(e){ console.warn("[Branding sync] fetch failed", e); }
-    }, 1500);
+      }catch(e){ console.warn("[Branding save] fetch error:", e); }
+    }, 2000);
   },[pdfBranding]);
   // Monte Carlo state
   const[mcRanges,setMcRanges]=useState({
