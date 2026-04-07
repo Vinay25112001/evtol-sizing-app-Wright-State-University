@@ -5643,21 +5643,69 @@ export default function App(){
   const[undoCount,setUndoCount]=useState(0); // triggers re-render for button state
   const[redoCount,setRedoCount]=useState(0);
   const[showPdfBranding,setShowPdfBranding]=useState(false);
+
+  // ── Branding: Supabase constants (same pattern as AI chat) ──
+  const BRAND_SB_URL = "https://obribjypwwrbhsyjllua.supabase.co";
+  const BRAND_SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9icmlianlwd3dyYmhzeWpsbHVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM2MjU1MjIsImV4cCI6MjA4OTIwMTUyMn0.Rq2_KfHlHnoluGJY3AcBIqcbuMFuLBitU-Y6aBWyoJ4";
+  const BRAND_HDR = { "apikey": BRAND_SB_KEY, "Authorization": "Bearer " + BRAND_SB_KEY, "Content-Type": "application/json" };
+  const BRAND_LS_KEY = "evtol_pdfBranding";
+  const brandSaveDebounce = useRef(null);
+
+  const DEFAULT_BRANDING = {
+    authorName:"", university:"Wright State University",
+    projectTitle:"eVTOL Sizing Analysis", logoUrl:"", date:new Date().toLocaleDateString()
+  };
+
+  // Initialise from localStorage immediately (zero-delay on refresh)
   const[pdfBranding,setPdfBranding]=useState(()=>{
     try{
-      const saved=localStorage.getItem("evtol_pdfBranding");
+      const saved=localStorage.getItem(BRAND_LS_KEY);
       if(saved){
         const parsed=JSON.parse(saved);
-        // Always refresh the date to today, but keep the saved logo and other fields
         return {...parsed, date:new Date().toLocaleDateString()};
       }
     }catch(_){}
-    return {authorName:"", university:"Wright State University",
-      projectTitle:"eVTOL Sizing Analysis", logoUrl:"", date:new Date().toLocaleDateString()};
+    return {...DEFAULT_BRANDING};
   });
-  // Persist pdfBranding to localStorage whenever it changes
+
+  // ── Load branding from Supabase on login (cross-device sync) ──
   useEffect(()=>{
-    try{ localStorage.setItem("evtol_pdfBranding", JSON.stringify(pdfBranding)); }catch(_){}
+    if(!user?.id) return;
+    fetch(BRAND_SB_URL+"/rest/v1/evtol_user_branding?user_id=eq."+user.id+"&limit=1", {headers:BRAND_HDR})
+      .then(r=>r.json())
+      .then(rows=>{
+        if(rows && rows[0] && rows[0].branding_json){
+          try{
+            const remote=JSON.parse(rows[0].branding_json);
+            // Always win over localStorage — remote is the source of truth
+            setPdfBranding({...remote, date:new Date().toLocaleDateString()});
+            localStorage.setItem(BRAND_LS_KEY, JSON.stringify(remote));
+          }catch(_){}
+        }
+      })
+      .catch(()=>{});
+  },[user?.id]);
+
+  // ── Persist branding to localStorage + Supabase on every change ──
+  useEffect(()=>{
+    // Always save to localStorage immediately
+    try{ localStorage.setItem(BRAND_LS_KEY, JSON.stringify(pdfBranding)); }catch(_){}
+    // Save to Supabase only if logged in (debounced 1.5s)
+    if(!user?.id) return;
+    if(brandSaveDebounce.current) clearTimeout(brandSaveDebounce.current);
+    brandSaveDebounce.current = setTimeout(async ()=>{
+      try{
+        await fetch(BRAND_SB_URL+"/rest/v1/evtol_user_branding", {
+          method:"POST",
+          headers:{...BRAND_HDR, "Prefer":"resolution=merge-duplicates,return=minimal"},
+          body:JSON.stringify({
+            user_id: user.id,
+            branding_json: JSON.stringify(pdfBranding),
+            updated_at: new Date().toISOString(),
+          }),
+        });
+      }catch(_){}
+    }, 1500);
   },[pdfBranding]);
   // Monte Carlo state
   const[mcRanges,setMcRanges]=useState({
@@ -6322,6 +6370,16 @@ export default function App(){
               border:`1px solid ${SC.green}44`,borderRadius:6,fontSize:10,color:SC.green,
               fontFamily:"'DM Mono',monospace"}}>
               ✓ These details will appear on the PDF cover page when you click ⬇ PDF REPORT
+            </div>
+            {/* Sync status indicator */}
+            <div style={{marginTop:8,padding:"7px 12px",
+              background:user?`${SC.teal}11`:`${SC.amber}11`,
+              border:`1px solid ${user?SC.teal+"44":SC.amber+"44"}`,
+              borderRadius:6,fontSize:9,color:user?SC.teal:SC.amber,
+              fontFamily:"'DM Mono',monospace",display:"flex",alignItems:"center",gap:6}}>
+              {user
+                ? "☁️ Synced to your account — logo & branding accessible on any device"
+                : "⚠️ Not logged in — branding saved locally only. Log in to sync across devices."}
             </div>
           </div>
         </div>
