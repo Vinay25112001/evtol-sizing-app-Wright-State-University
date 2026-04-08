@@ -435,15 +435,24 @@ function runSizing(p) {
     const EavFerry=WbFerry*sedEff_rp*p.etaBat/(1000*(1+p.socMin));
     return +Math.max(0,((EavFerry-Eto-Eld)/Efl_design)*p.range).toFixed(1);
   })();
-  const rpData=Array.from({length:61},(_,i)=>{
-    const pay=maxPayload*i/60;
-    const Wavail=Math.max(0,MTOW-Wempty-pay);  // remaining weight = battery
-    if(Wavail<minBatKg) return{payload:+pay.toFixed(0),range:0,segment:"A"};
-    const Eavail=Wavail*sedEff_rp*p.etaBat/(1000*(1+p.socMin));
-    const r=+Math.max(0,((Eavail-Eto-Eld)/Efl_design)*p.range).toFixed(1);
-    const seg=pay>p.payload?"A":pay<p.payload?"B":"design";
-    return{payload:+pay.toFixed(0),range:r,segment:seg};
-  }).reverse(); // payload high→low for left-to-right range increase
+  // Build rpData with design point as an exact anchor — samples both sides of it
+  // Segment B (0 → designPayload): freed payload → more battery → more range
+  // Segment A (designPayload → maxPayload): above design payload → range drops to 0
+  const rpCalc = (pay) => {
+    const Wavail = Math.max(0, MTOW - Wempty - pay);
+    if(Wavail < minBatKg) return { payload: +pay.toFixed(1), range: 0, segment: "A" };
+    const Eavail = Wavail * sedEff_rp * p.etaBat / (1000 * (1 + p.socMin));
+    const r = +Math.max(0, ((Eavail - Eto - Eld) / Efl_design) * p.range).toFixed(1);
+    const seg = pay > p.payload ? "A" : pay < p.payload ? "B" : "design";
+    return { payload: +pay.toFixed(1), range: r, segment: seg };
+  };
+  // Segment B: 30 points from 0 → designPayload (left side of curve, range high)
+  const rpSegB = Array.from({length:31},(_,i)=>rpCalc(p.payload * i / 30));
+  // Segment A: 30 points from designPayload → maxPayload (right side, range falls to 0)
+  const rpSegA = Array.from({length:31},(_,i)=>rpCalc(p.payload + (maxPayload - p.payload) * i / 30));
+  // Merge: Segment B left-to-right, then Segment A continuing right
+  // rpSegB already ends at designPayload, rpSegA starts at designPayload — deduplicate
+  const rpData = [...rpSegB, ...rpSegA.slice(1)];
   const rpFerryPoint={payload:0,range:ferryRange,segment:"ferry"};
 
   /* Aerodynamic polar — uses fitted kPolar for custom airfoils, Oswald for library */
@@ -7761,23 +7770,15 @@ export default function App(){
                         tick={{fontSize:11,fill:SC.muted}}
                         label={{value:"Range (km)",angle:-90,position:"insideLeft",offset:10,fontSize:12,fill:SC.muted}}/>
                       <Tooltip
-                        contentStyle={{
-                          background:SC.panel,
-                          border:`1px solid ${SC.border}`,
-                          borderRadius:8,
-                          fontFamily:"'DM Mono',monospace",
-                          fontSize:11,
-                          color:SC.text,
-                        }}
-                        labelStyle={{color:SC.muted,marginBottom:4}}
-                        itemStyle={{color:SC.purple,fontWeight:700}}
+                        contentStyle={{background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:8,fontFamily:"'DM Mono',monospace",fontSize:12,color:SC.text,padding:"10px 14px"}}
+                        labelStyle={{color:SC.muted,marginBottom:6,fontSize:11,fontWeight:600}}
+                        itemStyle={{fontWeight:700}}
                         formatter={(value, name, props) => {
                           const seg = props?.payload?.segment;
-                          if(seg==="A" && value===0)
-                            return ["0 km  (payload too high — no range)", "Range"];
-                          return [`${value} km`, "Range"];
+                          const col = seg==="A" ? SC.red : seg==="design" ? SC.amber : SC.purple;
+                          return [<span style={{color:col}}>{value} km</span>, "Range"];
                         }}
-                        labelFormatter={value => `Payload: ${value} kg`}
+                        labelFormatter={value => `Payload: ${(+value).toFixed(0)} kg`}
                       />
                       {/* Design range reference */}
                       <ReferenceLine y={SR?SR.totalRange:params.range} stroke={SC.amber}
