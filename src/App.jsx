@@ -435,15 +435,17 @@ function runSizing(p) {
     const EavFerry=WbFerry*sedEff_rp*p.etaBat/(1000*(1+p.socMin));
     return +Math.max(0,((EavFerry-Eto-Eld)/Efl_design)*p.range).toFixed(1);
   })();
-  const rpData=Array.from({length:201},(_,i)=>{
-    const pay=maxPayload*i/200;
-    const Wavail=Math.max(0,MTOW-Wempty-pay);
-    if(Wavail<minBatKg) return{payload:Math.round(pay),range:0,segment:"A"};
-    const Eavail=Wavail*sedEff_rp*p.etaBat/(1000*(1+p.socMin));
-    const r=+Math.max(0,((Eavail-Eto-Eld)/Efl_design)*p.range).toFixed(1);
-    const seg=pay>p.payload+1?"A":pay<p.payload-1?"B":"design";
-    return{payload:Math.round(pay),range:r,segment:seg};
-  }).reverse(); // high→low payload = left→right on chart
+  // 1 point per kg — dense enough for perfectly smooth hover tracking
+  const rpMaxKg = Math.ceil(maxPayload);
+  const rpData = Array.from({length: rpMaxKg+1}, (_,i)=>{
+    const pay = i;
+    const Wavail = Math.max(0, MTOW-Wempty-pay);
+    if(Wavail < minBatKg) return {payload:pay, range:0, segment:"A"};
+    const Eavail = Wavail*sedEff_rp*p.etaBat/(1000*(1+p.socMin));
+    const r = +Math.max(0,((Eavail-Eto-Eld)/Efl_design)*p.range).toFixed(2);
+    const seg = Math.abs(pay-p.payload)<1?"design": pay>p.payload?"A":"B";
+    return {payload:pay, range:r, segment:seg};
+  }); // low→high payload = left→right on x-axis
   const rpFerryPoint={payload:0,range:ferryRange,segment:"ferry"};
 
   /* Aerodynamic polar — uses fitted kPolar for custom airfoils, Oswald for library */
@@ -7741,97 +7743,99 @@ export default function App(){
                   </div>
 
                   <ResponsiveContainer width="100%" height={300}>
-                    <ComposedChart
-                      data={[...SR.rpData, SR.rpFerryPoint]}
+                    <LineChart
+                      data={SR.rpData}
                       margin={{top:10,right:40,left:10,bottom:30}}>
                       <defs>
                         <linearGradient id="rpGrad" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%"  stopColor="#8b5cf6" stopOpacity={0.35}/>
-                          <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0.02}/>
+                          <stop offset="5%"  stopColor="#8b5cf6" stopOpacity={0.3}/>
+                          <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0.0}/>
                         </linearGradient>
                       </defs>
                       <CartesianGrid strokeDasharray="2 2" stroke={SC.border}/>
-                      <XAxis dataKey="payload"
+                      <XAxis
+                        dataKey="payload"
                         type="number"
-                        domain={[0, SR.maxPayloadRp*1.05]}
+                        scale="linear"
+                        domain={[0, SR.maxPayloadRp]}
+                        tickCount={8}
                         tick={{fontSize:11,fill:SC.muted}}
                         label={{value:"Payload (kg)",position:"insideBottom",offset:-12,fontSize:12,fill:SC.muted}}/>
                       <YAxis
                         domain={[0, Math.ceil(SR.ferryRange*1.1/50)*50]}
                         tick={{fontSize:11,fill:SC.muted}}
                         label={{value:"Range (km)",angle:-90,position:"insideLeft",offset:10,fontSize:12,fill:SC.muted}}/>
-                      {/* Crosshair cursor lines */}
+                      {/* Smooth continuous tooltip — snaps to every 1kg point */}
                       <Tooltip
                         cursor={{stroke:SC.muted,strokeWidth:1,strokeDasharray:"4 3"}}
-                        content={({active,payload:tp})=>{
+                        content={({active,payload:tp,label})=>{
                           if(!active||!tp||!tp.length) return null;
-                          const d=tp[0]?.payload;
+                          const d = tp[0]?.payload;
                           if(!d) return null;
-                          const rc = d.range===0 ? SC.red : d.segment==="design" ? SC.amber : "#a78bfa";
+                          const rc = d.range===0 ? SC.red
+                            : d.segment==="design" ? SC.amber
+                            : d.segment==="A" ? SC.red
+                            : "#a78bfa";
                           return(
                             <div style={{
-                              background:SC.panel,
-                              border:`1px solid ${SC.border}`,
-                              borderRadius:8,
-                              padding:"10px 14px",
+                              background:SC.panel,border:`1px solid ${SC.border}`,
+                              borderRadius:8,padding:"10px 14px",
                               fontFamily:"'DM Mono',monospace",
                               pointerEvents:"none",
-                              boxShadow:"0 4px 20px rgba(0,0,0,0.4)",
+                              boxShadow:"0 4px 20px rgba(0,0,0,0.5)",
                             }}>
-                              <div style={{fontSize:9,color:SC.muted,letterSpacing:"0.1em",marginBottom:8,textTransform:"uppercase"}}>
-                                Hover Point
+                              <div style={{fontSize:9,color:SC.muted,letterSpacing:"0.12em",textTransform:"uppercase",marginBottom:8}}>
+                                Payload-Range
                               </div>
-                              <div style={{display:"flex",flexDirection:"column",gap:5}}>
-                                <div style={{fontSize:12,color:SC.muted}}>
-                                  Payload:&nbsp;
-                                  <span style={{color:SC.text,fontWeight:700,fontSize:14}}>{d.payload} kg</span>
-                                </div>
-                                <div style={{fontSize:12,color:SC.muted}}>
-                                  Range:&nbsp;
-                                  <span style={{color:rc,fontWeight:700,fontSize:14}}>{d.range} km</span>
-                                </div>
+                              <div style={{fontSize:13,color:SC.muted,marginBottom:4}}>
+                                Payload:&nbsp;
+                                <span style={{color:SC.text,fontWeight:700}}>{d.payload} kg</span>
+                              </div>
+                              <div style={{fontSize:13,color:SC.muted}}>
+                                Range:&nbsp;
+                                <span style={{color:rc,fontWeight:700}}>{d.range} km</span>
                               </div>
                             </div>
                           );
                         }}
                       />
-                      {/* Design range reference */}
+                      {/* Reference lines */}
                       <ReferenceLine y={SR?SR.totalRange:params.range} stroke={SC.amber}
                         strokeDasharray="5 3"
-                        label={{value:`Design range ${SR?SR.totalRange:params.range} km`,fill:SC.amber,
-                          fontSize:10,position:"insideTopRight"}}/>
-                      {/* Design payload reference */}
+                        label={{value:`Design range ${SR?SR.totalRange:params.range} km`,fill:SC.amber,fontSize:10,position:"insideTopRight"}}/>
                       <ReferenceLine x={params.payload} stroke={SC.amber}
                         strokeDasharray="5 3"
                         label={{value:`${params.payload} kg`,fill:SC.amber,fontSize:10,position:"top"}}/>
-                      {/* Reference aircraft — Joby S4 */}
                       <ReferenceLine y={150} stroke={SC.blue} strokeDasharray="3 4" strokeWidth={1}
                         label={{value:"Joby S4 ~150 km",fill:SC.blue,fontSize:9,position:"insideBottomRight"}}/>
-                      {/* Reference aircraft — Archer Midnight */}
                       <ReferenceLine y={100} stroke={SC.teal} strokeDasharray="3 4" strokeWidth={1}
                         label={{value:"Archer Midnight ~100 km",fill:SC.teal,fontSize:9,position:"insideBottomRight"}}/>
-                      {/* The envelope area — activeDot snaps to line on hover */}
-                      <Area type="monotone" dataKey="range"
-                        stroke="#8b5cf6" strokeWidth={2.5}
-                        fill="url(#rpGrad)"
+                      {/* Main payload-range line with active dot snapping to every 1kg */}
+                      <Line
+                        type="monotone"
+                        dataKey="range"
+                        stroke="#8b5cf6"
+                        strokeWidth={2.5}
                         dot={false}
                         name="Range (km)"
-                        connectNulls
+                        isAnimationActive={false}
                         activeDot={{
                           r:6,
                           fill:"#a78bfa",
                           stroke:"#ffffff",
                           strokeWidth:2,
+                          style:{filter:"drop-shadow(0 0 6px #a78bfa)"},
                         }}/>
-                      {/* Design point dot */}
-                      <Scatter
-                        data={[{payload:params.payload,range:SR?SR.totalRange:params.range}]}
-                        fill={SC.amber} r={6} name="Design point"/>
-                      {/* Ferry range dot */}
-                      <Scatter
-                        data={[{payload:0,range:SR.ferryRange}]}
-                        fill={SC.teal} r={5} name="Ferry range"/>
-                    </ComposedChart>
+                      {/* Design point marker */}
+                      <Line
+                        dataKey="range"
+                        data={[{payload:params.payload, range:SR?SR.totalRange:params.range}]}
+                        dot={{r:7,fill:SC.amber,stroke:"#ffffff",strokeWidth:2}}
+                        activeDot={false}
+                        stroke="none"
+                        legendType="none"
+                        isAnimationActive={false}/>
+                    </LineChart>
                   </ResponsiveContainer>
 
                   {/* Key-points data table */}
