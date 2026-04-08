@@ -443,7 +443,7 @@ function runSizing(p) {
     const r=+Math.max(0,((Eavail-Eto-Eld)/Efl_design)*p.range).toFixed(1);
     const seg=pay>p.payload+1?"A":pay<p.payload-1?"B":"design";
     return{payload:Math.round(pay),range:r,segment:seg};
-  }).reverse(); // high→low so recharts plots left=high-range, right=0
+  }).reverse(); // high→low payload = left→right on chart
   const rpFerryPoint={payload:0,range:ferryRange,segment:"ferry"};
 
   /* Aerodynamic polar — uses fitted kPolar for custom airfoils, Oswald for library */
@@ -7760,17 +7760,37 @@ export default function App(){
                         domain={[0, Math.ceil(SR.ferryRange*1.1/50)*50]}
                         tick={{fontSize:11,fill:SC.muted}}
                         label={{value:"Range (km)",angle:-90,position:"insideLeft",offset:10,fontSize:12,fill:SC.muted}}/>
+                      {/* Crosshair cursor lines */}
                       <Tooltip
-                        cursor={{stroke:SC.muted,strokeWidth:1,strokeDasharray:"4 2"}}
+                        cursor={{stroke:SC.muted,strokeWidth:1,strokeDasharray:"4 3"}}
                         content={({active,payload:tp})=>{
                           if(!active||!tp||!tp.length) return null;
                           const d=tp[0]?.payload;
                           if(!d) return null;
-                          const rc=d.segment==="A"?SC.red:d.segment==="design"?SC.amber:SC.purple;
+                          const rc = d.range===0 ? SC.red : d.segment==="design" ? SC.amber : "#a78bfa";
                           return(
-                            <div style={{background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:8,padding:"10px 14px",fontFamily:"'DM Mono',monospace",pointerEvents:"none"}}>
-                              <div style={{fontSize:12,color:SC.muted,marginBottom:5}}>Payload:&nbsp;<strong style={{color:SC.text}}>{d.payload} kg</strong></div>
-                              <div style={{fontSize:12,color:SC.muted}}>Range:&nbsp;<strong style={{color:rc}}>{d.range} km</strong></div>
+                            <div style={{
+                              background:SC.panel,
+                              border:`1px solid ${SC.border}`,
+                              borderRadius:8,
+                              padding:"10px 14px",
+                              fontFamily:"'DM Mono',monospace",
+                              pointerEvents:"none",
+                              boxShadow:"0 4px 20px rgba(0,0,0,0.4)",
+                            }}>
+                              <div style={{fontSize:9,color:SC.muted,letterSpacing:"0.1em",marginBottom:8,textTransform:"uppercase"}}>
+                                Hover Point
+                              </div>
+                              <div style={{display:"flex",flexDirection:"column",gap:5}}>
+                                <div style={{fontSize:12,color:SC.muted}}>
+                                  Payload:&nbsp;
+                                  <span style={{color:SC.text,fontWeight:700,fontSize:14}}>{d.payload} kg</span>
+                                </div>
+                                <div style={{fontSize:12,color:SC.muted}}>
+                                  Range:&nbsp;
+                                  <span style={{color:rc,fontWeight:700,fontSize:14}}>{d.range} km</span>
+                                </div>
+                              </div>
                             </div>
                           );
                         }}
@@ -7790,13 +7810,19 @@ export default function App(){
                       {/* Reference aircraft — Archer Midnight */}
                       <ReferenceLine y={100} stroke={SC.teal} strokeDasharray="3 4" strokeWidth={1}
                         label={{value:"Archer Midnight ~100 km",fill:SC.teal,fontSize:9,position:"insideBottomRight"}}/>
-                      {/* The envelope area */}
+                      {/* The envelope area — activeDot snaps to line on hover */}
                       <Area type="monotone" dataKey="range"
                         stroke="#8b5cf6" strokeWidth={2.5}
                         fill="url(#rpGrad)"
                         dot={false}
                         name="Range (km)"
-                        connectNulls/>
+                        connectNulls
+                        activeDot={{
+                          r:6,
+                          fill:"#a78bfa",
+                          stroke:"#ffffff",
+                          strokeWidth:2,
+                        }}/>
                       {/* Design point dot */}
                       <Scatter
                         data={[{payload:params.payload,range:SR?SR.totalRange:params.range}]}
