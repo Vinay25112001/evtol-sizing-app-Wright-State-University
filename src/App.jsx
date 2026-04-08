@@ -7760,9 +7760,25 @@ export default function App(){
                         domain={[0, Math.ceil(SR.ferryRange*1.1/50)*50]}
                         tick={{fontSize:11,fill:SC.muted}}
                         label={{value:"Range (km)",angle:-90,position:"insideLeft",offset:10,fontSize:12,fill:SC.muted}}/>
-                      <Tooltip {...TTP}
-                        formatter={(v,n)=>[`${v} km`,"Range"]}
-                        labelFormatter={v=>`Payload: ${v} kg`}/>
+                      <Tooltip
+                        contentStyle={{
+                          background:SC.panel,
+                          border:`1px solid ${SC.border}`,
+                          borderRadius:8,
+                          fontFamily:"'DM Mono',monospace",
+                          fontSize:11,
+                          color:SC.text,
+                        }}
+                        labelStyle={{color:SC.muted,marginBottom:4}}
+                        itemStyle={{color:SC.purple,fontWeight:700}}
+                        formatter={(value, name, props) => {
+                          const seg = props?.payload?.segment;
+                          if(seg==="A" && value===0)
+                            return ["0 km  (payload too high — no range)", "Range"];
+                          return [`${value} km`, "Range"];
+                        }}
+                        labelFormatter={value => `Payload: ${value} kg`}
+                      />
                       {/* Design range reference */}
                       <ReferenceLine y={SR?SR.totalRange:params.range} stroke={SC.amber}
                         strokeDasharray="5 3"
