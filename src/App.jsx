@@ -435,20 +435,15 @@ function runSizing(p) {
     const EavFerry=WbFerry*sedEff_rp*p.etaBat/(1000*(1+p.socMin));
     return +Math.max(0,((EavFerry-Eto-Eld)/Efl_design)*p.range).toFixed(1);
   })();
-  // 200-point curve anchored on design payload — dense enough for smooth hover tracking
-  const rpCalc=(pay)=>{
+  const rpData=Array.from({length:201},(_,i)=>{
+    const pay=maxPayload*i/200;
     const Wavail=Math.max(0,MTOW-Wempty-pay);
     if(Wavail<minBatKg) return{payload:Math.round(pay),range:0,segment:"A"};
     const Eavail=Wavail*sedEff_rp*p.etaBat/(1000*(1+p.socMin));
     const r=+Math.max(0,((Eavail-Eto-Eld)/Efl_design)*p.range).toFixed(1);
-    return{payload:Math.round(pay),range:r,segment:pay>p.payload?"A":pay<p.payload?"B":"design"};
-  };
-  const rpData=[
-    // Segment B: 0 → designPayload (100 points)
-    ...Array.from({length:101},(_,i)=>rpCalc(p.payload*i/100)),
-    // Segment A: designPayload → maxPayload (100 points), skip duplicate at 0
-    ...Array.from({length:100},(_,i)=>rpCalc(p.payload+(maxPayload-p.payload)*(i+1)/100)),
-  ];
+    const seg=pay>p.payload+1?"A":pay<p.payload-1?"B":"design";
+    return{payload:Math.round(pay),range:r,segment:seg};
+  }).reverse(); // high→low so recharts plots left=high-range, right=0
   const rpFerryPoint={payload:0,range:ferryRange,segment:"ferry"};
 
   /* Aerodynamic polar — uses fitted kPolar for custom airfoils, Oswald for library */
@@ -7767,20 +7762,15 @@ export default function App(){
                         label={{value:"Range (km)",angle:-90,position:"insideLeft",offset:10,fontSize:12,fill:SC.muted}}/>
                       <Tooltip
                         cursor={{stroke:SC.muted,strokeWidth:1,strokeDasharray:"4 2"}}
-                        content={({active,payload})=>{
-                          if(!active||!payload||!payload.length) return null;
-                          const d=payload[0]?.payload;
+                        content={({active,payload:tp})=>{
+                          if(!active||!tp||!tp.length) return null;
+                          const d=tp[0]?.payload;
                           if(!d) return null;
-                          const rangeCol = d.segment==="A"?SC.red : d.segment==="design"?SC.amber : SC.purple;
+                          const rc=d.segment==="A"?SC.red:d.segment==="design"?SC.amber:SC.purple;
                           return(
-                            <div style={{background:SC.panel,border:`1px solid ${SC.border}`,
-                              borderRadius:8,padding:"10px 14px",fontFamily:"'DM Mono',monospace"}}>
-                              <div style={{fontSize:11,color:SC.muted,marginBottom:6}}>
-                                Payload: <span style={{color:SC.text,fontWeight:700}}>{d.payload} kg</span>
-                              </div>
-                              <div style={{fontSize:11,color:SC.muted}}>
-                                Range: <span style={{color:rangeCol,fontWeight:700}}>{d.range} km</span>
-                              </div>
+                            <div style={{background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:8,padding:"10px 14px",fontFamily:"'DM Mono',monospace",pointerEvents:"none"}}>
+                              <div style={{fontSize:12,color:SC.muted,marginBottom:5}}>Payload:&nbsp;<strong style={{color:SC.text}}>{d.payload} kg</strong></div>
+                              <div style={{fontSize:12,color:SC.muted}}>Range:&nbsp;<strong style={{color:rc}}>{d.range} km</strong></div>
                             </div>
                           );
                         }}
