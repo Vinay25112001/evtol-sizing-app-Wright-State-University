@@ -3139,13 +3139,14 @@ function saveVersionToHistory(params, SR) {
   } catch(e) {}
 }
 
-function DesignVersionHistory({ params, SR, SC, onLoadVersion }) {
+function DesignVersionHistory({ params, SR, SC, onLoadVersion, user, onAuth }) {
   const [hist, setHist] = useState(() => {
     try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]'); } catch{ return []; }
   });
   const [selected, setSelected] = useState(0);
   const [editNote, setEditNote] = useState(null);
   const [noteVal, setNoteVal] = useState('');
+  const [showAuthModalDVH, setShowAuthModalDVH] = useState(false);
 
   const refresh = () => {
     try { setHist(JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]')); } catch{}
@@ -3205,11 +3206,15 @@ function DesignVersionHistory({ params, SR, SC, onLoadVersion }) {
     <div style={{display:'flex', flexDirection:'column', gap:10}}>
       {/* Header controls */}
       <div style={{display:'flex', gap:8, alignItems:'center', flexWrap:'wrap'}}>
-        <button onClick={saveNow} type="button"
+        <button onClick={()=>{
+            if(!user){if(onAuth)setShowAuthModalDVH(true);return;}
+            saveNow();
+          }} type="button"
           style={{padding:'7px 18px', background:`linear-gradient(135deg,${SC.green},#16a34a)`,
             border:'none', borderRadius:6, color:'#fff', fontSize:11, fontWeight:800,
-            cursor:'pointer', fontFamily:"'DM Mono',monospace"}}>
-          💾 Save Current Design
+            cursor:'pointer', fontFamily:"'DM Mono',monospace",
+            display:'flex',alignItems:'center',gap:5}}>
+          {!user&&<span style={{fontSize:10}}>🔒</span>}💾 Save Current Design
         </button>
         <span style={{fontSize:9, color:SC.muted, fontFamily:"'DM Mono',monospace"}}>
           {hist.length}/{MAX_HISTORY} versions stored locally
@@ -3357,6 +3362,7 @@ function DesignVersionHistory({ params, SR, SC, onLoadVersion }) {
           )}
         </div>
       )}
+      {showAuthModalDVH&&<AuthModal onClose={()=>setShowAuthModalDVH(false)} onAuth={(session)=>{setShowAuthModalDVH(false);if(onAuth)onAuth(session);}}/>}
     </div>
   );
 }
@@ -3366,7 +3372,7 @@ function DesignVersionHistory({ params, SR, SC, onLoadVersion }) {
    Showcases community designs with inline SVG thumbnails.
    Filterable by MTOW / range / config type.
    ════════════════════════════════════════════════════════════════════════ */
-function DesignGallery({ SC, onLoadDesign, SR, params, user }) {
+function DesignGallery({ SC, onLoadDesign, SR, params, user, onAuth }) {
   // ── Supabase config (same project as auth/chat) ──────────────────────
   const SB_URL = "https://obribjypwwrbhsyjllua.supabase.co";
   const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9icmlianlwd3dyYmhzeWpsbHVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM2MjU1MjIsImV4cCI6MjA4OTIwMTUyMn0.Rq2_KfHlHnoluGJY3AcBIqcbuMFuLBitU-Y6aBWyoJ4";
@@ -3383,6 +3389,7 @@ function DesignGallery({ SC, onLoadDesign, SR, params, user }) {
   const [editingId,      setEditingId]       = useState(null);
   const [editName,       setEditName]        = useState('');
   const [saving,         setSaving]          = useState(false);
+  const [showAuthModalDG, setShowAuthModalDG] = useState(false);
 
   // ── Owner identity: email if logged in, stable guest token otherwise ─
   const ownerToken = user?.email || (() => {
@@ -3437,7 +3444,12 @@ function DesignGallery({ SC, onLoadDesign, SR, params, user }) {
     params:  (() => { try { return typeof d.params==='object'&&d.params!==null ? d.params : JSON.parse(d.params||'{}'); } catch { return {}; } })(),
   });
 
-  const ALL      = [...SEED, ...dbDesigns].map(norm);
+  const filteredDbDesigns = dbDesigns.filter(d =>
+    (d.author || '').toLowerCase() !== 'tharun' &&
+    (d.owner_token || '').toLowerCase() !== 'tharun' &&
+    (d.name || '').toLowerCase() !== 'tharun'
+  );
+  const ALL      = [...SEED, ...filteredDbDesigns].map(norm);
   const isOwner  = (d) => d.owner !== '__seed__' && d.owner === ownerToken;
 
   const filtered = ALL.filter(d => {
@@ -3577,11 +3589,15 @@ function DesignGallery({ SC, onLoadDesign, SR, params, user }) {
 
       {/* ── Share button ──────────────────────────────────────────────── */}
       <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
-        <button type="button" onClick={()=>{setShowShareModal(v=>!v);setShareMsg('');}}
+        <button type="button" onClick={()=>{
+            if(!user){setShowAuthModalDG(true);return;}
+            setShowShareModal(v=>!v);setShareMsg('');
+          }}
           style={{padding:'7px 18px',background:'linear-gradient(135deg,#22c55e,#16a34a)',
             border:'none',borderRadius:6,color:'#fff',fontSize:11,fontWeight:700,
-            cursor:'pointer',fontFamily:"'DM Mono',monospace"}}>
-          📤 Share My Current Design
+            cursor:'pointer',fontFamily:"'DM Mono',monospace",
+            display:'flex',alignItems:'center',gap:5}}>
+          {!user&&<span style={{fontSize:10}}>🔒</span>}📤 Share My Current Design
         </button>
         <button type="button" onClick={fetchDesigns}
           style={{padding:'7px 12px',background:'transparent',border:`1px solid ${SC.border}`,
@@ -3774,6 +3790,7 @@ function DesignGallery({ SC, onLoadDesign, SR, params, user }) {
           </div>
         </div>
       )}
+      {showAuthModalDG&&<AuthModal onClose={()=>setShowAuthModalDG(false)} onAuth={(session)=>{setShowAuthModalDG(false);if(onAuth)onAuth(session);}}/>}
     </div>
   );
 }
@@ -6542,16 +6559,20 @@ export default function App(){
                 onMouseLeave={()=>setShowOverflow(false)}>
                 {/* Export CSV */}
                 {SR&&(
-                  <button onClick={()=>{exportCSV();setShowOverflow(false);}} type="button"
+                  <button onClick={()=>{
+                    if(!user){setShowOverflow(false);setShowAuthModal(true);return;}
+                    exportCSV();setShowOverflow(false);
+                  }} type="button"
                     style={{width:"100%",padding:"8px 16px",background:"transparent",border:"none",
                       cursor:"pointer",textAlign:"left",fontSize:11,color:SC.text,
                       fontFamily:"system-ui,sans-serif",display:"flex",alignItems:"center",gap:8}}>
-                    📊 Export CSV
+                    {!user&&<span style={{fontSize:10}}>🔒</span>}📊 Export CSV
                   </button>
                 )}
-                {/* PDF Report — no auth required */}
+                {/* PDF Report — login required */}
                 {SR&&(
                   <button type="button" onClick={async ()=>{
+                      if(!user){setShowOverflow(false);setShowAuthModal(true);return;}
                       try{
                         let brandingWithLogo={...pdfBranding};
                         // Only fetch if it's a URL (not already Base64 from file upload)
@@ -6585,16 +6606,19 @@ export default function App(){
                     style={{width:"100%",padding:"8px 16px",background:"transparent",border:"none",
                       cursor:"pointer",textAlign:"left",fontSize:11,color:SC.text,
                       fontFamily:"system-ui,sans-serif",display:"flex",alignItems:"center",gap:8}}>
-                    ⬇ PDF Report
+                    {!user&&<span style={{fontSize:10}}>🔒</span>}⬇ PDF Report
                   </button>
                 )}
                 {/* Brand PDF */}
                 {SR&&(
-                  <button onClick={()=>{setShowPdfBranding(true);setShowOverflow(false);}} type="button"
+                  <button onClick={()=>{
+                    if(!user){setShowOverflow(false);setShowAuthModal(true);return;}
+                    setShowPdfBranding(true);setShowOverflow(false);
+                  }} type="button"
                     style={{width:"100%",padding:"8px 16px",background:"transparent",border:"none",
                       cursor:"pointer",textAlign:"left",fontSize:11,color:SC.text,
                       fontFamily:"system-ui,sans-serif",display:"flex",alignItems:"center",gap:8}}>
-                    🎨 Brand PDF
+                    {!user&&<span style={{fontSize:10}}>🔒</span>}🎨 Brand PDF
                   </button>
                 )}
                 {/* Share Design */}
@@ -10836,12 +10860,13 @@ export default function App(){
                 <Panel title="📂 Design Version History">
                   <DesignVersionHistory
                     params={params} SR={SR} SC={SC}
-                    onLoadVersion={p=>setParams(prev=>({...prev,...p}))}/>
+                    onLoadVersion={p=>setParams(prev=>({...prev,...p}))}
+                    user={user} onAuth={handleAuth}/>
                 </Panel>
 
                 {/* ── Feature 12: Public Design Gallery ── */}
                 <Panel title="🎨 Public Design Gallery">
-                  <DesignGallery SC={SC} onLoadDesign={p=>setParams(prev=>({...prev,...p}))} SR={SR} params={params} user={user}/>
+                  <DesignGallery SC={SC} onLoadDesign={p=>setParams(prev=>({...prev,...p}))} SR={SR} params={params} user={user} onAuth={handleAuth}/>
                 </Panel>
 
                 {/* Original Leaderboard */}
