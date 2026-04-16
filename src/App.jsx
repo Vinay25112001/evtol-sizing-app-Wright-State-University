@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
-import { AuthModal, AuthGate, UserHeaderBar, getSession, saveSession, clearSession, addNotif, saveDesign, addReport, setAuthTheme, SUPABASE_URL, SUPABASE_KEY } from "./AuthSystem";
+import { AuthModal, AuthGate, UserHeaderBar, getSession, saveSession, clearSession, addNotif, saveDesign, addReport, setAuthTheme } from "./AuthSystem";
 import { ShareDesignButton, LeaderboardPanel, CollabPanel, PublicDesignBanner } from "./CommunityFeatures";
 import {
   AreaChart, Area, LineChart, Line, BarChart, Bar, RadarChart, Radar,
@@ -27,8 +27,8 @@ function runSizing(p) {
   const Vcl=RoC/Math.sin(clAng*Math.PI/180);
   // Climb L/D derating: induced drag increases at climb AoA (user-adjustable, default 13%)
   const LDcl=p.LD*(1-(p.climbLDPenalty||0.13));
-  // Descent angle: use user-specified value if provided, else derive from L/D (MATLAB default)
-  const desAng = p.descentAngle || Math.atan(1/p.LD)*180/Math.PI;
+  // Descent angle derived from L/D — matches MATLAB: Decent_Angle = -atand(1/L/D)
+  const desAng=Math.atan(1/p.LD)*180/Math.PI;
   const Vdc=RoC/Math.sin(desAng*Math.PI/180);  // no cruise speed cap — matches MATLAB
   // Reserve: time-based — SC-VTOL VTOL.1035: 20 min VFR minimum
   // Vres = 0.76×Vcruise (best-endurance speed for electric)
@@ -1813,7 +1813,7 @@ function generateReport(p, SR, branding={}) {
   const RoCd=p.rateOfClimb, clAngd=p.climbAngle;
   const Vcld=RoCd/Math.sin(clAngd*Math.PI/180);
   const LDcld=p.LD*(1-(p.climbLDPenalty||0.13));
-  const desAngd = p.descentAngle || Math.atan(1/p.LD)*180/Math.PI;    // user-specified or L/D-derived
+  const desAngd=Math.atan(1/p.LD)*180/Math.PI;    // L/D-derived — matches actual sizing
   const Vdcd=RoCd/Math.sin(desAngd*Math.PI/180);   // no cap — matches actual sizing
   const Vresd=0.76*p.vCruise;                       // 0.76×Vcruise best-endurance (time-based)
   const hvtold=p.hoverHeight;
@@ -3373,8 +3373,10 @@ function DesignVersionHistory({ params, SR, SC, onLoadVersion, user, onAuth }) {
    Filterable by MTOW / range / config type.
    ════════════════════════════════════════════════════════════════════════ */
 function DesignGallery({ SC, onLoadDesign, SR, params, user, onAuth }) {
-  // ── Supabase config — shared constants from AuthSystem ──────────────
-  const SB_HDR = { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json" };
+  // ── Supabase config (same project as auth/chat) ──────────────────────
+  const SB_URL = "https://obribjypwwrbhsyjllua.supabase.co";
+  const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9icmlianlwd3dyYmhzeWpsbHVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM2MjU1MjIsImV4cCI6MjA4OTIwMTUyMn0.Rq2_KfHlHnoluGJY3AcBIqcbuMFuLBitU-Y6aBWyoJ4";
+  const SB_HDR = { "apikey": SB_KEY, "Authorization": `Bearer ${SB_KEY}`, "Content-Type": "application/json" };
   const TABLE  = "community_gallery";
 
   const [filter,         setFilter]         = useState({mtow:'all', range:'all', sort:'mtow'});
@@ -3399,7 +3401,7 @@ function DesignGallery({ SC, onLoadDesign, SR, params, user, onAuth }) {
   // ── Fetch all community designs from Supabase ─────────────────────────
   const fetchDesigns = () => {
     setLoading(true);
-    fetch(`${SUPABASE_URL}/rest/v1/${TABLE}?order=created_at.desc&limit=100`, { headers: SB_HDR })
+    fetch(`${SB_URL}/rest/v1/${TABLE}?order=created_at.desc&limit=100`, { headers: SB_HDR })
       .then(r => r.json())
       .then(rows => { setDbDesigns(Array.isArray(rows) ? rows : []); setLoading(false); })
       .catch(() => setLoading(false));
@@ -3485,7 +3487,7 @@ function DesignGallery({ SC, onLoadDesign, SR, params, user, onAuth }) {
       params:      JSON.stringify({...params}),
     };
     try {
-      const r = await fetch(`${SUPABASE_URL}/rest/v1/${TABLE}`, {
+      const r = await fetch(`${SB_URL}/rest/v1/${TABLE}`, {
         method: 'POST',
         headers: { ...SB_HDR, "Prefer": "return=minimal" },
         body: JSON.stringify(row),
@@ -3503,14 +3505,14 @@ function DesignGallery({ SC, onLoadDesign, SR, params, user, onAuth }) {
 
   // ── Delete ────────────────────────────────────────────────────────────
   const handleDelete = async (id) => {
-    await fetch(`${SUPABASE_URL}/rest/v1/${TABLE}?id=eq.${id}`, { method: 'DELETE', headers: SB_HDR });
+    await fetch(`${SB_URL}/rest/v1/${TABLE}?id=eq.${id}`, { method: 'DELETE', headers: SB_HDR });
     setExpanded(null); fetchDesigns();
   };
 
   // ── Rename ────────────────────────────────────────────────────────────
   const handleSaveEdit = async (id) => {
     if (!editName.trim()) return;
-    await fetch(`${SUPABASE_URL}/rest/v1/${TABLE}?id=eq.${id}`, {
+    await fetch(`${SB_URL}/rest/v1/${TABLE}?id=eq.${id}`, {
       method: 'PATCH',
       headers: { ...SB_HDR, "Prefer": "return=minimal" },
       body: JSON.stringify({ name: editName.trim() }),
@@ -3521,7 +3523,7 @@ function DesignGallery({ SC, onLoadDesign, SR, params, user, onAuth }) {
   // ── Update design with current results ───────────────────────────────
   const handleUpdateDesign = async (id) => {
     if (!SR) return;
-    await fetch(`${SUPABASE_URL}/rest/v1/${TABLE}?id=eq.${id}`, {
+    await fetch(`${SB_URL}/rest/v1/${TABLE}?id=eq.${id}`, {
       method: 'PATCH',
       headers: { ...SB_HDR, "Prefer": "return=minimal" },
       body: JSON.stringify({
@@ -4506,8 +4508,10 @@ function AIAssistantPanel({ params, SR, SC, onParamChange, user }) {
   const srRef = useRef(SR);
   useEffect(()=>{ srRef.current = SR; }, [SR]);
 
-  // ── SUPABASE CONFIG — shared constants from AuthSystem ──
-  const SB_HDR = { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json" };
+  // ── SUPABASE CONFIG ──
+  const SB_URL = "https://obribjypwwrbhsyjllua.supabase.co";
+  const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9icmlianlwd3dyYmhzeWpsbHVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM2MjU1MjIsImV4cCI6MjA4OTIwMTUyMn0.Rq2_KfHlHnoluGJY3AcBIqcbuMFuLBitU-Y6aBWyoJ4";
+  const SB_HDR = { "apikey": SB_KEY, "Authorization": `Bearer ${SB_KEY}`, "Content-Type": "application/json" };
 
   const LS_KEY = 'evtol_ai_chat_local'; // localStorage key for instant refresh restore
 
@@ -4551,7 +4555,7 @@ function AIAssistantPanel({ params, SR, SC, onParamChange, user }) {
   useEffect(()=>{
     if (!user?.id) { setChatLoaded(true); return; }
     const uid = user.id;
-    fetch(`${SUPABASE_URL}/rest/v1/evtol_ai_chat?user_id=eq.${uid}&order=created_at.desc&limit=1`, { headers: SB_HDR })
+    fetch(`${SB_URL}/rest/v1/evtol_ai_chat?user_id=eq.${uid}&order=created_at.desc&limit=1`, { headers: SB_HDR })
       .then(r=>r.json())
       .then(rows=>{
         if (rows && rows[0] && rows[0].messages_json) {
@@ -4582,7 +4586,7 @@ function AIAssistantPanel({ params, SR, SC, onParamChange, user }) {
         updated_at: new Date().toISOString(),
       };
       try {
-        await fetch(`${SUPABASE_URL}/rest/v1/evtol_ai_chat`, {
+        await fetch(`${SB_URL}/rest/v1/evtol_ai_chat`, {
           method: "POST",
           headers: { ...SB_HDR, "Prefer": "resolution=merge-duplicates,return=minimal" },
           body: JSON.stringify(payload),
@@ -4604,7 +4608,7 @@ function AIAssistantPanel({ params, SR, SC, onParamChange, user }) {
     // Clear Supabase if logged in
     if (!user?.id) return;
     try {
-      await fetch(`${SUPABASE_URL}/rest/v1/evtol_ai_chat?user_id=eq.${user.id}`, {
+      await fetch(`${SB_URL}/rest/v1/evtol_ai_chat?user_id=eq.${user.id}`, {
         method: "DELETE",
         headers: SB_HDR,
       });
@@ -4785,7 +4789,7 @@ function AIAssistantPanel({ params, SR, SC, onParamChange, user }) {
           model:"llama-3.1-8b-instant",
           max_tokens:800,
           messages:[
-            {role:"system", content:`You are a knowledgeable aerospace engineering assistant specializing in eVTOL aircraft. You help engineers and students understand concepts, solve problems, and learn about aviation. The user is working on an eVTOL sizing tool. Current design context: MTOW=${SR?.MTOW||'unknown'}kg, missionRange=${SR?SR.missionRange:params.range}km (flyable, excl. reserve), totalRange=${SR?(SR.totalRange||params.range):params.range}km (incl. ${SR?SR.reserveDistKm:0}km reserve), payload=${params.payload}kg, ${params.nPropHover} rotors. Answer clearly and helpfully. For technical questions give depth. For simple questions be concise.`},
+            {role:"system", content:`You are a knowledgeable aerospace engineering assistant specializing in eVTOL aircraft. You help engineers and students understand concepts, solve problems, and learn about aviation. The user is working on an eVTOL sizing tool. Current design context: MTOW=${SR?.MTOW||'unknown'}kg, missionRange=${params.range}km (total ${SR?(SR.totalRange||params.range):params.range}km incl. reserve), payload=${params.payload}kg, ${params.nPropHover} rotors. Answer clearly and helpfully. For technical questions give depth. For simple questions be concise.`},
             ...newHistory.slice(-10) // keep last 10 for context
           ]
         })
@@ -5631,7 +5635,7 @@ export default function App(){
     deltaISA:0,            // ISA deviation °C: 0=standard day, 15=hot day
     cRateDerate:0.08,      // battery SED derate for C-rate: 8% default (~3-4C hover)
     // ── Battery (2025 state-of-art; Joby claims ~300 Wh/kg cell-level) ──
-    sedCell:300,etaBat:0.90,socMin:0.19,spBattery:1.0,  // spBattery kW/kg — power-limit branch of dual-constraint sizing
+    sedCell:300,etaBat:0.90,socMin:0.19,
     // ── Weights (composite airframe; Joby EWF=0.43, Archer~0.45, conservative 0.50) ──
     ewf:0.50,
     // ── Geometry (Lf/b target 0.55–0.70; fL=7.2 gives 0.564 with 12.77 m span) ──
@@ -5642,16 +5646,15 @@ export default function App(){
     vtCv:0.032,           // Cv reduced from 0.05: same rationale; gives tail/wing ~37%
     vtAR:2.5,
   });
-  const[tab,setTab]=useState(()=>{ const t=+localStorage.getItem('evtol_tab'); return isNaN(t)?0:t; });
-  const[activeGroup,setActiveGroup]=useState(()=>{ const g=+localStorage.getItem('evtol_group'); return isNaN(g)?0:g; });
+  const[tab,setTab]=useState(0);
+  const[activeGroup,setActiveGroup]=useState(0);
 
   const[showOverflow,setShowOverflow]=useState(false);
   const[sidebarOpen,setSidebarOpen]=useState(()=>localStorage.getItem("sb")!=="0");
   const[user,setUser]=useState(()=>getSession());
   const[showAuthModal,setShowAuthModal]=useState(false);
-  const[darkMode,setDarkMode]=useState(()=>localStorage.getItem('darkMode')!=='0');
+  const[darkMode,setDarkMode]=useState(true);
   const prevSRRef=useRef(null);
-  const overflowRef=useRef(null);  // ref for ••• menu container — used for click-outside close
   const[deltaMap,setDeltaMap]=useState({});
   const undoStackRef=useRef([]);   // stores param snapshots — ref avoids re-render
   const redoStackRef=useRef([]);
@@ -5660,7 +5663,9 @@ export default function App(){
   const[showPdfBranding,setShowPdfBranding]=useState(false);
 
   // ── Branding Supabase sync ──────────────────────────────────────────────
-  const BRAND_HDR = {"apikey": SUPABASE_KEY, "Authorization": "Bearer " + SUPABASE_KEY, "Content-Type": "application/json"};
+  const BRAND_SB_URL = "https://obribjypwwrbhsyjllua.supabase.co";
+  const BRAND_SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9icmlianlwd3dyYmhzeWpsbHVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM2MjU1MjIsImV4cCI6MjA4OTIwMTUyMn0.Rq2_KfHlHnoluGJY3AcBIqcbuMFuLBitU-Y6aBWyoJ4";
+  const BRAND_HDR = {"apikey": BRAND_SB_KEY, "Authorization": "Bearer " + BRAND_SB_KEY, "Content-Type": "application/json"};
   const BRAND_LS_KEY = "evtol_pdfBranding";
   const brandDebounce = useRef(null);
   const [brandSynced, setBrandSynced] = useState(false); // true once remote load attempted
@@ -5685,7 +5690,7 @@ export default function App(){
   useEffect(()=>{
     if(!user?.id){ setBrandSynced(false); return; }
     setBrandSynced(false);
-    fetch(SUPABASE_URL+"/rest/v1/evtol_user_branding?user_id=eq."+encodeURIComponent(user.id)+"&limit=1",
+    fetch(BRAND_SB_URL+"/rest/v1/evtol_user_branding?user_id=eq."+encodeURIComponent(user.id)+"&limit=1",
       {headers:BRAND_HDR})
       .then(r=>{
         if(!r.ok) throw new Error("HTTP "+r.status);
@@ -5737,7 +5742,7 @@ export default function App(){
         };
 
         // Try UPSERT via POST with on-conflict update
-        const resp = await fetch(SUPABASE_URL+"/rest/v1/evtol_user_branding",{
+        const resp = await fetch(BRAND_SB_URL+"/rest/v1/evtol_user_branding",{
           method:"POST",
           headers:{
             ...BRAND_HDR,
@@ -5755,7 +5760,7 @@ export default function App(){
 
           // Fallback: try PATCH (update existing row)
           const patchResp = await fetch(
-            SUPABASE_URL+"/rest/v1/evtol_user_branding?user_id=eq."+encodeURIComponent(user.id),{
+            BRAND_SB_URL+"/rest/v1/evtol_user_branding?user_id=eq."+encodeURIComponent(user.id),{
             method:"PATCH",
             headers:{...BRAND_HDR,"Prefer":"return=minimal"},
             body:JSON.stringify({
@@ -5791,8 +5796,6 @@ export default function App(){
   const[customAFData,setCustomAFData]=useState(null);
   const[mcResults,setMcResults]=useState(null);
   const[mcRunning,setMcRunning]=useState(false);
-  // Clear stale Monte Carlo results whenever design params change
-  useEffect(()=>{ if(mcResults&&!mcRunning) setMcResults(null); },[params]);
 
   // Mission Builder state
   const PHASE_TYPES={
@@ -5839,11 +5842,6 @@ export default function App(){
   SC = darkMode ? DARK : LIGHT;
   // Sync theme to AuthSystem so modal inputs also update
   setAuthTheme(darkMode);
-  // Persist dark mode preference across refreshes
-  useEffect(()=>{ localStorage.setItem('darkMode', darkMode ? '1' : '0'); },[darkMode]);
-  // Persist active tab and group across refreshes
-  useEffect(()=>{ localStorage.setItem('evtol_tab', tab); },[tab]);
-  useEffect(()=>{ localStorage.setItem('evtol_group', activeGroup); },[activeGroup]);
 
   // Dynamic tooltip style (reads current C — correct for both themes)
   const TTP = {
@@ -5860,15 +5858,17 @@ export default function App(){
   // Auto-load shared design on page open (when ?design= is in URL)
   useEffect(()=>{
     if(!sharedDesignId) return;
-    fetch(`${SUPABASE_URL}/rest/v1/evtol_public_designs?share_id=eq.${sharedDesignId}&is_public=eq.true`,{
-      headers:{"apikey":SUPABASE_KEY,"Authorization":`Bearer ${SUPABASE_KEY}`,"Content-Type":"application/json"}
+    const SB_URL="https://obribjypwwrbhsyjllua.supabase.co";
+    const SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9icmlianlwd3dyYmhzeWpsbHVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM2MjU1MjIsImV4cCI6MjA4OTIwMTUyMn0.Rq2_KfHlHnoluGJY3AcBIqcbuMFuLBitU-Y6aBWyoJ4";
+    fetch(`${SB_URL}/rest/v1/evtol_public_designs?share_id=eq.${sharedDesignId}&is_public=eq.true`,{
+      headers:{"apikey":SB_KEY,"Authorization":`Bearer ${SB_KEY}`,"Content-Type":"application/json"}
     }).then(r=>r.json()).then(rows=>{
       if(!rows||!rows.length) return;
       const d=rows[0];
       // increment view count
-      fetch(`${SUPABASE_URL}/rest/v1/evtol_public_designs?share_id=eq.${sharedDesignId}`,{
+      fetch(`${SB_URL}/rest/v1/evtol_public_designs?share_id=eq.${sharedDesignId}`,{
         method:"PATCH",
-        headers:{"apikey":SUPABASE_KEY,"Authorization":`Bearer ${SUPABASE_KEY}`,"Content-Type":"application/json","Prefer":"return=representation"},
+        headers:{"apikey":SB_KEY,"Authorization":`Bearer ${SB_KEY}`,"Content-Type":"application/json","Prefer":"return=representation"},
         body:JSON.stringify({view_count:(d.view_count||0)+1})
       }).catch(()=>{});
       try{
@@ -6258,14 +6258,6 @@ export default function App(){
     });
   },[]);
 
-  // Click-outside handler — closes ••• menu when user clicks anywhere outside it
-  useEffect(()=>{
-    if(!showOverflow) return;
-    const handler=(e)=>{ if(overflowRef.current&&!overflowRef.current.contains(e.target)) setShowOverflow(false); };
-    document.addEventListener('mousedown',handler);
-    return()=>document.removeEventListener('mousedown',handler);
-  },[showOverflow]);
-
   // Keyboard shortcuts
   useEffect(()=>{
     const onKey=evt=>{
@@ -6292,7 +6284,7 @@ export default function App(){
           addNotif(user.id,{title:"Saved ✓",body:nm,type:"success"});
         }
       }
-      if(mod&&evt.key==="e"){ evt.preventDefault(); if(SR&&user) exportCSV(); else if(SR&&!user) setShowAuthModal(true); }
+      if(mod&&evt.key==="e"){ evt.preventDefault(); if(SR) exportCSV(); }
       if(!mod&&evt.target.tagName!=="INPUT"&&evt.target.tagName!=="TEXTAREA"){
         if(evt.key==="ArrowRight"){const g=TAB_GROUPS[activeGroup];const idx=g.tabs.indexOf(tab);if(idx<g.tabs.length-1)setTab(g.tabs[idx+1]);}
         if(evt.key==="ArrowLeft") {const g=TAB_GROUPS[activeGroup];const idx=g.tabs.indexOf(tab);if(idx>0)setTab(g.tabs[idx-1]);}
@@ -6370,7 +6362,7 @@ export default function App(){
       {showPdfBranding&&(
         <div style={{position:"fixed",inset:0,zIndex:3000,background:"rgba(0,0,0,0.7)",
           backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center"}}
-          onClick={evt => evt.target===evt.currentTarget&&setShowPdfBranding(false)}>
+          onClick={evt => evt.target===e.currentTarget&&setShowPdfBranding(false)}>
           <div style={{background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:12,
             padding:"24px 28px",width:460,maxWidth:"92vw",boxShadow:"0 20px 60px rgba(0,0,0,0.6)"}}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
@@ -6552,7 +6544,7 @@ export default function App(){
           )}
 
           {/* SECONDARY: overflow ••• menu */}
-          <div style={{position:"relative"}} ref={overflowRef}>
+          <div style={{position:"relative"}}>
             <button type="button" onClick={()=>setShowOverflow(v=>!v)}
               style={{padding:"6px 10px",background:"transparent",
                 border:`1px solid ${SC.border}`,borderRadius:4,
@@ -6563,7 +6555,8 @@ export default function App(){
             {showOverflow&&(
               <div style={{position:"absolute",top:"calc(100% + 6px)",right:0,zIndex:200,
                 background:SC.panel,border:`1px solid ${SC.border}`,borderRadius:8,
-                padding:"6px 0",minWidth:190,boxShadow:"0 8px 32px rgba(0,0,0,0.5)"}}>
+                padding:"6px 0",minWidth:190,boxShadow:"0 8px 32px rgba(0,0,0,0.5)"}}
+                onMouseLeave={()=>setShowOverflow(false)}>
                 {/* Export CSV */}
                 {SR&&(
                   <button onClick={()=>{
@@ -6658,8 +6651,7 @@ export default function App(){
                 {/* Reset */}
                 <button onClick={()=>{setParams({payload:455,range:190,vCruise:67,cruiseAlt:1000,hoverHeight:15.24,
                     reserveMinutes:20,LD:14,AR:9,eOsw:0.85,clDesign:0.55,taper:0.45,tc:0.15,nPropHover:6,propDiam:3.0,twRatio:1.3,convTolExp:-6,
-                    etaHov:0.70,etaSys:0.80,rateOfClimb:5.08,climbAngle:5,sedCell:300,etaBat:0.90,socMin:0.19,ewf:0.50,spBattery:1.0,
-                    descentAngle:6,climbLDPenalty:0.13,deltaISA:0,cRateDerate:0.08,
+                    etaHov:0.70,etaSys:0.80,rateOfClimb:5.08,climbAngle:5,sedCell:300,etaBat:0.90,socMin:0.19,ewf:0.50,
                     fusLen:7.2,fusDiam:1.65,vtGamma:45,vtCh:0.45,vtCv:0.032,vtAR:2.5});setShowOverflow(false);}}
                   style={{width:"100%",padding:"8px 16px",background:"transparent",border:"none",
                     cursor:"pointer",textAlign:"left",fontSize:11,color:SC.muted,
