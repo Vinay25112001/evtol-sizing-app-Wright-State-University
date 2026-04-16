@@ -72,8 +72,8 @@ function clearOTP(email){ delete otpStore[email]; }
    1. Replace SUPABASE_URL and SUPABASE_ANON_KEY below
    2. Run the SQL setup in your Supabase SQL editor (see README)
    ══════════════════════════════════════════════════════════════ */
-const SUPABASE_URL  = "https://obribjypwwrbhsyjllua.supabase.co";
-const SUPABASE_KEY  = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9icmlianlwd3dyYmhzeWpsbHVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM2MjU1MjIsImV4cCI6MjA4OTIwMTUyMn0.Rq2_KfHlHnoluGJY3AcBIqcbuMFuLBitU-Y6aBWyoJ4";
+export const SUPABASE_URL  = "https://obribjypwwrbhsyjllua.supabase.co";
+export const SUPABASE_KEY  = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9icmlianlwd3dyYmhzeWpsbHVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM2MjU1MjIsImV4cCI6MjA4OTIwMTUyMn0.Rq2_KfHlHnoluGJY3AcBIqcbuMFuLBitU-Y6aBWyoJ4";
 
 async function sbFetch(path, opts={}){
   const { prefer, headers:extraHeaders={}, body, method="GET" } = opts;

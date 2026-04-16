@@ -15,10 +15,7 @@
    ═══════════════════════════════════════════════════════════════════ */
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { AuthModal } from "./AuthSystem";
-
-const SB_URL = "https://obribjypwwrbhsyjllua.supabase.co";
-const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9icmlianlwd3dyYmhzeWpsbHVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM2MjU1MjIsImV4cCI6MjA4OTIwMTUyMn0.Rq2_KfHlHnoluGJY3AcBIqcbuMFuLBitU-Y6aBWyoJ4";
+import { AuthModal, SUPABASE_URL as SB_URL, SUPABASE_KEY as SB_KEY } from "./AuthSystem";
 
 /* ── HTTP helpers ── */
 const baseHdrs = { "apikey": SB_KEY, "Authorization": `Bearer ${SB_KEY}`, "Content-Type": "application/json" };
