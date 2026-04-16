@@ -15,6 +15,7 @@
    ═══════════════════════════════════════════════════════════════════ */
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { AuthModal } from "./AuthSystem";
 
 const SB_URL = "https://obribjypwwrbhsyjllua.supabase.co";
 const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9icmlianlwd3dyYmhzeWpsbHVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM2MjU1MjIsImV4cCI6MjA4OTIwMTUyMn0.Rq2_KfHlHnoluGJY3AcBIqcbuMFuLBitU-Y6aBWyoJ4";
@@ -640,7 +641,7 @@ export function LeaderboardPanel({ C, onLoadDesign }) {
 /* ══════════════════════════════════════════════════════
    COLLABORATION PANEL v6
    ══════════════════════════════════════════════════════ */
-export function CollabPanel({ user, params, onParamChange, C }) {
+export function CollabPanel({ user, params, onParamChange, C, onAuth }) {
   const [sid,      setSid]      = useState("");
   const [joinId,   setJoinId]   = useState("");
   const [inSession,setIn]       = useState(false);
@@ -653,6 +654,7 @@ export function CollabPanel({ user, params, onParamChange, C }) {
   const [err,      setErr]      = useState("");
   const [copied,   setCopied]   = useState(false);
   const [waiting,  setWaiting]  = useState(false);
+  const [showAuthModalCollab, setShowAuthModalCollab] = useState(false);
 
   // Stable user ID
   const myId   = useRef(user?.id || ("anon_" + Math.random().toString(36).slice(2,10)));
@@ -922,7 +924,7 @@ export function CollabPanel({ user, params, onParamChange, C }) {
               Start a session. You approve joiners and can set them as Editor or Viewer.
               Editors can change design params — changes sync both ways in real-time.
             </div>
-            <button onClick={hostSession} disabled={busy} type="button" style={B(C.teal)}>
+            <button onClick={()=>{ if(!user){setShowAuthModalCollab(true);return;} hostSession(); }} disabled={busy&&!!user} type="button" style={B(C.teal)}>
               {busy ? "Starting…" : "Start Session →"}
             </button>
             {!user && <div style={{fontSize:9,color:C.amber,marginTop:6,fontFamily:"'DM Mono',monospace"}}>⚠ Sign in required</div>}
@@ -938,7 +940,7 @@ export function CollabPanel({ user, params, onParamChange, C }) {
               style={{width:"100%",boxSizing:"border-box",background:C.bg,border:`1px solid ${C.border}`,
                 borderRadius:4,color:C.text,fontSize:11,padding:"7px 10px",
                 fontFamily:"'DM Mono',monospace",outline:"none",marginBottom:8}}/>
-            <button onClick={sendJoinRequest} disabled={busy} type="button" style={B(C.blue)}>
+            <button onClick={()=>{ if(!user){setShowAuthModalCollab(true);return;} sendJoinRequest(); }} disabled={busy&&!!user} type="button" style={B(C.blue)}>
               {busy ? "Requesting…" : "Send Join Request →"}
             </button>
             {!user && <div style={{fontSize:9,color:C.amber,marginTop:6,fontFamily:"'DM Mono',monospace"}}>⚠ Sign in required</div>}
@@ -1185,6 +1187,7 @@ export function CollabPanel({ user, params, onParamChange, C }) {
           <button onClick={()=>setErr("")} type="button" style={{marginLeft:10,background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:12}}>✕</button>
         </div>
       )}
+      {showAuthModalCollab&&<AuthModal onClose={()=>setShowAuthModalCollab(false)} onAuth={(session)=>{setShowAuthModalCollab(false);if(onAuth)onAuth(session);}}/>}
     </div>
   );
 }

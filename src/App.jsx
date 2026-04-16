@@ -11095,7 +11095,7 @@ export default function App(){
                 OUTSIDE SR&&<> so it NEVER unmounts on tab switch.
                 CSS display:none keeps it alive while hidden. ── */}
             <div style={{display:tab===17?'block':'none',minHeight:tab===17?0:0}}>
-              <CollabPanel user={user} params={params} onParamChange={set} C={SC}/>
+              <CollabPanel user={user} params={params} onParamChange={set} C={SC} onAuth={handleAuth}/>
             </div>
           </div>
         </div>
